@@ -1,0 +1,8 @@
+[workspace]
+
+members = [
+	"gds21",
+	"layout21",
+	"layout21macros",
+	"layout21protos",
+]
