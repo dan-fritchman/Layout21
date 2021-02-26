@@ -1,9 +1,12 @@
+use std::error::Error;
+use std::fmt;
 use std::fs::File;
 use std::str;
 
 use byteorder::{BigEndian, ReadBytesExt};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
+use serde::{Deserialize, Serialize};
 
 #[macro_use]
 extern crate derive_builder;
@@ -11,6 +14,14 @@ extern crate derive_builder;
 /// Error-Type for Invalid GDSII Decoding
 #[derive(Debug, Clone, Copy)]
 pub struct GdsDecodeError;
+
+impl fmt::Display for GdsDecodeError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "GdsDecodeError")
+    }
+}
+
+impl Error for GdsDecodeError {}
 
 impl From<std::io::Error> for GdsDecodeError {
     fn from(_e: std::io::Error) -> Self {
@@ -235,7 +246,7 @@ fn read_f64(file: &mut File, len: u16) -> Vec<f64> {
 }
 
 /// Read a GDS loaded from file at path `file_name`
-pub fn read_gds(file_name: &str) -> Result<(), GdsDecodeError> {
+pub fn read_gds(file_name: &str) -> Result<GdsLibrary, GdsDecodeError> {
     // Open our file, read its header
     let mut file = File::open(&file_name)?;
     let mut records = Vec::<GdsRecord>::new();
@@ -261,7 +272,7 @@ pub fn read_gds(file_name: &str) -> Result<(), GdsDecodeError> {
         let data_type = file.read_u8()?;
         let data_type = FromPrimitive::from_u8(data_type).ok_or(GdsDecodeError)?;
 
-        // Based on that header-data, decode to a `GdsRecord` 
+        // Based on that header-data, decode to a `GdsRecord`
         use GdsDataType::{BitArray, NoData, Str, F64, I16, I32};
         let record: GdsRecord = match (record_type, data_type, len) {
             // Library-Level Records
@@ -356,12 +367,12 @@ pub fn read_gds(file_name: &str) -> Result<(), GdsDecodeError> {
     }
     // Create an iterator over records, and parse it to a library-tree
     let mut it = records.into_iter();
-    let _lib = parse_library(&mut it)?;
+    let lib = parse_library(&mut it)?;
     // Check that end-of-library is the end-of-stream
     if it.next().is_some() {
         return Err(GdsDecodeError);
     }
-    Ok(())
+    Ok(lib)
 }
 
 /// Incredibly, these things are old enough to have their own float-format,
@@ -513,22 +524,22 @@ pub fn parse_library(
 
 /// A placeholder while building up structural elements,
 /// while not having everyting underneath
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct Tbd {}
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct GdsStrans(u8, u8);
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct GdsPresentation(u8, u8);
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct GdsElemFlags(u8, u8);
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct GdsPlex(i32);
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct GdsUnits {
     pub db: f64,
     pub user: f64,
@@ -541,7 +552,7 @@ pub struct GdsUnits {
 /// TEXT [ELFLAGS] [PLEX] LAYER
 /// TEXTTYPE [PRESENTATION] [PATHTYPE] [WIDTH] [<strans>] XY STRING
 ///
-#[derive(Default, Clone, Builder, Debug)]
+#[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
 #[builder(setter(into))]
 pub struct GdsTextElem {
     // Required
@@ -574,7 +585,7 @@ pub struct GdsTextElem {
 }
 
 /// Gds Boundary Element
-#[derive(Default, Clone, Builder, Debug)]
+#[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
 #[builder(setter(into))]
 pub struct GdsBoundary {
     pub layer: i16,
@@ -596,7 +607,7 @@ pub struct GdsBoundary {
 /// Spec BNF:
 /// {<boundary> | <path> | <SREF> | <AREF> | <text> | <node> | <box>} {<property>}* ENDEL
 ///
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub enum GdsElement {
     GdsBoundary(GdsBoundary),
     GdsPath(Tbd),
@@ -613,7 +624,7 @@ pub enum GdsElement {
 /// Spec BNF:
 /// PROPATTR PROPVALUE
 ///
-#[derive(Default, Clone, Builder, Debug)]
+#[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
 #[builder(setter(into))]
 pub struct GdsProperty {
     pub attr: i16,
@@ -627,7 +638,7 @@ pub struct GdsProperty {
 /// Spec BNF:
 /// BGNSTR STRNAME [STRCLASS] {<element>}* ENDSTR
 ///
-#[derive(Default, Clone, Builder, Debug)]
+#[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
 #[builder(setter(into))]
 pub struct GdsStruct {
     pub name: String,
@@ -641,7 +652,7 @@ pub struct GdsStruct {
 /// HEADER BGNLIB [LIBDIRSIZE] [SRFNAME] [LIBSECUR] LIBNAME [REFLIBS] [FONTS] [ATTRTABLE] [GENERATIONS] [<FormatType>]
 /// UNITS {<structure>}* ENDLIB
 ///
-#[derive(Default, Clone, Builder, Debug)]
+#[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
 #[builder(setter(into))]
 pub struct GdsLibrary {
     pub name: String, // Library Name
@@ -670,12 +681,22 @@ pub struct GdsLibrary {
 }
 #[cfg(test)]
 mod tests {
+    use std::fs::File;
+    use std::io::BufReader;
+    use std::path::Path;
     use super::*;
 
     #[test]
     fn it_reads() -> Result<(), GdsDecodeError> {
+        // Read a sample GDS
         let fname = format!("{}/resources/sample1.gds", env!("CARGO_MANIFEST_DIR"));
-        read_gds(&fname)?;
+        let lib = read_gds(&fname)?;
+        // Read its "golden" (OK, previously parsed) version 
+        let fname = format!("{}/resources/sample1.json", env!("CARGO_MANIFEST_DIR"));
+        let file = File::open(&fname).unwrap();
+        let golden: GdsLibrary = serde_json::from_reader(BufReader::new(file)).unwrap();
+        // And check they're the same
+        assert_eq!(lib, golden);
         Ok(())
     }
 }
