@@ -1,5 +1,3 @@
-use std::error::Error;
-use std::fmt;
 use std::fs::File;
 use std::str;
 
@@ -10,29 +8,6 @@ use serde::{Deserialize, Serialize};
 
 #[macro_use]
 extern crate derive_builder;
-
-/// Error-Type for Invalid GDSII Decoding
-#[derive(Debug, Clone, Copy)]
-pub struct GdsDecodeError;
-
-impl fmt::Display for GdsDecodeError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "GdsDecodeError")
-    }
-}
-
-impl Error for GdsDecodeError {}
-
-impl From<std::io::Error> for GdsDecodeError {
-    fn from(_e: std::io::Error) -> Self {
-        Self
-    }
-}
-impl From<String> for GdsDecodeError {
-    fn from(_e: String) -> Self {
-        Self
-    }
-}
 
 ///
 /// # Gds Record Types
@@ -246,7 +221,7 @@ fn read_f64(file: &mut File, len: u16) -> Vec<f64> {
 }
 
 /// Read a GDS loaded from file at path `file_name`
-pub fn read_gds(file_name: &str) -> Result<GdsLibrary, GdsDecodeError> {
+pub fn read_gds(file_name: &str) -> Result<GdsLibrary, GdsError> {
     // Open our file, read its header
     let mut file = File::open(&file_name)?;
     let mut records = Vec::<GdsRecord>::new();
@@ -255,22 +230,22 @@ pub fn read_gds(file_name: &str) -> Result<GdsLibrary, GdsDecodeError> {
         // Read the 16-bit record-size. (In bytes, including the four header bytes.)
         let len = match file.read_u16::<BigEndian>() {
             Err(ref e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break, // End-of-file
-            Err(_) => return Err(GdsDecodeError), // Some other kinda error; raise it.
-            Ok(num) if num < 4 => return Err(GdsDecodeError), // Invalid (too short) length; throw Error.
-            Ok(num) if num % 2 != 0 => return Err(GdsDecodeError), // Invalid (odd) length; throw Error.
-            Ok(num) => num,                                        // The normal case
+            Err(_) => return Err(GdsError::Decode), // Some other kinda error; raise it.
+            Ok(num) if num < 4 => return Err(GdsError::Decode), // Invalid (too short) length; throw Error.
+            Ok(num) if num % 2 != 0 => return Err(GdsError::Decode), // Invalid (odd) length; throw Error.
+            Ok(num) => num,                                          // The normal case
         };
         let len = len - 4; // Strip out the four header-bytes
                            // Read and decode its RecordType
         let record_type = file.read_u8()?;
         let record_type: GdsRecordType =
-            FromPrimitive::from_u8(record_type).ok_or(GdsDecodeError)?;
+            FromPrimitive::from_u8(record_type).ok_or(GdsError::Decode)?;
         if !record_type.valid() {
-            return Err(GdsDecodeError);
+            return Err(GdsError::Decode);
         }
         // Read and decode its DataType
         let data_type = file.read_u8()?;
-        let data_type = FromPrimitive::from_u8(data_type).ok_or(GdsDecodeError)?;
+        let data_type = FromPrimitive::from_u8(data_type).ok_or(GdsError::Decode)?;
 
         // Based on that header-data, decode to a `GdsRecord`
         use GdsDataType::{BitArray, NoData, Str, F64, I16, I32};
@@ -361,7 +336,7 @@ pub fn read_gds(file_name: &str) -> Result<GdsLibrary, GdsDecodeError> {
             (GdsRecordType::LibSecur, I16, 2) => GdsRecord::LibSecur(read_i16(&mut file, len)[0]),
 
             // Invalid or unsupported record
-            _ => return Err(GdsDecodeError),
+            _ => return Err(GdsError::InvalidRecord(record_type, data_type, len)),
         };
         records.push(record);
     }
@@ -370,16 +345,16 @@ pub fn read_gds(file_name: &str) -> Result<GdsLibrary, GdsDecodeError> {
     let lib = parse_library(&mut it)?;
     // Check that end-of-library is the end-of-stream
     if it.next().is_some() {
-        return Err(GdsDecodeError);
+        return Err(GdsError::Decode);
     }
     Ok(lib)
 }
 
 /// Incredibly, these things are old enough to have their own float-format,
 /// like most computers did before IEEE754
-pub fn gds_float_to_normal_peoples_float(bytes: &[u8]) -> Result<f64, GdsDecodeError> {
+pub fn gds_float_to_normal_peoples_float(bytes: &[u8]) -> Result<f64, GdsError> {
     if bytes.len() != 8 {
-        return Err(GdsDecodeError); // Bad length
+        return Err(GdsError::Decode); // Bad length
     }
     let neg = (bytes[0] & 0x80) != 0; // Sign bit
     let exp: i32 = (bytes[0] & 0x7F) as i32 - 64; // Exponent 7b
@@ -406,9 +381,7 @@ pub fn gds_float_to_normal_peoples_float(bytes: &[u8]) -> Result<f64, GdsDecodeE
 
 /// Parse a `GdsTextElement` from an iterator of `GdsRecords`
 /// Assumes the initial `Text` record has already been parsed.
-pub fn parse_text_elem(
-    it: &mut impl Iterator<Item = GdsRecord>,
-) -> Result<GdsTextElem, GdsDecodeError> {
+pub fn parse_text_elem(it: &mut impl Iterator<Item = GdsRecord>) -> Result<GdsTextElem, GdsError> {
     let mut b = GdsTextElemBuilder::default();
 
     while let Some(r) = it.next() {
@@ -425,17 +398,15 @@ pub fn parse_text_elem(
             GdsRecord::Presentation(d0, d1) => b.presentation(GdsPresentation(d0, d1)),
             GdsRecord::Strans(d0, d1) => b.strans(GdsStrans(d0, d1)),
             // Pending potential support
-            GdsRecord::Plex(_) | GdsRecord::ElemFlags(_, _) => return Err(GdsDecodeError),
+            GdsRecord::Plex(_) | GdsRecord::ElemFlags(_, _) => return Err(GdsError::Unsupported),
             // Invalid
-            _ => return Err(GdsDecodeError),
+            _ => return Err(GdsError::Decode),
         };
     }
     Ok(b.build()?)
 }
 
-pub fn parse_boundary(
-    it: &mut impl Iterator<Item = GdsRecord>,
-) -> Result<GdsBoundary, GdsDecodeError> {
+pub fn parse_boundary(it: &mut impl Iterator<Item = GdsRecord>) -> Result<GdsBoundary, GdsError> {
     let mut b = GdsBoundaryBuilder::default();
 
     while let Some(r) = it.next() {
@@ -447,14 +418,14 @@ pub fn parse_boundary(
             GdsRecord::DataType(d) => b.datatype(d),
             GdsRecord::Xy(d) => b.xy(d),
             // Pending potential support
-            GdsRecord::Plex(_) | GdsRecord::ElemFlags(_, _) => return Err(GdsDecodeError),
+            GdsRecord::Plex(_) | GdsRecord::ElemFlags(_, _) => return Err(GdsError::Unsupported),
             // Invalid
-            _ => return Err(GdsDecodeError),
+            _ => return Err(GdsError::Decode),
         };
     }
     Ok(b.build()?)
 }
-pub fn parse_struct(it: &mut impl Iterator<Item = GdsRecord>) -> Result<GdsStruct, GdsDecodeError> {
+pub fn parse_struct(it: &mut impl Iterator<Item = GdsRecord>) -> Result<GdsStruct, GdsError> {
     let mut strukt = GdsStructBuilder::default();
     let mut elems = Vec::<GdsElement>::new();
 
@@ -475,27 +446,25 @@ pub fn parse_struct(it: &mut impl Iterator<Item = GdsRecord>) -> Result<GdsStruc
                 elems.push(GdsElement::GdsTextElem(b));
             }
             // Invalid
-            _ => return Err(GdsDecodeError),
+            _ => return Err(GdsError::Decode),
         };
     }
     strukt.elems(elems);
     Ok(strukt.build()?)
 }
 
-pub fn parse_library(
-    it: &mut impl Iterator<Item = GdsRecord>,
-) -> Result<GdsLibrary, GdsDecodeError> {
+pub fn parse_library(it: &mut impl Iterator<Item = GdsRecord>) -> Result<GdsLibrary, GdsError> {
     let mut lib = GdsLibraryBuilder::default();
     let mut structs = Vec::<GdsStruct>::new();
     // Read the Header and its version data
     match it.next() {
         Some(GdsRecord::Header { version: v }) => lib.version(v),
-        _ => return Err(GdsDecodeError),
+        _ => return Err(GdsError::Decode),
     };
     // Read the begin-lib
     match it.next() {
         Some(GdsRecord::BgnLib { date_info: d }) => lib.date_info(d),
-        _ => return Err(GdsDecodeError),
+        _ => return Err(GdsError::Decode),
     };
     // Iterate over all others
     while let Some(r) = it.next() {
@@ -514,7 +483,7 @@ pub fn parse_library(
                 structs.push(strukt);
             }
             // Invalid
-            _ => return Err(GdsDecodeError),
+            _ => return Err(GdsError::Decode),
         };
     }
     // Add the Vec of structs, and create the Library from its builder
@@ -679,19 +648,40 @@ pub struct GdsLibrary {
     #[builder(default, setter(strip_option))]
     format_type: Option<Tbd>,
 }
+
+///
+/// # Gds Error Enumeration
+///
+#[derive(Debug, Clone, Copy)]
+pub enum GdsError {
+    InvalidRecord(GdsRecordType, GdsDataType, u16), // Invalid binary -> record conversion
+    Unsupported,                                    // Unsupported Gds Feature
+    Decode,                                         // Other decoding errors
+}
+
+impl From<std::io::Error> for GdsError {
+    fn from(_e: std::io::Error) -> Self {
+        GdsError::Decode
+    }
+}
+impl From<String> for GdsError {
+    fn from(_e: String) -> Self {
+        GdsError::Decode
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::*;
     use std::fs::File;
     use std::io::BufReader;
-    use std::path::Path;
-    use super::*;
 
     #[test]
-    fn it_reads() -> Result<(), GdsDecodeError> {
+    fn it_reads() -> Result<(), GdsError> {
         // Read a sample GDS
         let fname = format!("{}/resources/sample1.gds", env!("CARGO_MANIFEST_DIR"));
         let lib = read_gds(&fname)?;
-        // Read its "golden" (OK, previously parsed) version 
+        // Read its "golden" (OK, previously parsed) version
         let fname = format!("{}/resources/sample1.json", env!("CARGO_MANIFEST_DIR"));
         let file = File::open(&fname).unwrap();
         let golden: GdsLibrary = serde_json::from_reader(BufReader::new(file)).unwrap();
