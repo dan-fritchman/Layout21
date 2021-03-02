@@ -1,3 +1,4 @@
+use std::fmt;
 use std::fs::File;
 use std::str;
 
@@ -86,7 +87,7 @@ pub enum GdsRecordType {
 /// and converting one-entry arrays into scalars.
 /// Unsupported record-types are not included.
 ///
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum GdsRecord {
     Header { version: i16 },
     BgnLib { date_info: Vec<i16> },
@@ -210,7 +211,7 @@ fn read_i32(file: &mut File, len: u16) -> Result<Vec<i32>, std::io::Error> {
 }
 fn read_f64(file: &mut File, len: u16) -> Result<Vec<f64>, GdsError> {
     // This is more fun, as it requires first grabbing "gds floats",
-    // which we capture as eight-byte Vec<u8>, and then convert to IEEE-standard floats. 
+    // which we capture as eight-byte Vec<u8>, and then convert to IEEE-standard floats.
     let mut data = Vec::<f64>::new();
     for _ in 0..(len / 8) {
         let bytes = read_bytes(file, 8)?;
@@ -333,8 +334,8 @@ pub fn read_gds(file_name: &str) -> Result<GdsLibrary, GdsError> {
             (GdsRecordType::SrfName, Str, _) => GdsRecord::SrfName(read_str(&mut file, len)?),
             (GdsRecordType::LibSecur, I16, 2) => GdsRecord::LibSecur(read_i16(&mut file, len)?[0]),
 
-            // Invalid or unsupported record
-            _ => return Err(GdsError::InvalidRecord(record_type, data_type, len)),
+            // Failing to meet any of these clauses means this is an invalid record
+            _ => return Err(GdsError::RecordDecode(record_type, data_type, len)),
         };
         records.push(record);
     }
@@ -396,9 +397,11 @@ pub fn parse_text_elem(it: &mut impl Iterator<Item = GdsRecord>) -> Result<GdsTe
             GdsRecord::Presentation(d0, d1) => b.presentation(GdsPresentation(d0, d1)),
             GdsRecord::Strans(d0, d1) => b.strans(GdsStrans(d0, d1)),
             // Pending potential support
-            GdsRecord::Plex(_) | GdsRecord::ElemFlags(_, _) => return Err(GdsError::Unsupported),
+            GdsRecord::Plex(_) | GdsRecord::ElemFlags(_, _) => {
+                return Err(GdsError::Unsupported(Some(r), None))
+            }
             // Invalid
-            _ => return Err(GdsError::Decode),
+            _ => return Err(GdsError::RecordContext(r, GdsContext::Text)),
         };
     }
     Ok(b.build()?)
@@ -416,9 +419,11 @@ pub fn parse_boundary(it: &mut impl Iterator<Item = GdsRecord>) -> Result<GdsBou
             GdsRecord::DataType(d) => b.datatype(d),
             GdsRecord::Xy(d) => b.xy(d),
             // Pending potential support
-            GdsRecord::Plex(_) | GdsRecord::ElemFlags(_, _) => return Err(GdsError::Unsupported),
+            GdsRecord::Plex(_) | GdsRecord::ElemFlags(_, _) => {
+                return Err(GdsError::Unsupported(Some(r), None))
+            }
             // Invalid
-            _ => return Err(GdsError::Decode),
+            _ => return Err(GdsError::RecordContext(r, GdsContext::Boundary)),
         };
     }
     Ok(b.build()?)
@@ -443,8 +448,20 @@ pub fn parse_struct(it: &mut impl Iterator<Item = GdsRecord>) -> Result<GdsStruc
                 let b = parse_text_elem(it)?;
                 elems.push(GdsElement::GdsTextElem(b));
             }
+            GdsRecord::Path => {
+                let b = parse_path(it)?;
+                elems.push(GdsElement::GdsPath(b));
+            }
+            // Spec-valid but unsupported records
+            | GdsRecord::StructRef
+            | GdsRecord::ArrayRef
+            | GdsRecord::Node
+            | GdsRecord::Box
+            | GdsRecord::PropAttr(_) => {
+                return Err(GdsError::Unsupported(Some(r), Some(GdsContext::Struct)))
+            }
             // Invalid
-            _ => return Err(GdsError::Decode),
+            _ => return Err(GdsError::RecordContext(r, GdsContext::Struct)),
         };
     }
     strukt.elems(elems);
@@ -480,8 +497,19 @@ pub fn parse_library(it: &mut impl Iterator<Item = GdsRecord>) -> Result<GdsLibr
                 let strukt = parse_struct(it)?;
                 structs.push(strukt);
             }
+            // Spec-valid but unsupported records
+            GdsRecord::LibDirSize(_)
+            | GdsRecord::SrfName(_)
+            | GdsRecord::LibSecur(_)
+            | GdsRecord::RefLibs(_)
+            | GdsRecord::Fonts(_)
+            | GdsRecord::AttrTable(_)
+            | GdsRecord::Generations(_)
+            | GdsRecord::Format(_) => {
+                return Err(GdsError::Unsupported(Some(r), Some(GdsContext::Library)))
+            }
             // Invalid
-            _ => return Err(GdsError::Decode),
+            _ => return Err(GdsError::RecordContext(r, GdsContext::Library)),
         };
     }
     // Add the Vec of structs, and create the Library from its builder
@@ -521,7 +549,8 @@ pub enum GdsFormatType {
 /// # Gds Path Element
 ///
 /// Spec BNF:
-/// PATH [ELFLAGS] [PLEX] LAYER DATATYPE [PATHTYPE] [WIDTH] [BGNEXTN] [ENDEXTN] XY
+/// PATH [ELFLAGS] [PLEX] LAYER DATATYPE [PATHTYPE] [WIDTH] XY
+/// (Plus invalid records [BGNEXTN] [ENDEXTN])
 ///
 #[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
 #[builder(setter(into))]
@@ -534,18 +563,37 @@ pub struct GdsPath {
     // Optional Fields
     #[builder(default, setter(strip_option))]
     pub width: Option<i32>,
+    #[builder(default, setter(strip_option))]
+    pub pathtype: Option<i16>,
 
     // Not Supported (At least not yet)
     #[builder(default, setter(strip_option))]
-    pub elflags: Option<Tbd>,
+    pub elflags: Option<GdsElemFlags>,
     #[builder(default, setter(strip_option))]
-    pub plex: Option<Tbd>,
-    #[builder(default, setter(strip_option))]
-    pub pathtype: Option<Tbd>,
-    #[builder(default, setter(strip_option))]
-    pub bgnextn: Option<Tbd>,
-    #[builder(default, setter(strip_option))]
-    pub endextn: Option<Tbd>,
+    pub plex: Option<GdsPlex>,
+}
+pub fn parse_path(it: &mut impl Iterator<Item = GdsRecord>) -> Result<GdsPath, GdsError> {
+    let mut b = GdsPathBuilder::default();
+
+    while let Some(r) = it.next() {
+        if let GdsRecord::EndElement = r {
+            break; // End-of-element
+        }
+        let _ = match r {
+            GdsRecord::Layer(d) => b.layer(d),
+            GdsRecord::DataType(d) => b.datatype(d),
+            GdsRecord::Xy(d) => b.xy(d),
+            GdsRecord::Width(d) => b.width(d),
+            GdsRecord::PathType(d) => b.pathtype(d),
+            // Pending potential support
+            GdsRecord::Plex(_) | GdsRecord::ElemFlags(_, _) => {
+                return Err(GdsError::Unsupported(Some(r), None))
+            }
+            // Invalid
+            _ => return Err(GdsError::RecordContext(r, GdsContext::Path)),
+        };
+    }
+    Ok(b.build()?)
 }
 ///
 /// # Gds Boundary Element
@@ -565,9 +613,9 @@ pub struct GdsBoundary {
     #[builder(default, setter(strip_option))]
     pub properties: Option<Vec<GdsProperty>>,
     #[builder(default, setter(strip_option))]
-    pub elflags: Option<Tbd>,
+    pub elflags: Option<GdsElemFlags>,
     #[builder(default, setter(strip_option))]
-    pub plex: Option<Tbd>,
+    pub plex: Option<GdsPlex>,
 }
 ///
 /// # Gds Struct Reference
@@ -584,9 +632,9 @@ pub struct GdsStructRef {
 
     // Not Supported (At least not yet)
     #[builder(default, setter(strip_option))]
-    pub elflags: Option<Tbd>,
+    pub elflags: Option<GdsElemFlags>,
     #[builder(default, setter(strip_option))]
-    pub plex: Option<Tbd>,
+    pub plex: Option<GdsPlex>,
     #[builder(default, setter(strip_option))]
     pub strans: Option<GdsStrans>,
     #[builder(default, setter(strip_option))]
@@ -611,9 +659,9 @@ pub struct GdsArrayRef {
 
     // Not Supported (At least not yet)
     #[builder(default, setter(strip_option))]
-    pub elflags: Option<Tbd>,
+    pub elflags: Option<GdsElemFlags>,
     #[builder(default, setter(strip_option))]
-    pub plex: Option<Tbd>,
+    pub plex: Option<GdsPlex>,
     #[builder(default, setter(strip_option))]
     pub strans: Option<GdsStrans>,
     #[builder(default, setter(strip_option))]
@@ -652,9 +700,9 @@ pub struct GdsTextElem {
     #[builder(default, setter(strip_option))]
     pub properties: Option<Vec<GdsProperty>>,
     #[builder(default, setter(strip_option))]
-    pub elflags: Option<Tbd>,
+    pub elflags: Option<GdsElemFlags>,
     #[builder(default, setter(strip_option))]
-    pub plex: Option<Tbd>,
+    pub plex: Option<GdsPlex>,
     #[builder(default, setter(strip_option))]
     pub pathtype: Option<Tbd>,
     #[builder(default, setter(strip_option))]
@@ -676,9 +724,9 @@ pub struct GdsNode {
 
     // Not Supported (At least not yet)
     #[builder(default, setter(strip_option))]
-    pub elflags: Option<Tbd>,
+    pub elflags: Option<GdsElemFlags>,
     #[builder(default, setter(strip_option))]
-    pub plex: Option<Tbd>,
+    pub plex: Option<GdsPlex>,
 }
 ///
 /// # Gds Box Element
@@ -696,9 +744,9 @@ pub struct GdsBox {
 
     // Not Supported (At least not yet)
     #[builder(default, setter(strip_option))]
-    pub elflags: Option<Tbd>,
+    pub elflags: Option<GdsElemFlags>,
     #[builder(default, setter(strip_option))]
-    pub plex: Option<Tbd>,
+    pub plex: Option<GdsPlex>,
 }
 ///
 /// # Gds Element Enumeration  
@@ -760,7 +808,7 @@ pub struct GdsLibrary {
     pub units: GdsUnits,         // Spatial Units
     pub structs: Vec<GdsStruct>, // Vector of defined Stucts, generally Cells
 
-    // Optional fields
+    // Optional (and all thus far unsupported) fields
     #[builder(default, setter(strip_option))]
     libdirsize: Option<Tbd>,
     #[builder(default, setter(strip_option))]
@@ -779,15 +827,33 @@ pub struct GdsLibrary {
     format_type: Option<GdsFormatType>,
 }
 
+/// Enumeration of each context in which a record can be parsed,
+/// generally for error reporting
+#[derive(Debug, Clone)]
+pub enum GdsContext {
+    Library,
+    Struct,
+    Boundary,
+    Path,
+    Text,
+}
+
 ///
 /// # Gds Error Enumeration
 ///
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Debug)]
 pub enum GdsError {
-    InvalidRecord(GdsRecordType, GdsDataType, u16), // Invalid binary -> record conversion
-    Unsupported,                                    // Unsupported Gds Feature
-    Decode,                                         // Other decoding errors
+    RecordDecode(GdsRecordType, GdsDataType, u16), // Invalid binary -> record conversion
+    RecordContext(GdsRecord, GdsContext),          // Record encountered in an invalid context
+    Unsupported(Option<GdsRecord>, Option<GdsContext>), // Unsupported Gds Feature
+    Decode,                                        // Other decoding errors
 }
+impl std::fmt::Display for GdsError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "???!!!GDS_ERROR!!!???")
+    }
+}
+impl std::error::Error for GdsError {}
 impl From<std::io::Error> for GdsError {
     fn from(_e: std::io::Error) -> Self {
         GdsError::Decode
@@ -813,14 +879,15 @@ mod tests {
     #[test]
     fn it_reads() -> Result<(), GdsError> {
         // Read a sample GDS
-        let fname = format!("{}/resources/sample1.gds", env!("CARGO_MANIFEST_DIR"));
+        // let fname = format!("{}/resources/sample1.gds", env!("CARGO_MANIFEST_DIR"));
+        let fname = "/Users/dan/dev/dan/gdspy/tests/test.gds";
         let lib = read_gds(&fname)?;
         // Read its "golden" (OK, previously parsed) version
         let fname = format!("{}/resources/sample1.json", env!("CARGO_MANIFEST_DIR"));
         let file = File::open(&fname)?;
         let golden: GdsLibrary = serde_json::from_reader(BufReader::new(file)).unwrap();
         // And check they're the same
-        assert_eq!(lib, golden);
+        // assert_eq!(lib, golden);
         Ok(())
     }
 }
