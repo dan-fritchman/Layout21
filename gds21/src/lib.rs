@@ -178,48 +178,46 @@ pub enum GdsDataType {
     Str = 6,
 }
 
-fn read_str(file: &mut File, len: u16) -> String {
+fn read_str(file: &mut File, len: u16) -> Result<String, GdsError> {
     // ASCII Decode. First load into a bytes-vector.
-    let mut data: Vec<u8> = (0..len).map(|_| file.read_u8().unwrap()).collect();
+    let mut data = read_bytes(file, len)?;
     // Strip optional end-of-string chars
     if data[data.len() - 1] == 0x00 {
         data.pop();
     }
     // And convert to string
-    let s: String = std::str::from_utf8(&data).unwrap().into();
-    s
+    let s: String = std::str::from_utf8(&data)?.into();
+    Ok(s)
 }
 
-fn read_bytes(file: &mut File, len: u16) -> Vec<u8> {
-    (0..len).map(|_| file.read_u8().unwrap()).collect()
+fn read_bytes(file: &mut File, len: u16) -> Result<Vec<u8>, std::io::Error> {
+    (0..len)
+        .map(|_| file.read_u8())
+        .into_iter()
+        .collect::<Result<Vec<u8>, _>>()
 }
 
-fn read_i16(file: &mut File, len: u16) -> Vec<i16> {
+fn read_i16(file: &mut File, len: u16) -> Result<Vec<i16>, std::io::Error> {
     (0..len / 2)
-        .map(|_| file.read_i16::<BigEndian>().unwrap())
-        .collect()
+        .map(|_| file.read_i16::<BigEndian>())
+        .collect::<Result<Vec<i16>, _>>()
 }
 
-fn read_i32(file: &mut File, len: u16) -> Vec<i32> {
+fn read_i32(file: &mut File, len: u16) -> Result<Vec<i32>, std::io::Error> {
     (0..len / 4)
-        .map(|_| file.read_i32::<BigEndian>().unwrap())
-        .collect()
+        .map(|_| file.read_i32::<BigEndian>())
+        .collect::<Result<Vec<i32>, _>>()
 }
-fn read_f64(file: &mut File, len: u16) -> Vec<f64> {
+fn read_f64(file: &mut File, len: u16) -> Result<Vec<f64>, GdsError> {
     // This is more fun, as it requires first grabbing "gds floats",
-    // which we capture as eight-byte Vec<u8>,
-    // and then convert to IEEE-standard floats
+    // which we capture as eight-byte Vec<u8>, and then convert to IEEE-standard floats. 
     let mut data = Vec::<f64>::new();
-    for _x in 0..(len / 8) {
-        let mut bytes = Vec::<u8>::new();
-        for _y in 0..8 {
-            bytes.push(file.read_u8().unwrap());
-        }
-        data.push(gds_float_to_normal_peoples_float(&bytes).unwrap());
+    for _ in 0..(len / 8) {
+        let bytes = read_bytes(file, 8)?;
+        data.push(gds_float_to_normal_peoples_float(&bytes)?);
     }
-    data
+    Ok(data)
 }
-
 /// Read a GDS loaded from file at path `file_name`
 pub fn read_gds(file_name: &str) -> Result<GdsLibrary, GdsError> {
     // Open our file, read its header
@@ -252,14 +250,14 @@ pub fn read_gds(file_name: &str) -> Result<GdsLibrary, GdsError> {
         let record: GdsRecord = match (record_type, data_type, len) {
             // Library-Level Records
             (GdsRecordType::Header, I16, 2) => GdsRecord::Header {
-                version: read_i16(&mut file, len)[0],
+                version: read_i16(&mut file, len)?[0],
             },
             (GdsRecordType::BgnLib, I16, 24) => GdsRecord::BgnLib {
-                date_info: read_i16(&mut file, len),
+                date_info: read_i16(&mut file, len)?,
             },
-            (GdsRecordType::LibName, Str, _) => GdsRecord::LibName(read_str(&mut file, len)),
+            (GdsRecordType::LibName, Str, _) => GdsRecord::LibName(read_str(&mut file, len)?),
             (GdsRecordType::Units, F64, 16) => {
-                let v = read_f64(&mut file, len);
+                let v = read_f64(&mut file, len)?;
                 GdsRecord::Units {
                     db: v[0],
                     user: v[1],
@@ -269,9 +267,9 @@ pub fn read_gds(file_name: &str) -> Result<GdsLibrary, GdsError> {
 
             // Structure (Cell) Level Records
             (GdsRecordType::BgnStruct, I16, 24) => GdsRecord::BgnStruct {
-                date_info: read_i16(&mut file, len),
+                date_info: read_i16(&mut file, len)?,
             },
-            (GdsRecordType::StructName, Str, _) => GdsRecord::StructName(read_str(&mut file, len)),
+            (GdsRecordType::StructName, Str, _) => GdsRecord::StructName(read_str(&mut file, len)?),
             (GdsRecordType::EndStruct, NoData, 0) => GdsRecord::EndStruct,
 
             // Element-Level Records
@@ -280,60 +278,60 @@ pub fn read_gds(file_name: &str) -> Result<GdsLibrary, GdsError> {
             (GdsRecordType::StructRef, NoData, 0) => GdsRecord::StructRef,
             (GdsRecordType::ArrayRef, NoData, 0) => GdsRecord::ArrayRef,
             (GdsRecordType::Text, NoData, 0) => GdsRecord::Text,
-            (GdsRecordType::Layer, I16, 2) => GdsRecord::Layer(read_i16(&mut file, len)[0]),
-            (GdsRecordType::DataType, I16, 2) => GdsRecord::DataType(read_i16(&mut file, len)[0]),
-            (GdsRecordType::Width, I32, 4) => GdsRecord::Width(read_i32(&mut file, len)[0]),
-            (GdsRecordType::Xy, I32, _) => GdsRecord::Xy(read_i32(&mut file, len)),
+            (GdsRecordType::Layer, I16, 2) => GdsRecord::Layer(read_i16(&mut file, len)?[0]),
+            (GdsRecordType::DataType, I16, 2) => GdsRecord::DataType(read_i16(&mut file, len)?[0]),
+            (GdsRecordType::Width, I32, 4) => GdsRecord::Width(read_i32(&mut file, len)?[0]),
+            (GdsRecordType::Xy, I32, _) => GdsRecord::Xy(read_i32(&mut file, len)?),
             (GdsRecordType::EndElement, NoData, 0) => GdsRecord::EndElement,
 
             // More (less well-categorized here) record-types
             (GdsRecordType::ColRow, I16, 4) => {
-                let d = read_i16(&mut file, len);
+                let d = read_i16(&mut file, len)?;
                 GdsRecord::ColRow {
                     cols: d[0],
                     rows: d[1],
                 }
             }
             (GdsRecordType::Node, NoData, 0) => GdsRecord::Node,
-            (GdsRecordType::TextType, I16, 2) => GdsRecord::TextType(read_i16(&mut file, len)[0]),
+            (GdsRecordType::TextType, I16, 2) => GdsRecord::TextType(read_i16(&mut file, len)?[0]),
             (GdsRecordType::Presentation, BitArray, 2) => {
-                let bytes = read_bytes(&mut file, len);
+                let bytes = read_bytes(&mut file, len)?;
                 GdsRecord::Presentation(bytes[0], bytes[1])
             }
-            (GdsRecordType::String, Str, _) => GdsRecord::String(read_str(&mut file, len)),
+            (GdsRecordType::String, Str, _) => GdsRecord::String(read_str(&mut file, len)?),
             (GdsRecordType::Strans, BitArray, 2) => {
-                let bytes = read_bytes(&mut file, len);
+                let bytes = read_bytes(&mut file, len)?;
                 GdsRecord::Strans(bytes[0], bytes[1])
             }
-            (GdsRecordType::Mag, F64, 8) => GdsRecord::Mag(read_f64(&mut file, len)[0]),
-            (GdsRecordType::Angle, F64, 8) => GdsRecord::Angle(read_f64(&mut file, len)[0]),
-            (GdsRecordType::RefLibs, Str, _) => GdsRecord::RefLibs(read_str(&mut file, len)),
-            (GdsRecordType::Fonts, Str, _) => GdsRecord::Fonts(read_str(&mut file, len)),
-            (GdsRecordType::PathType, I16, 2) => GdsRecord::PathType(read_i16(&mut file, len)[0]),
+            (GdsRecordType::Mag, F64, 8) => GdsRecord::Mag(read_f64(&mut file, len)?[0]),
+            (GdsRecordType::Angle, F64, 8) => GdsRecord::Angle(read_f64(&mut file, len)?[0]),
+            (GdsRecordType::RefLibs, Str, _) => GdsRecord::RefLibs(read_str(&mut file, len)?),
+            (GdsRecordType::Fonts, Str, _) => GdsRecord::Fonts(read_str(&mut file, len)?),
+            (GdsRecordType::PathType, I16, 2) => GdsRecord::PathType(read_i16(&mut file, len)?[0]),
             (GdsRecordType::Generations, I16, 2) => {
-                GdsRecord::Generations(read_i16(&mut file, len)[0])
+                GdsRecord::Generations(read_i16(&mut file, len)?[0])
             }
-            (GdsRecordType::AttrTable, Str, _) => GdsRecord::AttrTable(read_str(&mut file, len)),
+            (GdsRecordType::AttrTable, Str, _) => GdsRecord::AttrTable(read_str(&mut file, len)?),
             (GdsRecordType::ElemFlags, BitArray, 2) => {
-                let bytes = read_bytes(&mut file, len);
+                let bytes = read_bytes(&mut file, len)?;
                 GdsRecord::ElemFlags(bytes[0], bytes[1])
             }
-            (GdsRecordType::Nodetype, I16, 2) => GdsRecord::Nodetype(read_i16(&mut file, len)[0]),
-            (GdsRecordType::PropAttr, I16, 2) => GdsRecord::PropAttr(read_i16(&mut file, len)[0]),
-            (GdsRecordType::PropValue, Str, _) => GdsRecord::PropValue(read_str(&mut file, len)),
+            (GdsRecordType::Nodetype, I16, 2) => GdsRecord::Nodetype(read_i16(&mut file, len)?[0]),
+            (GdsRecordType::PropAttr, I16, 2) => GdsRecord::PropAttr(read_i16(&mut file, len)?[0]),
+            (GdsRecordType::PropValue, Str, _) => GdsRecord::PropValue(read_str(&mut file, len)?),
             (GdsRecordType::Box, NoData, 0) => GdsRecord::Box,
-            (GdsRecordType::BoxType, I16, 2) => GdsRecord::BoxType(read_i16(&mut file, len)[0]),
-            (GdsRecordType::Plex, I32, 4) => GdsRecord::Plex(read_i32(&mut file, len)[0]),
-            (GdsRecordType::TapeNum, I16, 2) => GdsRecord::TapeNum(read_i16(&mut file, len)[0]),
-            (GdsRecordType::TapeCode, I16, 12) => GdsRecord::TapeCode(read_i16(&mut file, len)),
-            (GdsRecordType::Format, I16, 2) => GdsRecord::Format(read_i16(&mut file, len)[0]),
-            (GdsRecordType::Mask, Str, _) => GdsRecord::Mask(read_str(&mut file, len)),
+            (GdsRecordType::BoxType, I16, 2) => GdsRecord::BoxType(read_i16(&mut file, len)?[0]),
+            (GdsRecordType::Plex, I32, 4) => GdsRecord::Plex(read_i32(&mut file, len)?[0]),
+            (GdsRecordType::TapeNum, I16, 2) => GdsRecord::TapeNum(read_i16(&mut file, len)?[0]),
+            (GdsRecordType::TapeCode, I16, 12) => GdsRecord::TapeCode(read_i16(&mut file, len)?),
+            (GdsRecordType::Format, I16, 2) => GdsRecord::Format(read_i16(&mut file, len)?[0]),
+            (GdsRecordType::Mask, Str, _) => GdsRecord::Mask(read_str(&mut file, len)?),
             (GdsRecordType::EndMasks, NoData, 0) => GdsRecord::EndMasks,
             (GdsRecordType::LibDirSize, I16, 2) => {
-                GdsRecord::LibDirSize(read_i16(&mut file, len)[0])
+                GdsRecord::LibDirSize(read_i16(&mut file, len)?[0])
             }
-            (GdsRecordType::SrfName, Str, _) => GdsRecord::SrfName(read_str(&mut file, len)),
-            (GdsRecordType::LibSecur, I16, 2) => GdsRecord::LibSecur(read_i16(&mut file, len)[0]),
+            (GdsRecordType::SrfName, Str, _) => GdsRecord::SrfName(read_str(&mut file, len)?),
+            (GdsRecordType::LibSecur, I16, 2) => GdsRecord::LibSecur(read_i16(&mut file, len)?[0]),
 
             // Invalid or unsupported record
             _ => return Err(GdsError::InvalidRecord(record_type, data_type, len)),
@@ -513,6 +511,116 @@ pub struct GdsUnits {
     pub db: f64,
     pub user: f64,
 }
+/// # Gds Mask-Format Enumeration
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+pub enum GdsFormatType {
+    Archive,            // Default, sole fully-supported case
+    Filtered(Vec<Tbd>), // Filtered-format includes a list of Mask records. Not supported.
+}
+///
+/// # Gds Path Element
+///
+/// Spec BNF:
+/// PATH [ELFLAGS] [PLEX] LAYER DATATYPE [PATHTYPE] [WIDTH] [BGNEXTN] [ENDEXTN] XY
+///
+#[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
+#[builder(setter(into))]
+pub struct GdsPath {
+    // Required Fields
+    pub layer: i16,    // Layer ID
+    pub datatype: i16, // DataType ID
+    pub xy: Vec<i32>,  // Vector of x,y coordinates
+
+    // Optional Fields
+    #[builder(default, setter(strip_option))]
+    pub width: Option<i32>,
+
+    // Not Supported (At least not yet)
+    #[builder(default, setter(strip_option))]
+    pub elflags: Option<Tbd>,
+    #[builder(default, setter(strip_option))]
+    pub plex: Option<Tbd>,
+    #[builder(default, setter(strip_option))]
+    pub pathtype: Option<Tbd>,
+    #[builder(default, setter(strip_option))]
+    pub bgnextn: Option<Tbd>,
+    #[builder(default, setter(strip_option))]
+    pub endextn: Option<Tbd>,
+}
+///
+/// # Gds Boundary Element
+///
+/// Spec BNF:
+/// BOUNDARY [ELFLAGS] [PLEX] LAYER DATATYPE XY
+///
+#[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
+#[builder(setter(into))]
+pub struct GdsBoundary {
+    // Required Fields
+    pub layer: i16,    // Layer ID
+    pub datatype: i16, // DataType ID
+    pub xy: Vec<i32>,  // Vector of x,y coordinates
+
+    // Not Supported (At least not yet)
+    #[builder(default, setter(strip_option))]
+    pub properties: Option<Vec<GdsProperty>>,
+    #[builder(default, setter(strip_option))]
+    pub elflags: Option<Tbd>,
+    #[builder(default, setter(strip_option))]
+    pub plex: Option<Tbd>,
+}
+///
+/// # Gds Struct Reference
+///
+/// Spec BNF:
+/// SREF [ELFLAGS] [PLEX] SNAME [<strans>] XY
+///
+#[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
+#[builder(setter(into))]
+pub struct GdsStructRef {
+    // Required Fields
+    pub name: String, // Instance Name
+    pub xy: Vec<i32>, // Vector of x,y coordinates
+
+    // Not Supported (At least not yet)
+    #[builder(default, setter(strip_option))]
+    pub elflags: Option<Tbd>,
+    #[builder(default, setter(strip_option))]
+    pub plex: Option<Tbd>,
+    #[builder(default, setter(strip_option))]
+    pub strans: Option<GdsStrans>,
+    #[builder(default, setter(strip_option))]
+    pub mag: Option<f64>, // Magnification
+    #[builder(default, setter(strip_option))]
+    pub angle: Option<f64>, // Angle
+}
+///
+/// # Gds Array Reference
+///
+/// Spec BNF:
+/// AREF [ELFLAGS] [PLEX] SNAME [<strans>] COLROW XY
+///
+#[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
+#[builder(setter(into))]
+pub struct GdsArrayRef {
+    // Required Fields
+    pub name: String, // Instance Name
+    pub xy: Vec<i32>, // Vector of x,y coordinates
+    pub cols: i16,    // Number of columns
+    pub rows: i16,    // Number of rows
+
+    // Not Supported (At least not yet)
+    #[builder(default, setter(strip_option))]
+    pub elflags: Option<Tbd>,
+    #[builder(default, setter(strip_option))]
+    pub plex: Option<Tbd>,
+    #[builder(default, setter(strip_option))]
+    pub strans: Option<GdsStrans>,
+    #[builder(default, setter(strip_option))]
+    pub mag: Option<f64>, // Magnification
+    #[builder(default, setter(strip_option))]
+    pub angle: Option<f64>, // Angle
+}
 
 ///
 /// # Gds Text Element
@@ -524,13 +632,13 @@ pub struct GdsUnits {
 #[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
 #[builder(setter(into))]
 pub struct GdsTextElem {
-    // Required
+    // Required Fields
     pub string: String,
     pub layer: i16,
     pub texttype: i16,
     pub xy: Vec<i32>,
 
-    // Optional
+    // Optional Fields
     #[builder(default, setter(strip_option))]
     pub presentation: Option<GdsPresentation>,
     #[builder(default, setter(strip_option))]
@@ -552,24 +660,46 @@ pub struct GdsTextElem {
     #[builder(default, setter(strip_option))]
     pub width: Option<Tbd>,
 }
-
-/// Gds Boundary Element
+///
+/// # Gds Node Element
+///
+/// Spec BNF:
+/// NODE [ELFLAGS] [PLEX] LAYER NODETYPE XY
+///
 #[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
 #[builder(setter(into))]
-pub struct GdsBoundary {
-    pub layer: i16,
-    pub datatype: i16,
-    pub xy: Vec<i32>,
+pub struct GdsNode {
+    // Required Fields
+    pub layer: i16,    // Layer ID
+    pub nodetype: i16, // Node-Type ID
+    pub xy: Vec<i32>,  // Vector of x,y coordinates
 
     // Not Supported (At least not yet)
-    #[builder(default, setter(strip_option))]
-    pub properties: Option<Vec<GdsProperty>>,
     #[builder(default, setter(strip_option))]
     pub elflags: Option<Tbd>,
     #[builder(default, setter(strip_option))]
     pub plex: Option<Tbd>,
 }
+///
+/// # Gds Box Element
+///
+/// Spec BNF:
+/// BOX [ELFLAGS] [PLEX] LAYER BOXTYPE XY
+///
+#[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
+#[builder(setter(into))]
+pub struct GdsBox {
+    // Required Fields
+    pub layer: i16,   // Layer ID
+    pub boxtype: i16, // Box-Type ID
+    pub xy: Vec<i32>, // Vector of x,y coordinates
 
+    // Not Supported (At least not yet)
+    #[builder(default, setter(strip_option))]
+    pub elflags: Option<Tbd>,
+    #[builder(default, setter(strip_option))]
+    pub plex: Option<Tbd>,
+}
 ///
 /// # Gds Element Enumeration  
 ///
@@ -579,14 +709,13 @@ pub struct GdsBoundary {
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub enum GdsElement {
     GdsBoundary(GdsBoundary),
-    GdsPath(Tbd),
-    GdsSref(Tbd),
-    GdsAref(Tbd),
+    GdsPath(GdsPath),
+    GdsStructRef(GdsStructRef),
+    GdsArrayRef(GdsArrayRef),
     GdsTextElem(GdsTextElem),
-    GdsNode(Tbd),
-    GdsBox(Tbd),
+    GdsNode(GdsNode),
+    GdsBox(GdsBox),
 }
-
 ///
 /// # Gds Property
 ///
@@ -610,8 +739,8 @@ pub struct GdsProperty {
 #[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
 #[builder(setter(into))]
 pub struct GdsStruct {
-    pub name: String,
-    pub elems: Vec<GdsElement>,
+    pub name: String,           // Struct Name
+    pub elems: Vec<GdsElement>, // Elements List
 }
 
 ///
@@ -624,13 +753,14 @@ pub struct GdsStruct {
 #[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
 #[builder(setter(into))]
 pub struct GdsLibrary {
-    pub name: String, // Library Name
-    pub version: i16,
-    pub date_info: Vec<i16>,
-    pub units: GdsUnits,
+    // Required fields
+    pub name: String,            // Library Name
+    pub version: i16,            // Gds Spec Version
+    pub date_info: Vec<i16>,     // Creation Date, in 16b ints as per spec
+    pub units: GdsUnits,         // Spatial Units
     pub structs: Vec<GdsStruct>, // Vector of defined Stucts, generally Cells
 
-    // Optional / TBD fields
+    // Optional fields
     #[builder(default, setter(strip_option))]
     libdirsize: Option<Tbd>,
     #[builder(default, setter(strip_option))]
@@ -646,7 +776,7 @@ pub struct GdsLibrary {
     #[builder(default, setter(strip_option))]
     generations: Option<Tbd>,
     #[builder(default, setter(strip_option))]
-    format_type: Option<Tbd>,
+    format_type: Option<GdsFormatType>,
 }
 
 ///
@@ -658,9 +788,13 @@ pub enum GdsError {
     Unsupported,                                    // Unsupported Gds Feature
     Decode,                                         // Other decoding errors
 }
-
 impl From<std::io::Error> for GdsError {
     fn from(_e: std::io::Error) -> Self {
+        GdsError::Decode
+    }
+}
+impl From<std::str::Utf8Error> for GdsError {
+    fn from(_e: std::str::Utf8Error) -> Self {
         GdsError::Decode
     }
 }
@@ -683,7 +817,7 @@ mod tests {
         let lib = read_gds(&fname)?;
         // Read its "golden" (OK, previously parsed) version
         let fname = format!("{}/resources/sample1.json", env!("CARGO_MANIFEST_DIR"));
-        let file = File::open(&fname).unwrap();
+        let file = File::open(&fname)?;
         let golden: GdsLibrary = serde_json::from_reader(BufReader::new(file)).unwrap();
         // And check they're the same
         assert_eq!(lib, golden);
