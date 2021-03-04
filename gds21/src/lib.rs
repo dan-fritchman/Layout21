@@ -87,7 +87,7 @@ pub enum GdsRecordType {
 /// and converting one-entry arrays into scalars.
 /// Unsupported record-types are not included.
 ///
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum GdsRecord {
     Header { version: i16 },
     BgnLib { date_info: Vec<i16> },
@@ -227,7 +227,9 @@ pub fn read_gds(file_name: &str) -> Result<GdsLibrary, GdsError> {
     loop {
         // Read the 16-bit record-size. (In bytes, including the four header bytes.)
         let len = match file.read_u16::<BigEndian>() {
-            Err(ref e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break, // End-of-file
+            Err(ref e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                return Err(GdsError::Decode); // Unexpected end-of-file without `EndLib`
+            }
             Err(_) => return Err(GdsError::Decode), // Some other kinda error; raise it.
             Ok(num) if num < 4 => return Err(GdsError::RecordLen(num)), // Invalid (too short) length; throw Error.
             Ok(num) if num % 2 != 0 => return Err(GdsError::RecordLen(num)), // Invalid (odd) length; throw Error.
@@ -339,6 +341,11 @@ pub fn read_gds(file_name: &str) -> Result<GdsLibrary, GdsError> {
             // Failing to meet any of these clauses means this is an invalid record
             _ => return Err(GdsError::RecordDecode(record_type, data_type, len)),
         };
+        if record == GdsRecord::EndLib {
+            // End of library. Any content to follow is ignored
+            records.push(record); // Still include the `EndLib` record
+            break;
+        }
         records.push(record);
     }
     // Create an iterator over records, and parse it to a library-tree
