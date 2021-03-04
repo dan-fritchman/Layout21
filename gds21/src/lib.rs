@@ -65,8 +65,8 @@ pub enum GdsRecordType {
     Box,
     BoxType,
     Plex,
-    Bgnextn, // "Only occurs in CustomPlus"
-    Endextn, // "Only occurs in CustomPlus"
+    BeginExtn, // "Only occurs in CustomPlus"
+    EndExtn,   // "Only occurs in CustomPlus"
     TapeNum,
     TapeCode,
     StrClass, // "Only for Calma internal use"
@@ -127,6 +127,8 @@ pub enum GdsRecord {
     Box,
     BoxType(i16),
     Plex(i32),
+    BeginExtn(i32),
+    EndExtn(i32),
     TapeNum(i16),
     TapeCode(Vec<i16>), // Note: always length 6
     Format(i16),
@@ -143,7 +145,6 @@ impl GdsRecordType {
     /// all from this list are deemed invalid.
     pub fn valid(&self) -> bool {
         match self {
-            Self::SName | // Apparently the same as `StructName`
             Self::TextNode | // "Not currently used"
             Self::Spacing | // "Discontinued"
             Self::Uinteger | // "No longer used"
@@ -153,8 +154,6 @@ impl GdsRecordType {
             Self::ElemKey |   // "Unreleased Feature"
             Self::LinkType |  // "Unreleased Feature"
             Self::LinkKeys |  // "Unreleased Feature"
-            Self::Bgnextn |  // "Only occurs in CustomPlus"
-            Self::Endextn |  // "Only occurs in CustomPlus"
             Self::StrClass | // "Only for Calma internal use"
             Self::Reserved   // "Reserved for future use"
               => false,
@@ -230,21 +229,22 @@ pub fn read_gds(file_name: &str) -> Result<GdsLibrary, GdsError> {
         let len = match file.read_u16::<BigEndian>() {
             Err(ref e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break, // End-of-file
             Err(_) => return Err(GdsError::Decode), // Some other kinda error; raise it.
-            Ok(num) if num < 4 => return Err(GdsError::Decode), // Invalid (too short) length; throw Error.
-            Ok(num) if num % 2 != 0 => return Err(GdsError::Decode), // Invalid (odd) length; throw Error.
-            Ok(num) => num,                                          // The normal case
+            Ok(num) if num < 4 => return Err(GdsError::RecordLen(num)), // Invalid (too short) length; throw Error.
+            Ok(num) if num % 2 != 0 => return Err(GdsError::RecordLen(num)), // Invalid (odd) length; throw Error.
+            Ok(num) => num,                                                  // The normal case
         };
         let len = len - 4; // Strip out the four header-bytes
                            // Read and decode its RecordType
         let record_type = file.read_u8()?;
         let record_type: GdsRecordType =
-            FromPrimitive::from_u8(record_type).ok_or(GdsError::Decode)?;
+            FromPrimitive::from_u8(record_type).ok_or(GdsError::InvalidRecordType(record_type))?;
         if !record_type.valid() {
-            return Err(GdsError::Decode);
+            return Err(GdsError::UnsupportedRecordType(record_type));
         }
         // Read and decode its DataType
         let data_type = file.read_u8()?;
-        let data_type = FromPrimitive::from_u8(data_type).ok_or(GdsError::Decode)?;
+        let data_type =
+            FromPrimitive::from_u8(data_type).ok_or(GdsError::InvalidDataType(data_type))?;
 
         // Based on that header-data, decode to a `GdsRecord`
         use GdsDataType::{BitArray, NoData, Str, F64, I16, I32};
@@ -270,7 +270,8 @@ pub fn read_gds(file_name: &str) -> Result<GdsLibrary, GdsError> {
             (GdsRecordType::BgnStruct, I16, 24) => GdsRecord::BgnStruct {
                 date_info: read_i16(&mut file, len)?,
             },
-            (GdsRecordType::StructName, Str, _) => GdsRecord::StructName(read_str(&mut file, len)?),
+            (GdsRecordType::StructName, Str, _) // For whatever reason, both `StrName` and `SName` records get used
+            | (GdsRecordType::SName, Str, _) => GdsRecord::StructName(read_str(&mut file, len)?),
             (GdsRecordType::EndStruct, NoData, 0) => GdsRecord::EndStruct,
 
             // Element-Level Records
@@ -323,6 +324,10 @@ pub fn read_gds(file_name: &str) -> Result<GdsLibrary, GdsError> {
             (GdsRecordType::Box, NoData, 0) => GdsRecord::Box,
             (GdsRecordType::BoxType, I16, 2) => GdsRecord::BoxType(read_i16(&mut file, len)?[0]),
             (GdsRecordType::Plex, I32, 4) => GdsRecord::Plex(read_i32(&mut file, len)?[0]),
+            (GdsRecordType::BeginExtn, I32, 4) => {
+                GdsRecord::BeginExtn(read_i32(&mut file, len)?[0])
+            }
+            (GdsRecordType::EndExtn, I32, 4) => GdsRecord::EndExtn(read_i32(&mut file, len)?[0]),
             (GdsRecordType::TapeNum, I16, 2) => GdsRecord::TapeNum(read_i16(&mut file, len)?[0]),
             (GdsRecordType::TapeCode, I16, 12) => GdsRecord::TapeCode(read_i16(&mut file, len)?),
             (GdsRecordType::Format, I16, 2) => GdsRecord::Format(read_i16(&mut file, len)?[0]),
@@ -378,35 +383,6 @@ pub fn gds_float_to_normal_peoples_float(bytes: &[u8]) -> Result<f64, GdsError> 
     Ok(val)
 }
 
-/// Parse a `GdsTextElement` from an iterator of `GdsRecords`
-/// Assumes the initial `Text` record has already been parsed.
-pub fn parse_text_elem(it: &mut impl Iterator<Item = GdsRecord>) -> Result<GdsTextElem, GdsError> {
-    let mut b = GdsTextElemBuilder::default();
-
-    while let Some(r) = it.next() {
-        if let GdsRecord::EndElement = r {
-            break; // End-of-element
-        }
-        let _ = match r {
-            GdsRecord::Layer(d) => b.layer(d),
-            GdsRecord::TextType(d) => b.texttype(d),
-            GdsRecord::Xy(d) => b.xy(d),
-            GdsRecord::String(d) => b.string(d),
-            GdsRecord::Mag(d) => b.mag(d),
-            GdsRecord::Angle(d) => b.angle(d),
-            GdsRecord::Presentation(d0, d1) => b.presentation(GdsPresentation(d0, d1)),
-            GdsRecord::Strans(d0, d1) => b.strans(GdsStrans(d0, d1)),
-            // Pending potential support
-            GdsRecord::Plex(_) | GdsRecord::ElemFlags(_, _) => {
-                return Err(GdsError::Unsupported(Some(r), None))
-            }
-            // Invalid
-            _ => return Err(GdsError::RecordContext(r, GdsContext::Text)),
-        };
-    }
-    Ok(b.build()?)
-}
-
 pub fn parse_boundary(it: &mut impl Iterator<Item = GdsRecord>) -> Result<GdsBoundary, GdsError> {
     let mut b = GdsBoundaryBuilder::default();
 
@@ -427,45 +403,6 @@ pub fn parse_boundary(it: &mut impl Iterator<Item = GdsRecord>) -> Result<GdsBou
         };
     }
     Ok(b.build()?)
-}
-pub fn parse_struct(it: &mut impl Iterator<Item = GdsRecord>) -> Result<GdsStruct, GdsError> {
-    let mut strukt = GdsStructBuilder::default();
-    let mut elems = Vec::<GdsElement>::new();
-
-    while let Some(r) = it.next() {
-        if let GdsRecord::EndStruct = r {
-            break; // End-of-struct
-        }
-        match r {
-            GdsRecord::StructName(d) => {
-                strukt.name(d);
-            }
-            GdsRecord::Boundary => {
-                let b = parse_boundary(it)?;
-                elems.push(GdsElement::GdsBoundary(b));
-            }
-            GdsRecord::Text => {
-                let b = parse_text_elem(it)?;
-                elems.push(GdsElement::GdsTextElem(b));
-            }
-            GdsRecord::Path => {
-                let b = parse_path(it)?;
-                elems.push(GdsElement::GdsPath(b));
-            }
-            // Spec-valid but unsupported records
-            | GdsRecord::StructRef
-            | GdsRecord::ArrayRef
-            | GdsRecord::Node
-            | GdsRecord::Box
-            | GdsRecord::PropAttr(_) => {
-                return Err(GdsError::Unsupported(Some(r), Some(GdsContext::Struct)))
-            }
-            // Invalid
-            _ => return Err(GdsError::RecordContext(r, GdsContext::Struct)),
-        };
-    }
-    strukt.elems(elems);
-    Ok(strukt.build()?)
 }
 
 pub fn parse_library(it: &mut impl Iterator<Item = GdsRecord>) -> Result<GdsLibrary, GdsError> {
@@ -549,8 +486,7 @@ pub enum GdsFormatType {
 /// # Gds Path Element
 ///
 /// Spec BNF:
-/// PATH [ELFLAGS] [PLEX] LAYER DATATYPE [PATHTYPE] [WIDTH] XY
-/// (Plus invalid records [BGNEXTN] [ENDEXTN])
+/// PATH [ELFLAGS] [PLEX] LAYER DATATYPE [PATHTYPE] [WIDTH] XY [BGNEXTN] [ENDEXTN])
 ///
 #[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
 #[builder(setter(into))]
@@ -565,6 +501,10 @@ pub struct GdsPath {
     pub width: Option<i32>,
     #[builder(default, setter(strip_option))]
     pub pathtype: Option<i16>,
+    #[builder(default, setter(strip_option))]
+    pub begin_extn: Option<i32>,
+    #[builder(default, setter(strip_option))]
+    pub end_extn: Option<i32>,
 
     // Not Supported (At least not yet)
     #[builder(default, setter(strip_option))]
@@ -585,6 +525,8 @@ pub fn parse_path(it: &mut impl Iterator<Item = GdsRecord>) -> Result<GdsPath, G
             GdsRecord::Xy(d) => b.xy(d),
             GdsRecord::Width(d) => b.width(d),
             GdsRecord::PathType(d) => b.pathtype(d),
+            GdsRecord::BeginExtn(d) => b.begin_extn(d),
+            GdsRecord::EndExtn(d) => b.end_extn(d),
             // Pending potential support
             GdsRecord::Plex(_) | GdsRecord::ElemFlags(_, _) => {
                 return Err(GdsError::Unsupported(Some(r), None))
@@ -630,17 +572,44 @@ pub struct GdsStructRef {
     pub name: String, // Instance Name
     pub xy: Vec<i32>, // Vector of x,y coordinates
 
-    // Not Supported (At least not yet)
-    #[builder(default, setter(strip_option))]
-    pub elflags: Option<GdsElemFlags>,
-    #[builder(default, setter(strip_option))]
-    pub plex: Option<GdsPlex>,
+    // Optional Fields
     #[builder(default, setter(strip_option))]
     pub strans: Option<GdsStrans>,
     #[builder(default, setter(strip_option))]
     pub mag: Option<f64>, // Magnification
     #[builder(default, setter(strip_option))]
     pub angle: Option<f64>, // Angle
+
+    // Not Supported (At least not yet)
+    #[builder(default, setter(strip_option))]
+    pub elflags: Option<GdsElemFlags>,
+    #[builder(default, setter(strip_option))]
+    pub plex: Option<GdsPlex>,
+}
+pub fn parse_struct_ref(
+    it: &mut impl Iterator<Item = GdsRecord>,
+) -> Result<GdsStructRef, GdsError> {
+    let mut b = GdsStructRefBuilder::default();
+
+    while let Some(r) = it.next() {
+        if let GdsRecord::EndElement = r {
+            break; // End-of-element
+        }
+        let _ = match r {
+            GdsRecord::StructName(d) => b.name(d),
+            GdsRecord::Xy(d) => b.xy(d),
+            GdsRecord::Strans(d0, d1) => b.strans(GdsStrans(d0, d1)),
+            GdsRecord::Mag(d) => b.mag(d),
+            GdsRecord::Angle(d) => b.angle(d),
+            // Pending potential support
+            GdsRecord::Plex(_) | GdsRecord::ElemFlags(_, _) => {
+                return Err(GdsError::Unsupported(Some(r), None))
+            }
+            // Invalid
+            _ => return Err(GdsError::RecordContext(r, GdsContext::StructRef)),
+        };
+    }
+    Ok(b.build()?)
 }
 ///
 /// # Gds Array Reference
@@ -656,20 +625,50 @@ pub struct GdsArrayRef {
     pub xy: Vec<i32>, // Vector of x,y coordinates
     pub cols: i16,    // Number of columns
     pub rows: i16,    // Number of rows
-
-    // Not Supported (At least not yet)
-    #[builder(default, setter(strip_option))]
-    pub elflags: Option<GdsElemFlags>,
-    #[builder(default, setter(strip_option))]
-    pub plex: Option<GdsPlex>,
+    
+    // Optional Fields
     #[builder(default, setter(strip_option))]
     pub strans: Option<GdsStrans>,
     #[builder(default, setter(strip_option))]
     pub mag: Option<f64>, // Magnification
     #[builder(default, setter(strip_option))]
     pub angle: Option<f64>, // Angle
-}
 
+    // Not Supported (At least not yet)
+    #[builder(default, setter(strip_option))]
+    pub elflags: Option<GdsElemFlags>,
+    #[builder(default, setter(strip_option))]
+    pub plex: Option<GdsPlex>,
+}
+pub fn parse_array_ref(
+    it: &mut impl Iterator<Item = GdsRecord>,
+) -> Result<GdsArrayRef, GdsError> {
+    let mut b = GdsArrayRefBuilder::default();
+
+    while let Some(r) = it.next() {
+        if let GdsRecord::EndElement = r {
+            break; // End-of-element
+        }
+        let _ = match r {
+            GdsRecord::StructName(d) => b.name(d),
+            GdsRecord::ColRow{rows, cols} => {
+                b.rows(rows);
+                b.cols(cols)
+            },
+            GdsRecord::Xy(d) => b.xy(d),
+            GdsRecord::Strans(d0, d1) => b.strans(GdsStrans(d0, d1)),
+            GdsRecord::Mag(d) => b.mag(d),
+            GdsRecord::Angle(d) => b.angle(d),
+            // Pending potential support
+            GdsRecord::Plex(_) | GdsRecord::ElemFlags(_, _) => {
+                return Err(GdsError::Unsupported(Some(r), None))
+            }
+            // Invalid
+            _ => return Err(GdsError::RecordContext(r, GdsContext::StructRef)),
+        };
+    }
+    Ok(b.build()?)
+}
 ///
 /// # Gds Text Element
 ///
@@ -690,6 +689,10 @@ pub struct GdsTextElem {
     #[builder(default, setter(strip_option))]
     pub presentation: Option<GdsPresentation>,
     #[builder(default, setter(strip_option))]
+    pub path_type: Option<i16>,
+    #[builder(default, setter(strip_option))]
+    pub width: Option<i32>,
+    #[builder(default, setter(strip_option))]
     pub strans: Option<GdsStrans>,
     #[builder(default, setter(strip_option))]
     pub mag: Option<f64>, // Magnification
@@ -703,10 +706,36 @@ pub struct GdsTextElem {
     pub elflags: Option<GdsElemFlags>,
     #[builder(default, setter(strip_option))]
     pub plex: Option<GdsPlex>,
-    #[builder(default, setter(strip_option))]
-    pub pathtype: Option<Tbd>,
-    #[builder(default, setter(strip_option))]
-    pub width: Option<Tbd>,
+}
+/// Parse a `GdsTextElement` from an iterator of `GdsRecords`
+/// Assumes the initial `Text` record has already been parsed.
+pub fn parse_text_elem(it: &mut impl Iterator<Item = GdsRecord>) -> Result<GdsTextElem, GdsError> {
+    let mut b = GdsTextElemBuilder::default();
+
+    while let Some(r) = it.next() {
+        if let GdsRecord::EndElement = r {
+            break; // End-of-element
+        }
+        let _ = match r {
+            GdsRecord::Layer(d) => b.layer(d),
+            GdsRecord::TextType(d) => b.texttype(d),
+            GdsRecord::Xy(d) => b.xy(d),
+            GdsRecord::String(d) => b.string(d),
+            GdsRecord::Presentation(d0, d1) => b.presentation(GdsPresentation(d0, d1)),
+            GdsRecord::PathType(d) => b.path_type(d),
+            GdsRecord::Width(d) => b.width(d),
+            GdsRecord::Strans(d0, d1) => b.strans(GdsStrans(d0, d1)),
+            GdsRecord::Mag(d) => b.mag(d),
+            GdsRecord::Angle(d) => b.angle(d),
+            // Pending potential support
+            GdsRecord::Plex(_) | GdsRecord::ElemFlags(_, _) => {
+                return Err(GdsError::Unsupported(Some(r), None))
+            }
+            // Invalid
+            _ => return Err(GdsError::RecordContext(r, GdsContext::Text)),
+        };
+    }
+    Ok(b.build()?)
 }
 ///
 /// # Gds Node Element
@@ -747,6 +776,27 @@ pub struct GdsBox {
     pub elflags: Option<GdsElemFlags>,
     #[builder(default, setter(strip_option))]
     pub plex: Option<GdsPlex>,
+}
+pub fn parse_box(it: &mut impl Iterator<Item = GdsRecord>) -> Result<GdsBox, GdsError> {
+    let mut b = GdsBoxBuilder::default();
+
+    while let Some(r) = it.next() {
+        if let GdsRecord::EndElement = r {
+            break; // End-of-element
+        }
+        let _ = match r {
+            GdsRecord::Layer(d) => b.layer(d),
+            GdsRecord::BoxType(d) => b.boxtype(d),
+            GdsRecord::Xy(d) => b.xy(d),
+            // Pending potential support
+            GdsRecord::Plex(_) | GdsRecord::ElemFlags(_, _) => {
+                return Err(GdsError::Unsupported(Some(r), None))
+            }
+            // Invalid
+            _ => return Err(GdsError::RecordContext(r, GdsContext::Box)),
+        };
+    }
+    Ok(b.build()?)
 }
 ///
 /// # Gds Element Enumeration  
@@ -791,6 +841,53 @@ pub struct GdsStruct {
     pub elems: Vec<GdsElement>, // Elements List
 }
 
+pub fn parse_struct(it: &mut impl Iterator<Item = GdsRecord>) -> Result<GdsStruct, GdsError> {
+    let mut strukt = GdsStructBuilder::default();
+    let mut elems = Vec::<GdsElement>::new();
+
+    while let Some(r) = it.next() {
+        if let GdsRecord::EndStruct = r {
+            break; // End-of-struct
+        }
+        match r {
+            GdsRecord::StructName(d) => {
+                strukt.name(d);
+            }
+            GdsRecord::Boundary => {
+                let b = parse_boundary(it)?;
+                elems.push(GdsElement::GdsBoundary(b));
+            }
+            GdsRecord::Text => {
+                let b = parse_text_elem(it)?;
+                elems.push(GdsElement::GdsTextElem(b));
+            }
+            GdsRecord::Path => {
+                let b = parse_path(it)?;
+                elems.push(GdsElement::GdsPath(b));
+            }
+            GdsRecord::Box => {
+                let b = parse_box(it)?;
+                elems.push(GdsElement::GdsBox(b));
+            }
+            GdsRecord::StructRef => {
+                let b = parse_struct_ref(it)?;
+                elems.push(GdsElement::GdsStructRef(b));
+            }
+            GdsRecord::ArrayRef => {
+                let b = parse_array_ref(it)?;
+                elems.push(GdsElement::GdsArrayRef(b));
+            }
+            // Spec-valid but unsupported records
+            GdsRecord::Node 
+            | GdsRecord::PropAttr(_) 
+            => return Err(GdsError::Unsupported(Some(r), Some(GdsContext::Struct))),
+            // Invalid
+            _ => return Err(GdsError::RecordContext(r, GdsContext::Struct)),
+        };
+    }
+    strukt.elems(elems);
+    Ok(strukt.build()?)
+}
 ///
 /// # Gds Library
 ///
@@ -833,7 +930,9 @@ pub struct GdsLibrary {
 pub enum GdsContext {
     Library,
     Struct,
+    StructRef,
     Boundary,
+    Box,
     Path,
     Text,
 }
@@ -844,9 +943,13 @@ pub enum GdsContext {
 #[derive(Clone, Debug)]
 pub enum GdsError {
     RecordDecode(GdsRecordType, GdsDataType, u16), // Invalid binary -> record conversion
-    RecordContext(GdsRecord, GdsContext),          // Record encountered in an invalid context
-    Unsupported(Option<GdsRecord>, Option<GdsContext>), // Unsupported Gds Feature
-    Decode,                                        // Other decoding errors
+    RecordContext(GdsRecord, GdsContext),          // Record in an invalid context
+    RecordLen(u16),                                // Invalid record length
+    InvalidDataType(u8),                           // Invalid record type
+    InvalidRecordType(u8),                         // Invalid record type
+    UnsupportedRecordType(GdsRecordType),          // Unsupported (but spec'ed) record type
+    Unsupported(Option<GdsRecord>, Option<GdsContext>), // Unsupported feature, in the decoded context
+    Decode,                                             // Other decoding errors
 }
 impl std::fmt::Display for GdsError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -879,15 +982,14 @@ mod tests {
     #[test]
     fn it_reads() -> Result<(), GdsError> {
         // Read a sample GDS
-        // let fname = format!("{}/resources/sample1.gds", env!("CARGO_MANIFEST_DIR"));
-        let fname = "/Users/dan/dev/dan/gdspy/tests/test.gds";
+        let fname = format!("{}/resources/sample1.gds", env!("CARGO_MANIFEST_DIR"));
         let lib = read_gds(&fname)?;
         // Read its "golden" (OK, previously parsed) version
         let fname = format!("{}/resources/sample1.json", env!("CARGO_MANIFEST_DIR"));
         let file = File::open(&fname)?;
         let golden: GdsLibrary = serde_json::from_reader(BufReader::new(file)).unwrap();
         // And check they're the same
-        // assert_eq!(lib, golden);
+        assert_eq!(lib, golden);
         Ok(())
     }
 }
