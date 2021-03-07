@@ -1,8 +1,11 @@
 use std::fmt;
 use std::fs::File;
-use std::io::BufWriter;
-use std::io::Write;
+use std::io::{BufReader, BufWriter};
+use std::io::{Read, Write};
 use std::str;
+
+#[allow(unused_imports)]
+use std::io::prelude::*;
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use enum_dispatch::enum_dispatch;
@@ -164,10 +167,10 @@ pub enum GdsRecord {
     LibSecur(i16),
 }
 impl GdsRecord {
-    /// Decode the next binary-encoded `GdsRecord` from open `File`-object `file`.
+    /// Decode the next binary-encoded `GdsRecord` from open `Read`-object `file`.
     /// Returns a `GdsError` if `file` cursor is not on a record-boundary,
     /// or if binary decoding otherwise fails.
-    pub fn decode(file: &mut File) -> Result<GdsRecord, GdsError> {
+    pub fn decode(file: &mut impl Read) -> Result<GdsRecord, GdsError> {
         // Read the 16-bit record-size. (In bytes, including the four header bytes.)
         let len = match file.read_u16::<BigEndian>() {
             Err(ref e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
@@ -282,6 +285,7 @@ impl GdsRecord {
         };
         Ok(record)
     }
+    /// Encode into bytes and write onto `writer`
     pub fn encode(&self, writer: &mut impl Write) -> Result<(), GdsError> {
         // This is split in two parts - header and data -
         // largely ease of handling the variety of datatypes
@@ -399,12 +403,12 @@ impl GdsRecord {
             | GdsRecord::EndExtn(d) => writer.write_i32::<BigEndian>(*d)?,
             // Single F64s
             GdsRecord::Mag(d) | GdsRecord::Angle(d) => {
-                writer.write_u64::<BigEndian>(normal_peoples_float_to_gds_float(*d))?
+                writer.write_u64::<BigEndian>(GdsFloat64::encode(*d))?
             }
             // "Structs"
             GdsRecord::Units(d0, d1) => {
-                writer.write_u64::<BigEndian>(normal_peoples_float_to_gds_float(*d0))?;
-                writer.write_u64::<BigEndian>(normal_peoples_float_to_gds_float(*d1))?;
+                writer.write_u64::<BigEndian>(GdsFloat64::encode(*d0))?;
+                writer.write_u64::<BigEndian>(GdsFloat64::encode(*d1))?;
             }
             GdsRecord::ColRow { cols, rows } => {
                 writer.write_i16::<BigEndian>(*cols)?;
@@ -459,8 +463,8 @@ pub enum GdsDataType {
     F64 = 5,
     Str = 6,
 }
-
-fn read_str(file: &mut File, len: u16) -> Result<String, GdsError> {
+/// Read `len` bytes and convert to `String`
+fn read_str(file: &mut impl Read, len: u16) -> Result<String, GdsError> {
     // ASCII Decode. First load into a bytes-vector.
     let mut data = read_bytes(file, len)?;
     // Strip optional end-of-string chars
@@ -471,112 +475,91 @@ fn read_str(file: &mut File, len: u16) -> Result<String, GdsError> {
     let s: String = std::str::from_utf8(&data)?.into();
     Ok(s)
 }
-
-fn read_bytes(file: &mut File, len: u16) -> Result<Vec<u8>, std::io::Error> {
+/// Read `len` bytes
+fn read_bytes(file: &mut impl Read, len: u16) -> Result<Vec<u8>, std::io::Error> {
     (0..len)
         .map(|_| file.read_u8())
         .into_iter()
         .collect::<Result<Vec<u8>, _>>()
 }
-
-fn read_i16(file: &mut File, len: u16) -> Result<Vec<i16>, std::io::Error> {
+/// Read `len/2` i16s from `len` bytes
+fn read_i16(file: &mut impl Read, len: u16) -> Result<Vec<i16>, std::io::Error> {
     (0..len / 2)
         .map(|_| file.read_i16::<BigEndian>())
         .collect::<Result<Vec<i16>, _>>()
 }
-
-fn read_i32(file: &mut File, len: u16) -> Result<Vec<i32>, std::io::Error> {
+/// Read `len/4` i32s from `len` bytes
+fn read_i32(file: &mut impl Read, len: u16) -> Result<Vec<i32>, std::io::Error> {
     (0..len / 4)
         .map(|_| file.read_i32::<BigEndian>())
         .collect::<Result<Vec<i32>, _>>()
 }
-fn read_f64(file: &mut File, len: u16) -> Result<Vec<f64>, GdsError> {
+/// Read `len/8` f64s from `len` bytes, decoding GDS's float-format along the way
+fn read_f64(file: &mut impl Read, len: u16) -> Result<Vec<f64>, GdsError> {
     // This is more fun, as it requires first grabbing "gds floats",
     // which we capture as eight-byte Vec<u8>, and then convert to IEEE-standard floats.
     let mut data = Vec::<f64>::new();
     for _ in 0..(len / 8) {
         let bytes = read_bytes(file, 8)?;
-        data.push(gds_float_to_normal_peoples_float(&bytes)?);
+        data.push(GdsFloat64::decode(&bytes)?);
     }
     Ok(data)
 }
-/// Read a GDS loaded from file at path `file_name`
-pub fn read_gds(file_name: &str) -> Result<GdsLibrary, GdsError> {
-    // Open our file, read its header
-    let mut file = File::open(&file_name)?;
-    let mut records = Vec::<GdsRecord>::new();
-
-    loop {
-        let record = GdsRecord::decode(&mut file)?;
-        if record == GdsRecord::EndLib {
-            // End of library. Any content to follow is ignored
-            records.push(record); // Still include the `EndLib` record
-            break;
+/// Incredibly, GDSII is old enough to have its own float-format,
+/// like most computers did before IEEE754.
+pub struct GdsFloat64 {}
+impl GdsFloat64 {
+    /// Decode eight GDSII-float-encoded bytes to `f64`
+    pub fn decode(bytes: &[u8]) -> Result<f64, GdsError> {
+        if bytes.len() != 8 {
+            return Err(GdsError::Decode); // Bad length
         }
-        records.push(record);
+        let neg = (bytes[0] & 0x80) != 0; // Sign bit
+        let exp: i32 = (bytes[0] & 0x7F) as i32 - 64; // Exponent 7b
+                                                      // Create the initially integer-valued mantissa
+                                                      // `wrapping_shl` is essentially `<<`; unclear why `u64` prefers the former.
+        let mantissa: u64 = (bytes[1] as u64).wrapping_shl(8 * 6)
+            | (bytes[2] as u64).wrapping_shl(8 * 5)
+            | (bytes[3] as u64).wrapping_shl(8 * 4)
+            | (bytes[4] as u64).wrapping_shl(8 * 3)
+            | (bytes[5] as u64).wrapping_shl(8 * 2)
+            | (bytes[6] as u64).wrapping_shl(8)
+            | (bytes[7] as u64);
+        // And apply its normalization to the range (1/16, 1)
+        let mantissa: f64 = mantissa as f64 / 2f64.powi(8 * 7);
+        // Combine everything into our overall value
+        let val: f64 = if neg {
+            -1.0 * mantissa * 16f64.powi(exp)
+        } else {
+            mantissa * 16f64.powi(exp)
+        };
+        Ok(val)
     }
-    // Create an iterator over records, and parse it to a library-tree
-    let mut it = records.into_iter();
-    let lib = parse_library(&mut it)?;
-    // Check that end-of-library is the end-of-stream
-    if it.next().is_some() {
-        return Err(GdsError::Decode);
+    /// Encode `f64` to eight bytes, this time stored as `u64`.
+    pub fn encode(mut val: f64) -> u64 {
+        if val == 0.0 {
+            return 0;
+        };
+        let mut top: u8 = 0;
+        if val < 0.0 {
+            top = 0x80;
+            val = -val;
+        }
+        let fexp: f64 = 0.25 * val.log2();
+        let mut exponent = fexp.ceil() as i32;
+        if fexp == fexp.ceil() {
+            exponent += 1;
+        }
+        let mantissa: u64 = (val * 16_f64.powi(14 - exponent)).round() as u64;
+        top += (64 + exponent) as u8;
+        let result: u64 = (top as u64).wrapping_shl(56) | (mantissa & 0x00FFFFFFFFFFFFFF);
+        return result;
     }
-    Ok(lib)
 }
 
-/// Incredibly, these things are old enough to have their own float-format,
-/// like most computers did before IEEE754
-pub fn gds_float_to_normal_peoples_float(bytes: &[u8]) -> Result<f64, GdsError> {
-    if bytes.len() != 8 {
-        return Err(GdsError::Decode); // Bad length
-    }
-    let neg = (bytes[0] & 0x80) != 0; // Sign bit
-    let exp: i32 = (bytes[0] & 0x7F) as i32 - 64; // Exponent 7b
-
-    // Create the initially integer-valued mantissa
-    // `wrapping_shl` is essentially `<<`; unclear why `u64` prefers the former.
-    let mantissa: u64 = (bytes[1] as u64).wrapping_shl(8 * 6)
-        | (bytes[2] as u64).wrapping_shl(8 * 5)
-        | (bytes[3] as u64).wrapping_shl(8 * 4)
-        | (bytes[4] as u64).wrapping_shl(8 * 3)
-        | (bytes[5] as u64).wrapping_shl(8 * 2)
-        | (bytes[6] as u64).wrapping_shl(8)
-        | (bytes[7] as u64);
-    // And apply its normalization to the range (1/16, 1)
-    let mantissa: f64 = mantissa as f64 / 2f64.powi(8 * 7);
-    // Combine everything into our overall value
-    let val: f64 = if neg {
-        -1.0 * mantissa * 16f64.powi(exp)
-    } else {
-        mantissa * 16f64.powi(exp)
-    };
-    Ok(val)
-}
-pub fn normal_peoples_float_to_gds_float(mut val: f64) -> u64 {
-    if val == 0.0 {
-        return 0;
-    };
-    let mut top: u8 = 0;
-    if val < 0.0 {
-        top = 0x80;
-        val = -val;
-    }
-    let fexp: f64 = 0.25 * val.log2();
-    let mut exponent = fexp.ceil() as i32;
-    if fexp == fexp.ceil() {
-        exponent += 1;
-    }
-    let mantissa: u64 = (val * 16_f64.powi(14 - exponent)).round() as u64;
-    top += (64 + exponent) as u8;
-    let result: u64 = (top as u64).wrapping_shl(56) | (mantissa & 0x00FFFFFFFFFFFFFF);
-    return result;
-}
-
-/// A placeholder while building up structural elements,
-/// while not having everyting underneath
+/// A placeholder for Unsupported elements
 #[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq)]
-pub struct Tbd {}
+pub struct UnImplemented {}
 
 /// # Gds Translation Settings
 /// For text-elements and references.
@@ -608,8 +591,8 @@ pub struct GdsUnits(f64, f64);
 /// # Gds Mask-Format Enumeration
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub enum GdsFormatType {
-    Archive,            // Default, sole fully-supported case
-    Filtered(Vec<Tbd>), // Filtered-format includes a list of Mask records. Not supported.
+    Archive,                      // Default, sole fully-supported case
+    Filtered(Vec<UnImplemented>), // Filtered-format includes a list of Mask records. Not supported.
 }
 /// # Gds Property
 /// Spec BNF:
@@ -1239,19 +1222,19 @@ pub struct GdsLibrary {
 
     // Optional (and all thus far unsupported) fields
     #[builder(default, setter(strip_option))]
-    libdirsize: Option<Tbd>,
+    libdirsize: Option<UnImplemented>,
     #[builder(default, setter(strip_option))]
-    srfname: Option<Tbd>,
+    srfname: Option<UnImplemented>,
     #[builder(default, setter(strip_option))]
-    libsecur: Option<Tbd>,
+    libsecur: Option<UnImplemented>,
     #[builder(default, setter(strip_option))]
-    reflibs: Option<Tbd>,
+    reflibs: Option<UnImplemented>,
     #[builder(default, setter(strip_option))]
-    fonts: Option<Tbd>,
+    fonts: Option<UnImplemented>,
     #[builder(default, setter(strip_option))]
-    attrtable: Option<Tbd>,
+    attrtable: Option<UnImplemented>,
     #[builder(default, setter(strip_option))]
-    generations: Option<Tbd>,
+    generations: Option<UnImplemented>,
     #[builder(default, setter(strip_option))]
     format_type: Option<GdsFormatType>,
 }
@@ -1304,6 +1287,32 @@ pub fn parse_library(it: &mut impl Iterator<Item = GdsRecord>) -> Result<GdsLibr
     Ok(lib.build()?)
 }
 impl GdsLibrary {
+    /// Read a GDS loaded from file at path `file_name`
+    pub fn load(file_name: &str) -> Result<GdsLibrary, GdsError> {
+        let mut file = BufReader::new(File::open(&file_name)?);
+        Self::decode(&mut file)
+    }
+    pub fn decode(file: &mut impl Read) -> Result<GdsLibrary, GdsError> {
+        // Open our file, read its header
+        let mut records = Vec::<GdsRecord>::new();
+        loop {
+            let record = GdsRecord::decode(file)?;
+            if record == GdsRecord::EndLib {
+                // End of library. Any content to follow is ignored
+                records.push(record); // Still include the `EndLib` record
+                break;
+            }
+            records.push(record);
+        }
+        // Create an iterator over records, and parse it to a library-tree
+        let mut it = records.into_iter();
+        let lib = parse_library(&mut it)?;
+        // Check that end-of-library is the end-of-stream
+        if it.next().is_some() {
+            return Err(GdsError::Decode);
+        }
+        Ok(lib)
+    }
     /// Save to file `fname`
     pub fn save(&self, fname: &str) -> Result<(), GdsError> {
         let mut file = BufWriter::new(File::create(fname)?);
@@ -1399,13 +1408,14 @@ impl From<String> for GdsError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::BufReader;
+    use std::io::SeekFrom;
+    use tempfile::tempfile;
 
     #[test]
     fn it_reads() -> Result<(), GdsError> {
         // Read a sample GDS and compare to golden data
         let fname = format!("{}/resources/sample1.gds", env!("CARGO_MANIFEST_DIR"));
-        let lib = read_gds(&fname)?;
+        let lib = GdsLibrary::load(&fname)?;
         check(&lib, "sample1.json");
         Ok(())
     }
@@ -1413,16 +1423,16 @@ mod tests {
     fn it_round_trips() -> Result<(), GdsError> {
         // Read a sample, write it back, read that, and check the two are equal
         let fname = format!("{}/resources/sample1.gds", env!("CARGO_MANIFEST_DIR"));
-        let lib = read_gds(&fname)?;
+        let lib = GdsLibrary::load(&fname)?;
         // And check it round-trips to file
-        roundtrip(&lib, "sample1_copy.gds")?;
+        roundtrip(&lib)?;
         Ok(())
     }
     #[test]
     fn it_instantiates() -> Result<(), GdsError> {
         // Read a sample, add a cell which instantiates it
         let fname = format!("{}/resources/sample1.gds", env!("CARGO_MANIFEST_DIR"));
-        let mut lib = read_gds(&fname)?;
+        let mut lib = GdsLibrary::load(&fname)?;
         lib.name = "has_inst_lib".into();
         let s = GdsStruct {
             name: "has_inst".into(),
@@ -1441,14 +1451,14 @@ mod tests {
         // Check it against golden data
         check(&lib, "sample1_inst.json");
         // And check it round-trips to file
-        roundtrip(&lib, "sample1_inst.gds")?;
+        roundtrip(&lib)?;
         Ok(())
     }
     #[test]
     fn it_arrays() -> Result<(), GdsError> {
         // Read a sample, add a cell which arrays it
         let fname = format!("{}/resources/sample1.gds", env!("CARGO_MANIFEST_DIR"));
-        let mut lib = read_gds(&fname)?;
+        let mut lib = GdsLibrary::load(&fname)?;
         lib.name = "has_array_lib".into();
         let s = GdsStruct {
             name: "has_array".into(),
@@ -1469,13 +1479,18 @@ mod tests {
         // Check it against golden data
         check(&lib, "sample1_array.json");
         // And check it round-trips to file
-        roundtrip(&lib, "sample1_array.gds")?;
+        roundtrip(&lib)?;
         Ok(())
     }
-    fn roundtrip(lib: &GdsLibrary, fname: &str) -> Result<(), GdsError> {
-        let fname = format!("{}/resources/{}", env!("CARGO_MANIFEST_DIR"), fname);
-        lib.save(&fname)?;
-        let lib2 = read_gds(&fname)?;
+    /// Check `lib` matches across a write-read round-trip cycle
+    fn roundtrip(lib: &GdsLibrary) -> Result<(), GdsError> {
+        // Write to a temporary file
+        let mut file = tempfile()?;
+        lib.encode(&mut file)?;
+        // Rewind to the file-start, and read it back
+        file.seek(SeekFrom::Start(0))?;
+        let lib2 = GdsLibrary::decode(&mut file)?;
+        // And check the two line up
         assert_eq!(*lib, lib2);
         Ok(())
     }
