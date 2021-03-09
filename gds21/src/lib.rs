@@ -564,9 +564,43 @@ pub struct UnImplemented {}
 /// # Gds Translation Settings
 /// For text-elements and references.
 /// As configured by the STRANS records.
-#[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq)]
-pub struct GdsStrans(u8, u8);
+#[derive(Default, Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct GdsStrans {
+    // Required Fields
+    pub reflected: bool, // Reflection
+    pub abs_mag: bool,   // Absolute Magnification Setting. Not supported
+    pub abs_angle: bool, // Absolute Angle Setting. Not supported
 
+    // Optional Fields
+    pub mag: Option<f64>,   // Magnification Factor
+    pub angle: Option<f64>, // Angle, in degrees counter-clockwise
+}
+impl GdsStrans {
+    /// Decode from bytes
+    pub fn decode(d0: u8, d1: u8) -> Self {
+        Self {
+            reflected: d0 & 0x80 != 0,
+            abs_mag: d1 & 0x04 != 0,
+            abs_angle: d1 & 0x02 != 0,
+            ..Default::default()
+        }
+    }
+}
+impl ToRecords for GdsStrans {
+    fn to_records(&self) -> Vec<GdsRecord> {
+        let mut records = vec![GdsRecord::Strans(
+            (self.reflected as u8) << 7,
+            (self.abs_mag as u8) << 2 | (self.abs_angle as u8) << 1,
+        )];
+        if let Some(ref e) = self.mag {
+            records.push(GdsRecord::Mag(*e));
+        }
+        if let Some(ref e) = self.angle {
+            records.push(GdsRecord::Angle(*e));
+        }
+        records
+    }
+}
 /// # Gds Text-Presentation Flags
 /// Sets fonts, text justification, and the like.
 #[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq)]
@@ -613,21 +647,27 @@ pub struct GdsProperty {
 #[builder(setter(into))]
 pub struct GdsPath {
     // Required Fields
-    pub layer: i16,    // Layer ID
+    pub layer: i16,    // Layer Number
     pub datatype: i16, // DataType ID
     pub xy: Vec<i32>,  // Vector of x,y coordinates
 
     // Optional Fields
+    #[serde(default)]
     #[builder(default, setter(strip_option))]
     pub width: Option<i32>,
+    #[serde(default)]
     #[builder(default, setter(strip_option))]
     pub path_type: Option<i16>,
+    #[serde(default)]
     #[builder(default, setter(strip_option))]
     pub begin_extn: Option<i32>,
+    #[serde(default)]
     #[builder(default, setter(strip_option))]
     pub end_extn: Option<i32>,
+    #[serde(default)]
     #[builder(default, setter(strip_option))]
     pub elflags: Option<GdsElemFlags>,
+    #[serde(default)]
     #[builder(default, setter(strip_option))]
     pub plex: Option<GdsPlex>,
 }
@@ -697,13 +737,15 @@ impl ToRecords for GdsPath {
 #[builder(setter(into))]
 pub struct GdsBoundary {
     // Required Fields
-    pub layer: i16,    // Layer ID
+    pub layer: i16,    // Layer Number
     pub datatype: i16, // DataType ID
     pub xy: Vec<i32>,  // Vector of x,y coordinates
 
     // Optional Fields
+    #[serde(default)]
     #[builder(default, setter(strip_option))]
     pub elflags: Option<GdsElemFlags>,
+    #[serde(default)]
     #[builder(default, setter(strip_option))]
     pub plex: Option<GdsPlex>,
 }
@@ -757,18 +799,17 @@ impl ToRecords for GdsBoundary {
 #[builder(setter(into))]
 pub struct GdsStructRef {
     // Required Fields
-    pub name: String, // Instance Name
+    pub name: String, // Struct (Cell) Name
     pub xy: Vec<i32>, // Vector of x,y coordinates
 
     // Optional Fields
-    #[builder(default, setter(strip_option))]
-    pub strans: Option<GdsStrans>,
-    #[builder(default, setter(strip_option))]
-    pub mag: Option<f64>, // Magnification
-    #[builder(default, setter(strip_option))]
-    pub angle: Option<f64>, // Angle
+    #[serde(default)]
+    #[builder(default)]
+    pub strans: Option<GdsStrans>, // Translation & Reflection Options
+    #[serde(default)]
     #[builder(default, setter(strip_option))]
     pub elflags: Option<GdsElemFlags>,
+    #[serde(default)]
     #[builder(default, setter(strip_option))]
     pub plex: Option<GdsPlex>,
 }
@@ -776,19 +817,37 @@ pub fn parse_struct_ref(
     it: &mut impl Iterator<Item = GdsRecord>,
 ) -> Result<GdsStructRef, GdsError> {
     let mut b = GdsStructRefBuilder::default();
+    let mut strans: Option<GdsStrans> = None;
 
     while let Some(r) = it.next() {
         if let GdsRecord::EndElement = r {
             break; // End-of-element
         }
-        let _ = match r {
+        match r {
             GdsRecord::StructRefName(d) => b.name(d),
             GdsRecord::Xy(d) => b.xy(d),
-            GdsRecord::Strans(d0, d1) => b.strans(GdsStrans(d0, d1)),
-            GdsRecord::Mag(d) => b.mag(d),
-            GdsRecord::Angle(d) => b.angle(d),
             GdsRecord::Plex(d) => b.plex(GdsPlex(d)),
             GdsRecord::ElemFlags(d0, d1) => b.elflags(GdsElemFlags(d0, d1)),
+            // Reflection & translation data
+            // When we can figure out how to peek, this can be a method
+            GdsRecord::Strans(d0, d1) => {
+                strans = Some(GdsStrans::decode(d0, d1));
+                &mut b
+            }
+            GdsRecord::Mag(d) => {
+                match strans {
+                    Some(ref mut s) => s.mag = Some(d),
+                    None => return Err(GdsError::Decode),
+                }
+                &mut b
+            }
+            GdsRecord::Angle(d) => {
+                match strans {
+                    Some(ref mut s) => s.angle = Some(d),
+                    None => return Err(GdsError::Decode),
+                }
+                &mut b
+            }
             GdsRecord::PropAttr(_) | GdsRecord::PropValue(_) => {
                 return Err(GdsError::Unsupported(Some(r), Some(GdsContext::StructRef)))
             }
@@ -796,6 +855,7 @@ pub fn parse_struct_ref(
             _ => return Err(GdsError::RecordContext(r, GdsContext::StructRef)),
         };
     }
+    b.strans(strans);
     let b = b.build()?;
     Ok(b)
 }
@@ -807,13 +867,8 @@ impl ToRecords for GdsStructRef {
             GdsRecord::Xy(self.xy.clone()),
         ];
         if let Some(ref e) = self.strans {
-            records.push(GdsRecord::Strans(e.0, e.1));
-        }
-        if let Some(ref e) = self.mag {
-            records.push(GdsRecord::Mag(*e));
-        }
-        if let Some(ref e) = self.angle {
-            records.push(GdsRecord::Angle(*e));
+            let rs = e.to_records();
+            records.extend(rs);
         }
         if let Some(ref e) = self.elflags {
             records.push(GdsRecord::ElemFlags(e.0, e.1));
@@ -835,41 +890,58 @@ impl ToRecords for GdsStructRef {
 #[builder(setter(into))]
 pub struct GdsArrayRef {
     // Required Fields
-    pub name: String, // Struct Name
+    pub name: String, // Struct (Cell) Name
     pub xy: Vec<i32>, // Vector of x,y coordinates
     pub cols: i16,    // Number of columns
     pub rows: i16,    // Number of rows
     // Optional Fields
-    #[builder(default, setter(strip_option))]
-    pub strans: Option<GdsStrans>,
-    #[builder(default, setter(strip_option))]
-    pub mag: Option<f64>, // Magnification
-    #[builder(default, setter(strip_option))]
-    pub angle: Option<f64>, // Angle
+    #[serde(default)]
+    #[builder(default)]
+    pub strans: Option<GdsStrans>, // Translation & Reflection Options
+    #[serde(default)]
     #[builder(default, setter(strip_option))]
     pub elflags: Option<GdsElemFlags>,
+    #[serde(default)]
     #[builder(default, setter(strip_option))]
     pub plex: Option<GdsPlex>,
 }
 pub fn parse_array_ref(it: &mut impl Iterator<Item = GdsRecord>) -> Result<GdsArrayRef, GdsError> {
     let mut b = GdsArrayRefBuilder::default();
+    let mut strans: Option<GdsStrans> = None;
 
     while let Some(r) = it.next() {
         if let GdsRecord::EndElement = r {
             break; // End-of-element
         }
-        let _ = match r {
+        match r {
             GdsRecord::StructRefName(d) => b.name(d),
             GdsRecord::ColRow { rows, cols } => {
                 b.rows(rows);
                 b.cols(cols)
             }
             GdsRecord::Xy(d) => b.xy(d),
-            GdsRecord::Strans(d0, d1) => b.strans(GdsStrans(d0, d1)),
-            GdsRecord::Mag(d) => b.mag(d),
-            GdsRecord::Angle(d) => b.angle(d),
             GdsRecord::Plex(d) => b.plex(GdsPlex(d)),
             GdsRecord::ElemFlags(d0, d1) => b.elflags(GdsElemFlags(d0, d1)),
+            // Reflection & translation data
+            // When we can figure out how to peek, this can be a method
+            GdsRecord::Strans(d0, d1) => {
+                strans = Some(GdsStrans::decode(d0, d1));
+                &mut b
+            }
+            GdsRecord::Mag(d) => {
+                match strans {
+                    Some(ref mut s) => s.mag = Some(d),
+                    None => return Err(GdsError::Decode),
+                }
+                &mut b
+            }
+            GdsRecord::Angle(d) => {
+                match strans {
+                    Some(ref mut s) => s.angle = Some(d),
+                    None => return Err(GdsError::Decode),
+                }
+                &mut b
+            }
             GdsRecord::PropAttr(_) | GdsRecord::PropValue(_) => {
                 return Err(GdsError::Unsupported(Some(r), Some(GdsContext::ArrayRef)))
             }
@@ -877,6 +949,7 @@ pub fn parse_array_ref(it: &mut impl Iterator<Item = GdsRecord>) -> Result<GdsAr
             _ => return Err(GdsError::RecordContext(r, GdsContext::ArrayRef)),
         };
     }
+    b.strans(strans);
     let b = b.build()?;
     Ok(b)
 }
@@ -892,13 +965,8 @@ impl ToRecords for GdsArrayRef {
             },
         ];
         if let Some(ref e) = self.strans {
-            records.push(GdsRecord::Strans(e.0, e.1));
-        }
-        if let Some(ref e) = self.mag {
-            records.push(GdsRecord::Mag(*e));
-        }
-        if let Some(ref e) = self.angle {
-            records.push(GdsRecord::Angle(*e));
+            let rs = e.to_records();
+            records.extend(rs);
         }
         if let Some(ref e) = self.elflags {
             records.push(GdsRecord::ElemFlags(e.0, e.1));
@@ -921,26 +989,28 @@ impl ToRecords for GdsArrayRef {
 #[builder(setter(into))]
 pub struct GdsTextElem {
     // Required Fields
-    pub string: String,
-    pub layer: i16,
-    pub texttype: i16,
-    pub xy: Vec<i32>,
+    pub string: String, // Text Value
+    pub layer: i16,     // Layer Number
+    pub texttype: i16,  // Text-Type ID
+    pub xy: Vec<i32>,   // Vector of x,y coordinates
 
     // Optional Fields
+    #[serde(default)]
     #[builder(default, setter(strip_option))]
     pub presentation: Option<GdsPresentation>,
+    #[serde(default)]
     #[builder(default, setter(strip_option))]
     pub path_type: Option<i16>,
+    #[serde(default)]
     #[builder(default, setter(strip_option))]
     pub width: Option<i32>,
-    #[builder(default, setter(strip_option))]
-    pub strans: Option<GdsStrans>,
-    #[builder(default, setter(strip_option))]
-    pub mag: Option<f64>, // Magnification
-    #[builder(default, setter(strip_option))]
-    pub angle: Option<f64>, // Angle
+    #[serde(default)]
+    #[builder(default)]
+    pub strans: Option<GdsStrans>, // Translation & Reflection Options
+    #[serde(default)]
     #[builder(default, setter(strip_option))]
     pub elflags: Option<GdsElemFlags>,
+    #[serde(default)]
     #[builder(default, setter(strip_option))]
     pub plex: Option<GdsPlex>,
 }
@@ -948,12 +1018,13 @@ pub struct GdsTextElem {
 /// Assumes the initial `Text` record has already been parsed.
 pub fn parse_text_elem(it: &mut impl Iterator<Item = GdsRecord>) -> Result<GdsTextElem, GdsError> {
     let mut b = GdsTextElemBuilder::default();
+    let mut strans: Option<GdsStrans> = None;
 
     while let Some(r) = it.next() {
         if let GdsRecord::EndElement = r {
             break; // End-of-element
         }
-        let _ = match r {
+        match r {
             GdsRecord::Layer(d) => b.layer(d),
             GdsRecord::TextType(d) => b.texttype(d),
             GdsRecord::Xy(d) => b.xy(d),
@@ -961,11 +1032,28 @@ pub fn parse_text_elem(it: &mut impl Iterator<Item = GdsRecord>) -> Result<GdsTe
             GdsRecord::Presentation(d0, d1) => b.presentation(GdsPresentation(d0, d1)),
             GdsRecord::PathType(d) => b.path_type(d),
             GdsRecord::Width(d) => b.width(d),
-            GdsRecord::Strans(d0, d1) => b.strans(GdsStrans(d0, d1)),
-            GdsRecord::Mag(d) => b.mag(d),
-            GdsRecord::Angle(d) => b.angle(d),
             GdsRecord::Plex(d) => b.plex(GdsPlex(d)),
             GdsRecord::ElemFlags(d0, d1) => b.elflags(GdsElemFlags(d0, d1)),
+            // Reflection & translation data
+            // When we can figure out how to peek, this can be a method
+            GdsRecord::Strans(d0, d1) => {
+                strans = Some(GdsStrans::decode(d0, d1));
+                &mut b
+            }
+            GdsRecord::Mag(d) => {
+                match strans {
+                    Some(ref mut s) => s.mag = Some(d),
+                    None => return Err(GdsError::Decode),
+                }
+                &mut b
+            }
+            GdsRecord::Angle(d) => {
+                match strans {
+                    Some(ref mut s) => s.angle = Some(d),
+                    None => return Err(GdsError::Decode),
+                }
+                &mut b
+            }
             GdsRecord::PropAttr(_) | GdsRecord::PropValue(_) => {
                 return Err(GdsError::Unsupported(Some(r), Some(GdsContext::Boundary)))
             }
@@ -973,6 +1061,7 @@ pub fn parse_text_elem(it: &mut impl Iterator<Item = GdsRecord>) -> Result<GdsTe
             _ => return Err(GdsError::RecordContext(r, GdsContext::Text)),
         };
     }
+    b.strans(strans);
     Ok(b.build()?)
 }
 impl ToRecords for GdsTextElem {
@@ -994,13 +1083,8 @@ impl ToRecords for GdsTextElem {
             records.push(GdsRecord::Width(*e));
         }
         if let Some(ref e) = self.strans {
-            records.push(GdsRecord::Strans(e.0, e.1));
-        }
-        if let Some(ref e) = self.mag {
-            records.push(GdsRecord::Mag(*e));
-        }
-        if let Some(ref e) = self.angle {
-            records.push(GdsRecord::Angle(*e));
+            let rs = e.to_records();
+            records.extend(rs);
         }
         if let Some(ref e) = self.elflags {
             records.push(GdsRecord::ElemFlags(e.0, e.1));
@@ -1022,13 +1106,15 @@ impl ToRecords for GdsTextElem {
 #[builder(setter(into))]
 pub struct GdsNode {
     // Required Fields
-    pub layer: i16,    // Layer ID
+    pub layer: i16,    // Layer Number
     pub nodetype: i16, // Node-Type ID
     pub xy: Vec<i32>,  // Vector of x,y coordinates
 
     // Optional Fields
+    #[serde(default)]
     #[builder(default, setter(strip_option))]
     pub elflags: Option<GdsElemFlags>,
+    #[serde(default)]
     #[builder(default, setter(strip_option))]
     pub plex: Option<GdsPlex>,
 }
@@ -1042,13 +1128,15 @@ pub struct GdsNode {
 #[builder(setter(into))]
 pub struct GdsBox {
     // Required Fields
-    pub layer: i16,   // Layer ID
+    pub layer: i16,   // Layer Number
     pub boxtype: i16, // Box-Type ID
     pub xy: Vec<i32>, // Vector of x,y coordinates
 
     // Optional Fields
+    #[serde(default)]
     #[builder(default, setter(strip_option))]
     pub elflags: Option<GdsElemFlags>,
+    #[serde(default)]
     #[builder(default, setter(strip_option))]
     pub plex: Option<GdsPlex>,
 }
@@ -1221,20 +1309,28 @@ pub struct GdsLibrary {
     pub structs: Vec<GdsStruct>, // Vector of defined Stucts, generally Cells
 
     // Optional (and all thus far unsupported) fields
+    #[serde(default)]
     #[builder(default, setter(strip_option))]
     libdirsize: Option<UnImplemented>,
+    #[serde(default)]
     #[builder(default, setter(strip_option))]
     srfname: Option<UnImplemented>,
+    #[serde(default)]
     #[builder(default, setter(strip_option))]
     libsecur: Option<UnImplemented>,
+    #[serde(default)]
     #[builder(default, setter(strip_option))]
     reflibs: Option<UnImplemented>,
+    #[serde(default)]
     #[builder(default, setter(strip_option))]
     fonts: Option<UnImplemented>,
+    #[serde(default)]
     #[builder(default, setter(strip_option))]
     attrtable: Option<UnImplemented>,
+    #[serde(default)]
     #[builder(default, setter(strip_option))]
     generations: Option<UnImplemented>,
+    #[serde(default)]
     #[builder(default, setter(strip_option))]
     format_type: Option<GdsFormatType>,
 }
@@ -1305,7 +1401,7 @@ impl GdsLibrary {
             records.push(record);
         }
         // Create an iterator over records, and parse it to a library-tree
-        let mut it = records.into_iter();
+        let mut it = records.into_iter().peekable();
         let lib = parse_library(&mut it)?;
         // Check that end-of-library is the end-of-stream
         if it.next().is_some() {
@@ -1416,14 +1512,13 @@ mod tests {
         // Read a sample GDS and compare to golden data
         let fname = format!("{}/resources/sample1.gds", env!("CARGO_MANIFEST_DIR"));
         let lib = GdsLibrary::load(&fname)?;
-        check(&lib, "sample1.json");
+        check(&lib, &resource("sample1.json"));
         Ok(())
     }
     #[test]
     fn it_round_trips() -> Result<(), GdsError> {
-        // Read a sample, write it back, read that, and check the two are equal
-        let fname = format!("{}/resources/sample1.gds", env!("CARGO_MANIFEST_DIR"));
-        let lib = GdsLibrary::load(&fname)?;
+        // Read a sample
+        let lib = GdsLibrary::load(&resource("sample1.gds"))?;
         // And check it round-trips to file
         roundtrip(&lib)?;
         Ok(())
@@ -1441,15 +1536,13 @@ mod tests {
                 name: "dff1".into(),
                 xy: vec![11_000, 11_000],
                 strans: None,
-                mag: None,
-                angle: None,
                 elflags: None,
                 plex: None,
             })],
         };
         lib.structs.push(s);
         // Check it against golden data
-        check(&lib, "sample1_inst.json");
+        check(&lib, &resource("sample1_inst.json"));
         // And check it round-trips to file
         roundtrip(&lib)?;
         Ok(())
@@ -1469,15 +1562,13 @@ mod tests {
                 cols: 100,
                 rows: 100,
                 strans: None,
-                mag: None,
-                angle: None,
                 elflags: None,
                 plex: None,
             })],
         };
         lib.structs.push(s);
         // Check it against golden data
-        check(&lib, "sample1_array.json");
+        check(&lib, &resource("sample1_array.json"));
         // And check it round-trips to file
         roundtrip(&lib)?;
         Ok(())
@@ -1502,9 +1593,12 @@ mod tests {
         let golden = load_json(fname);
         assert_eq!(*lib, golden);
     }
+    /// Grab the full path of resource-file `fname`
+    fn resource(fname: &str) -> String {
+        format!("{}/resources/{}", env!("CARGO_MANIFEST_DIR"), fname)
+    }
     /// Load a library from JSON resource at path `fname`
     fn load_json(fname: &str) -> GdsLibrary {
-        let fname = format!("{}/resources/{}", env!("CARGO_MANIFEST_DIR"), fname);
         let file = File::open(&fname).unwrap();
         let golden: GdsLibrary = serde_json::from_reader(BufReader::new(file)).unwrap();
         golden
@@ -1512,7 +1606,6 @@ mod tests {
     /// Save a `GdsLibrary` as a JSON-format file at path `fname`
     #[allow(dead_code)]
     fn save_json(lib: &GdsLibrary, fname: &str) {
-        let fname = format!("{}/resources/{}", env!("CARGO_MANIFEST_DIR"), fname);
         let mut file = BufWriter::new(File::create(fname).unwrap());
         let s = serde_json::to_string(lib).unwrap();
         file.write_all(s.as_bytes()).unwrap();
