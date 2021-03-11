@@ -1486,8 +1486,6 @@ impl From<String> for GdsError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::SeekFrom;
-    use tempfile::tempfile;
 
     #[test]
     fn it_reads() -> Result<(), GdsError> {
@@ -1555,19 +1553,6 @@ mod tests {
         roundtrip(&lib)?;
         Ok(())
     }
-    /// Check `lib` matches across a write-read round-trip cycle
-    fn roundtrip(lib: &GdsLibrary) -> Result<(), GdsError> {
-        // Write to a temporary file
-        let mut file = tempfile()?;
-        lib.encode(&mut file)?;
-        // Rewind to the file-start, and read it back
-        file.seek(SeekFrom::Start(0))?;
-        let mut it = GdsReaderIter::new(BufReader::new(file))?;
-        let lib2 = GdsLibrary::parse(&mut it)?;
-        // And check the two line up
-        assert_eq!(*lib, lib2);
-        Ok(())
-    }
     /// Compare `lib` to "golden" data loaded from JSON at path `golden`.
     fn check(lib: &GdsLibrary, fname: &str) {
         // Uncomment this bit to over-write the golden data
@@ -1594,4 +1579,20 @@ mod tests {
         file.write_all(s.as_bytes()).unwrap();
         file.flush().unwrap();
     }
+}
+#[cfg(any(test, feature = "selftest"))]
+/// Check `lib` matches across a write-read round-trip cycle
+fn roundtrip(lib: &GdsLibrary) -> Result<(), GdsError> {
+    use std::io::SeekFrom;
+    use tempfile::tempfile;
+    // Write to a temporary file
+    let mut file = tempfile()?;
+    lib.encode(&mut file)?;
+    // Rewind to the file-start, and read it back
+    file.seek(SeekFrom::Start(0))?;
+    let mut it = GdsReaderIter::new(BufReader::new(file))?;
+    let lib2 = GdsLibrary::parse(&mut it)?;
+    // And check the two line up
+    assert_eq!(*lib, lib2);
+    Ok(())
 }
