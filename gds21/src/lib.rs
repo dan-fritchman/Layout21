@@ -1582,7 +1582,7 @@ mod tests {
 }
 #[cfg(any(test, feature = "selftest"))]
 /// Check `lib` matches across a write-read round-trip cycle
-fn roundtrip(lib: &GdsLibrary) -> Result<(), GdsError> {
+pub fn roundtrip(lib: &GdsLibrary) -> Result<(), GdsError> {
     use std::io::SeekFrom;
     use tempfile::tempfile;
     // Write to a temporary file
