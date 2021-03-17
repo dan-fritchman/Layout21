@@ -1,7 +1,4 @@
-
 test:
-  tags: [ docker ]
-  image: rust:latest
   script:
     - rustc --version && cargo --version  # Print version info for debugging
     - cargo test --workspace --verbose
