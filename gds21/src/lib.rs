@@ -1,3 +1,11 @@
+//!
+//! # Gds21 
+//! 
+//! GDSII Integrated Circuit Layout Format Parser and Writer 
+//! 
+//! 
+//! 
+
 use std::fmt;
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
@@ -20,7 +28,7 @@ extern crate derive_builder;
 ///
 /// # Gds Record Types
 ///
-/// In the numeric-order specified by GDSII, for automatic `FromPrimitive` conversions.
+/// In the numeric-order specified by GDSII, for automatic [FromPrimitive] conversions.
 ///
 #[derive(FromPrimitive, Debug, Clone, Copy)]
 pub enum GdsRecordType {
@@ -635,13 +643,19 @@ pub struct GdsPlex(i32);
 
 /// # Gds Library Units
 ///
-/// From the spec (not us):
+/// From the spec (not from us):
 /// The first number is the size of a database-unit, in user-units.
 /// The second is the size of a database-unit in meters.
 /// To calculate the size of a user-unit in meters,
 /// divide the second number by the first.
+///
+/// FIXME: the names of these fields probably indicate they aren't terribly intuitive.
+/// Probably re-org them.
 #[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq)]
-pub struct GdsUnits(f64, f64);
+pub struct GdsUnits {
+    pub dbu: f64,
+    pub uu: f64,
+}
 
 /// # Gds Mask-Format Enumeration
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
@@ -1277,28 +1291,28 @@ pub struct GdsLibrary {
     // Optional (and all thus far unsupported) fields
     #[serde(default)]
     #[builder(default, setter(strip_option))]
-    libdirsize: Option<UnImplemented>,
+    pub libdirsize: Option<UnImplemented>,
     #[serde(default)]
     #[builder(default, setter(strip_option))]
-    srfname: Option<UnImplemented>,
+    pub srfname: Option<UnImplemented>,
     #[serde(default)]
     #[builder(default, setter(strip_option))]
-    libsecur: Option<UnImplemented>,
+    pub libsecur: Option<UnImplemented>,
     #[serde(default)]
     #[builder(default, setter(strip_option))]
-    reflibs: Option<UnImplemented>,
+    pub reflibs: Option<UnImplemented>,
     #[serde(default)]
     #[builder(default, setter(strip_option))]
-    fonts: Option<UnImplemented>,
+    pub fonts: Option<UnImplemented>,
     #[serde(default)]
     #[builder(default, setter(strip_option))]
-    attrtable: Option<UnImplemented>,
+    pub attrtable: Option<UnImplemented>,
     #[serde(default)]
     #[builder(default, setter(strip_option))]
-    generations: Option<UnImplemented>,
+    pub generations: Option<UnImplemented>,
     #[serde(default)]
     #[builder(default, setter(strip_option))]
-    format_type: Option<GdsFormatType>,
+    pub format_type: Option<GdsFormatType>,
 }
 impl GdsLibrary {
     /// Read a GDS loaded from file at path `file_name`
@@ -1333,7 +1347,7 @@ impl GdsLibrary {
                     lib.name(d);
                 }
                 GdsRecord::Units(d0, d1) => {
-                    lib.units(GdsUnits(d0, d1));
+                    lib.units(GdsUnits { dbu: d0, uu: d1 });
                 }
                 GdsRecord::BgnStruct { date_info } => {
                     let strukt = GdsStruct::parse(it, date_info)?;
@@ -1389,7 +1403,7 @@ impl GdsLibrary {
         }
         .encode(writer)?;
         GdsRecord::LibName(self.name.clone()).encode(writer)?;
-        GdsRecord::Units(self.units.0, self.units.1).encode(writer)?;
+        GdsRecord::Units(self.units.dbu, self.units.uu).encode(writer)?;
         // Write all of our Structs/Cells
         for strukt in self.structs.iter() {
             strukt.encode(writer)?;
@@ -1432,6 +1446,18 @@ impl GdsReaderIter {
         &self.nxt
     }
 }
+/// # GdsLayerSpec
+/// Each GDSII element's layer is specified by a set of two numbers, 
+/// commonly referred to as `layer` and `datatype`. 
+/// Several element-types refer to their analog of `datatype` by different names, 
+/// e.g. `texttype` and `nodetype`. 
+/// `GdsLayerSpecs` generalize across these via the `xtype` field, 
+/// which holds whichever is appropriate for the given element. 
+pub struct GdsLayerSpec {
+    pub layer: i16, // Layer ID Number
+    pub xtype: i16, // DataType (or TextType, NodeType etc) ID Number
+}
+
 /// Enumeration of each context in which a record can be parsed,
 /// generally for error reporting
 #[derive(Debug, Clone)]
