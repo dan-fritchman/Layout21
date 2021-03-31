@@ -516,8 +516,14 @@ fn read_f64(file: &mut impl Read, len: u16) -> Result<Vec<f64>, GdsError> {
     }
     Ok(data)
 }
+/// # Gds's home-grown floating-point format  
+///
 /// Incredibly, GDSII is old enough to have its own float-format,
 /// like most computers did before IEEE754.
+///
+/// The [GdsFloat64] is not used as a data-store, but largely a namespace
+/// for the `encode` and `decode` operations to and from IEEE754 double-precision format.
+///
 pub struct GdsFloat64 {}
 impl GdsFloat64 {
     /// Decode eight GDSII-float-encoded bytes to `f64`
@@ -645,48 +651,74 @@ pub struct GdsPlex(i32);
 
 /// # Gds Library Units
 ///
-/// From the spec (not from us):
+/// Each GDSII Library has two length-units, referred to as "DB Units" and "User Units" respectively.
+/// Essentially all other spatial data throughout the Library is denoted in "DB Units".
+///
+/// From the spec's `UNITS` record-description:  
+/// ```text
+/// Contains two eight-byte real numbers.
 /// The first number is the size of a database-unit, in user-units.
 /// The second is the size of a database-unit in meters.
-/// To calculate the size of a user-unit in meters,
-/// divide the second number by the first.
+/// To calculate the size of a user-unit in meters, divide the second number by the first.
+/// ```
 ///
-/// FIXME: the names of these fields probably indicate they aren't terribly intuitive.
-/// Probably re-org them.
-#[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq)]
-pub struct GdsUnits {
-    pub dbu: f64,
-    pub uu: f64,
+/// These two numbers are stored as-is in the [GdsUnits] tuple-struct.
+///
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+pub struct GdsUnits(f64, f64);
+impl GdsUnits {
+    pub fn new(num1: f64, num2: f64) -> Self {
+        Self(num1, num2)
+    }
 }
-
+impl Default for GdsUnits {
+    /// Default values for GDS Units:
+    /// * DB-Unit = 1nm
+    /// * User-Unit = 1µm (1000x the DB-Unit )
+    fn default() -> Self {
+        Self(1e-3, 1e-9)
+    }
+}
 /// # Gds Mask-Format Enumeration
+/// As set by the FORMAT record
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub enum GdsFormatType {
-    Archive,                      // Default, sole fully-supported case
-    Filtered(Vec<UnImplemented>), // Filtered-format includes a list of Mask records. Not supported.
+    /// Default, sole fully-supported case.
+    Archive,
+    /// Filtered-format includes a list of Mask records. Not supported.
+    Filtered(Vec<UnImplemented>),
 }
 /// # Gds Property
 /// Spec BNF:
+/// ```text
 /// PROPATTR PROPVALUE
+/// ```
 #[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
-#[builder(setter(into))]
+#[builder(setter(into), private)]
 pub struct GdsProperty {
+    /// Attribute Number
     pub attr: i16,
+    /// Attribute Value
     pub value: String,
 }
 ///
 /// # Gds Path Element
 ///
 /// Spec BNF:
+/// ```text
 /// PATH [ELFLAGS] [PLEX] LAYER DATATYPE [PATHTYPE] [WIDTH] XY [BGNEXTN] [ENDEXTN])
+/// ```
 ///
 #[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
-#[builder(setter(into))]
+#[builder(setter(into), private)]
 pub struct GdsPath {
     // Required Fields
-    pub layer: i16,    // Layer Number
-    pub datatype: i16, // DataType ID
-    pub xy: Vec<i32>,  // Vector of x,y coordinates
+    /// Layer Number
+    pub layer: i16,
+    /// DataType ID
+    pub datatype: i16,
+    /// Vector of x,y coordinates
+    pub xy: Vec<i32>,
 
     // Optional Fields
     #[serde(default)]
@@ -769,16 +801,27 @@ impl ToRecords for GdsPath {
 ///
 /// # Gds Boundary Element
 ///
+/// The most common type for closed-form shapes in GDSII.
+/// Most IC layout is comprised of [GdsBoundary] elements, which represent individual polygons.
+/// GDSII dictates that the first two and final two coordinates in each [GdsBoundary]
+/// shall be identical, "closing" the polygon.
+/// Hence an N-sided polygon is represented by a 2(N+1)-length `xy` vector.
+///
 /// Spec BNF:
+/// ```text
 /// BOUNDARY [ELFLAGS] [PLEX] LAYER DATATYPE XY
+/// ```
 ///
 #[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
-#[builder(setter(into))]
+#[builder(setter(into), private)]
 pub struct GdsBoundary {
     // Required Fields
-    pub layer: i16,    // Layer Number
-    pub datatype: i16, // DataType ID
-    pub xy: Vec<i32>,  // Vector of x,y coordinates
+    /// Layer Number
+    pub layer: i16,
+    /// DataType ID
+    pub datatype: i16,
+    /// Vector of x,y coordinates
+    pub xy: Vec<i32>,
 
     // Optional Fields
     #[serde(default)]
@@ -832,22 +875,32 @@ impl ToRecords for GdsBoundary {
     }
 }
 ///
-/// # Gds Struct Reference
+/// # Gds Struct Reference (Cell Instance)
+///
+/// Represents an instance of a layout-cell.
+/// Coordinate vector `xy` is dictated by spec to have exactly one point (or two numbers),
+/// specifying the instance's lower-left coordinate.
+/// Options for rotation and reflection are configured in the [GdsStrans] attribute `strans`.
 ///
 /// Spec BNF:
+/// ```text
 /// SREF [ELFLAGS] [PLEX] SNAME [<strans>] XY
+/// ```
 ///
 #[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
-#[builder(setter(into))]
+#[builder(setter(into), private)]
 pub struct GdsStructRef {
     // Required Fields
-    pub name: String, // Struct (Cell) Name
-    pub xy: Vec<i32>, // Vector of x,y coordinates
+    /// Struct (Cell) Name
+    pub name: String,
+    /// Vector of x,y coordinates
+    pub xy: Vec<i32>,
 
     // Optional Fields
     #[serde(default)]
     #[builder(default, setter(strip_option))]
-    pub strans: Option<GdsStrans>, // Translation & Reflection Options
+    /// Translation & Reflection Options
+    pub strans: Option<GdsStrans>,
     #[serde(default)]
     #[builder(default, setter(strip_option))]
     pub elflags: Option<GdsElemFlags>,
@@ -904,21 +957,30 @@ impl ToRecords for GdsStructRef {
 ///
 /// # Gds Array Reference
 ///
+/// A two-dimensional array of struct (cell) instances.
+///
 /// Spec BNF:
+/// ```text
 /// AREF [ELFLAGS] [PLEX] SNAME [<strans>] COLROW XY
+/// ```
 ///
 #[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
-#[builder(setter(into))]
+#[builder(setter(into), private)]
 pub struct GdsArrayRef {
     // Required Fields
-    pub name: String, // Struct (Cell) Name
-    pub xy: Vec<i32>, // Vector of x,y coordinates
-    pub cols: i16,    // Number of columns
-    pub rows: i16,    // Number of rows
+    /// Struct (Cell) Name
+    pub name: String,
+    /// Vector of x,y coordinates
+    pub xy: Vec<i32>,
+    /// Number of columns
+    pub cols: i16,
+    /// Number of rows
+    pub rows: i16,
     // Optional Fields
     #[serde(default)]
     #[builder(default)]
-    pub strans: Option<GdsStrans>, // Translation & Reflection Options
+    /// Translation & Reflection Options
+    pub strans: Option<GdsStrans>,
     #[serde(default)]
     #[builder(default, setter(strip_option))]
     pub elflags: Option<GdsElemFlags>,
@@ -984,11 +1046,12 @@ impl ToRecords for GdsArrayRef {
 /// # Gds Text Element
 ///
 /// Spec BNF:
+/// ```text
 /// TEXT [ELFLAGS] [PLEX] LAYER
 /// TEXTTYPE [PRESENTATION] [PATHTYPE] [WIDTH] [<strans>] XY STRING
-///
+/// ```
 #[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
-#[builder(setter(into))]
+#[builder(setter(into), private)]
 pub struct GdsTextElem {
     // Required Fields
     pub string: String, // Text Value
@@ -1008,7 +1071,8 @@ pub struct GdsTextElem {
     pub width: Option<i32>,
     #[serde(default)]
     #[builder(default)]
-    pub strans: Option<GdsStrans>, // Translation & Reflection Options
+    /// Translation & Reflection Options
+    pub strans: Option<GdsStrans>,
     #[serde(default)]
     #[builder(default, setter(strip_option))]
     pub elflags: Option<GdsElemFlags>,
@@ -1083,10 +1147,12 @@ impl ToRecords for GdsTextElem {
 /// # Gds Node Element
 ///
 /// Spec BNF:
+/// ```text
 /// NODE [ELFLAGS] [PLEX] LAYER NODETYPE XY
+/// ```
 ///
 #[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
-#[builder(setter(into))]
+#[builder(setter(into), private)]
 pub struct GdsNode {
     // Required Fields
     pub layer: i16,    // Layer Number
@@ -1105,10 +1171,12 @@ pub struct GdsNode {
 /// # Gds Box Element
 ///
 /// Spec BNF:
+/// ```text
 /// BOX [ELFLAGS] [PLEX] LAYER BOXTYPE XY
+/// ```
 ///
 #[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
-#[builder(setter(into))]
+#[builder(setter(into), private)]
 pub struct GdsBox {
     // Required Fields
     pub layer: i16,   // Layer Number
@@ -1187,20 +1255,21 @@ pub enum GdsElement {
     GdsNode(GdsNode),
     GdsBox(GdsBox),
 }
-/// Trait for conversion of `Elements` to sequences of `Records`.
-/// Dispatched from the `GdsElement` enum by the `enum_dispatch` macros.
+/// Trait for conversion of [GdsElement]s and similar tree-elements to sequences of [GdsRecord]s.  
+///
+/// Dispatched from the [GdsElement] enum by the `enum_dispatch` macros.
+///
 #[enum_dispatch(GdsElement)]
 pub trait ToRecords {
     fn to_records(&self) -> Vec<GdsRecord>;
 }
-
 /// # Gds Modification Dates & Times
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct GdsDateTimes {
     /// Last Modification Date & Time
-    modified: NaiveDateTime,
+    pub modified: NaiveDateTime,
     /// Last Access Date & Time
-    accessed: NaiveDateTime,
+    pub accessed: NaiveDateTime,
 }
 impl GdsDateTimes {
     /// Parse from GDSII's vector of i16's format
@@ -1239,16 +1308,36 @@ impl GdsDateTimes {
         ]
     }
 }
-
+impl Default for GdsDateTimes {
+    /// Default dates & times: what better time than now!
+    fn default() -> Self {
+        let now = Utc::now().naive_utc();
+        Self {
+            modified: now.clone(),
+            accessed: now.clone(),
+        }
+    }
+}
 ///
-/// # Gds Struct
-/// (Usually this means a Cell)
+/// # Gds Struct (Cell) Definition
+///
+/// GDSII's primary hierarchical layout-definition object is its "struct",
+/// which most other layout systems would call a "cell" or "module".
+/// (Most GDSII software calls them one of these as well.)  
+///
+/// [GdsStruct]s are principally composed of an un-ordered, un-indexed vector
+/// of [GdsElement]s, which can be polygons ([GdsBoundary]),
+/// instances of other layouts ([GdsStructRef]),
+/// two-dimensional arrays thereof ([GdsArrayRef]),
+/// and a handful of other [GdsElement]s.  
 ///
 /// Spec BNF:
+/// ```text
 /// BGNSTR STRNAME [STRCLASS] {<element>}* ENDSTR
+/// ```
 ///
-#[derive(Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
-#[builder(setter(into))]
+#[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
+#[builder(setter(into), private)]
 pub struct GdsStruct {
     /// Struct Name
     pub name: String,
@@ -1258,6 +1347,13 @@ pub struct GdsStruct {
     pub elems: Vec<GdsElement>,
 }
 impl GdsStruct {
+    /// Create a new and empty [GdsStruct]
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            ..Default::default()
+        }
+    }
     /// Parse from record-iterator `it`
     fn parse(it: &mut GdsReaderIter, dates: Vec<i16>) -> Result<GdsStruct, GdsError> {
         let mut strukt = GdsStructBuilder::default();
@@ -1307,7 +1403,7 @@ impl GdsStruct {
         strukt.elems(elems);
         Ok(strukt.build()?)
     }
-    /// Encode and write to `writer` 
+    /// Encode and write to `writer`
     pub fn encode(&self, writer: &mut impl Write) -> Result<(), GdsError> {
         // Write our modification-date info
         GdsRecord::BgnStruct {
@@ -1330,12 +1426,22 @@ impl GdsStruct {
 ///
 /// # Gds Library
 ///
+/// The Library is GDSII's primary idiom for a suite of layout-cells.
+/// A Library generally corresponds one-to-one with a `.gds` file.
+/// Libraries consist primarily of cell-definitions ([GdsStruct]s),
+/// and secondarily include library-level meta-data, including the distance units, GDS-spec version, and modification dates.
+///
+/// Several more esoteric library-level GDSII features are included as [GdsLibrary] fields,
+/// but are not materially supported. The empty [UnImplemented] value generally denotes these fields.
+///
 /// Spec BNF:
+/// ```text
 /// HEADER BGNLIB [LIBDIRSIZE] [SRFNAME] [LIBSECUR] LIBNAME [REFLIBS] [FONTS] [ATTRTABLE] [GENERATIONS] [<FormatType>]
 /// UNITS {<structure>}* ENDLIB
+/// ```
 ///
-#[derive(Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
-#[builder(setter(into))]
+#[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
+#[builder(setter(into), private)]
 pub struct GdsLibrary {
     // Required fields
     /// Library Name
@@ -1376,6 +1482,15 @@ pub struct GdsLibrary {
     pub format_type: Option<GdsFormatType>,
 }
 impl GdsLibrary {
+    /// Create a new and empty [GdsLibrary]
+    pub fn new(name: impl Into<String>, units: GdsUnits) -> Self {
+        Self {
+            name: name.into(),
+            units,
+            version: 3,
+            ..Default::default()
+        }
+    }
     /// Read a GDS loaded from file at path `file_name`
     pub fn load(file_name: &str) -> Result<GdsLibrary, GdsError> {
         // Create an iterator over records
@@ -1408,7 +1523,7 @@ impl GdsLibrary {
                     lib.name(d);
                 }
                 GdsRecord::Units(d0, d1) => {
-                    lib.units(GdsUnits { dbu: d0, uu: d1 });
+                    lib.units(GdsUnits(d0, d1));
                 }
                 GdsRecord::BgnStruct { dates } => {
                     let strukt = GdsStruct::parse(it, dates)?;
@@ -1467,7 +1582,7 @@ impl GdsLibrary {
         // Write our library name
         GdsRecord::LibName(self.name.clone()).encode(writer)?;
         // Write our units
-        GdsRecord::Units(self.units.dbu, self.units.uu).encode(writer)?;
+        GdsRecord::Units(self.units.0, self.units.1).encode(writer)?;
         // Write all of our Structs/Cells
         for strukt in self.structs.iter() {
             strukt.encode(writer)?;
@@ -1512,20 +1627,23 @@ impl GdsReaderIter {
         &self.nxt
     }
 }
-/// # GdsLayerSpec
+/// # Gds Layer Spec
+///
 /// Each GDSII element's layer is specified by a set of two numbers,
 /// commonly referred to as `layer` and `datatype`.
 /// Several element-types refer to their analog of `datatype` by different names,
-/// e.g. `texttype` and `nodetype`.
+/// e.g. `texttype` and `nodetype`.  
+///
 /// `GdsLayerSpecs` generalize across these via the `xtype` field,
 /// which holds whichever is appropriate for the given element.
 pub struct GdsLayerSpec {
-    pub layer: i16, // Layer ID Number
-    pub xtype: i16, // DataType (or TextType, NodeType etc) ID Number
+    /// Layer ID Number
+    pub layer: i16,
+    /// DataType (or TextType, NodeType, etc.) ID Number
+    pub xtype: i16,
 }
 
-/// Enumeration of each context in which a record can be parsed,
-/// generally for error reporting
+/// Enumeration of each context in which a record can be parsed, primarily for error reporting
 #[derive(Debug, Clone)]
 pub enum GdsContext {
     Library,
@@ -1541,21 +1659,33 @@ pub enum GdsContext {
 ///
 /// # Gds Error Enumeration
 ///
+/// Most errors are tied in some sense to parsing and decoding.
+/// Once a valid [GdsLibrary] is created in memory, it can generally be streamed to bytes.
+///
 #[derive(Clone, Debug)]
 pub enum GdsError {
-    RecordDecode(GdsRecordType, GdsDataType, u16), // Invalid binary -> record conversion
-    RecordContext(GdsRecord, GdsContext),          // Record in an invalid context
-    RecordLen(u16),                                // Invalid record length
-    InvalidDataType(u8),                           // Invalid record type
-    InvalidRecordType(u8),                         // Invalid record type
-    UnsupportedRecordType(GdsRecordType),          // Unsupported (but spec'ed) record type
-    Unsupported(Option<GdsRecord>, Option<GdsContext>), // Unsupported feature, in the decoded context
-    Decode,                                             // Other decoding errors
-    Encode,                                             // Other encoding errors
+    /// Invalid binary -> record conversion
+    RecordDecode(GdsRecordType, GdsDataType, u16),
+    /// Record in an invalid context
+    RecordContext(GdsRecord, GdsContext),
+    /// Invalid record length
+    RecordLen(u16),
+    /// Invalid data type
+    InvalidDataType(u8),
+    /// Invalid record type
+    InvalidRecordType(u8),
+    /// Unsupported (but spec valid) record type
+    UnsupportedRecordType(GdsRecordType),
+    /// Unsupported feature, in the decoded context
+    Unsupported(Option<GdsRecord>, Option<GdsContext>),
+    /// Other decoding errors
+    Decode,
+    /// Other encoding errors
+    Encode,
 }
 impl std::fmt::Display for GdsError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "GDS_ERROR") // FIXME: this never seems to happen where we expect
+        write!(f, "GdsError") // FIXME: detail here
     }
 }
 impl std::error::Error for GdsError {}
@@ -1656,7 +1786,7 @@ mod tests {
     /// Compare `lib` to "golden" data loaded from JSON at path `golden`.
     fn check(lib: &GdsLibrary, fname: &str) {
         // Uncomment this bit to over-write the golden data
-        save_json(lib, fname);
+        // save_json(lib, fname);
 
         let golden = load_json(fname);
         assert_eq!(*lib, golden);

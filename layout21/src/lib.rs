@@ -3,8 +3,16 @@ use serde::{Deserialize, Serialize};
 /// Distance Units Enumeration
 #[derive(Clone, Copy, Debug)]
 pub enum Unit {
-    Micro, // Micrometers, or microns for we olde folke
-    Nano,  // Nanometers
+    /// Micrometers, or microns for we olde folke
+    Micro,
+    /// Nanometers
+    Nano,
+}
+impl Default for Unit {
+    /// Default units are nanometers
+    fn default() -> Unit {
+        Unit::Nano
+    }
 }
 /// Direction Enumeration
 #[derive(Clone, Copy, Debug)]
@@ -398,13 +406,18 @@ pub mod raw {
     use super::*;
     use gds21;
 
-    #[derive(Debug)]
+    #[derive(Debug, Default)]
+    /// # Raw Layout Library  
+    /// A collection of cell-definitions and sub-library definitions
     pub struct Library {
-        pub name: String,       // Library Name
-        pub units: Unit,        // Distance Units
-        pub date_info: Tbd,     // Creation & Modification Time Info
-        pub libs: Vec<Library>, // Sub-Library Definitions
-        pub cells: Vec<Cell>,   // Cell Definitions
+        /// Library Name
+        pub name: String,
+        /// Distance Units
+        pub units: Unit,
+        /// Sub-Library Definitions
+        pub libs: Vec<Library>,
+        /// Cell Definitions
+        pub cells: Vec<Cell>,
     }
     impl Library {
         /// Create a new and empty Library
@@ -412,9 +425,7 @@ pub mod raw {
             Self {
                 name: name.into(),
                 units,
-                date_info: Tbd {}, // FIXME!
-                libs: Vec::new(),
-                cells: Vec::new(),
+                ..Default::default()
             }
         }
         /// Convert to a Gds Library
@@ -423,27 +434,14 @@ pub mod raw {
                 panic! {"no nested libraries to GDS, yet "}
             }
             let units: gds21::GdsUnits = match self.units {
-                Unit::Nano => gds21::GdsUnits {
-                    dbu: 1e-9,
-                    uu: 1e-3,
-                }, // FIXME!
-                Unit::Micro => gds21::GdsUnits {
-                    dbu: 1e-9,
-                    uu: 1e-3,
-                }, // FIXME!
+                Unit::Nano => gds21::GdsUnits::new(1e-3, 1e-9),
+                Unit::Micro => gds21::GdsUnits::new(1e-3, 1e-6),
             };
-            let mut structs = Vec::new();
-            for c in self.cells.iter() {
-                structs.push(c.to_gds());
-            }
-            gds21::GdsLibrary {
-                name: self.name.clone(),
-                version: 3,             // FIXME!
-                date_info: vec![0; 12], // FIXME: real date-time
-                units,
-                structs,
-                ..Default::default()
-            }
+            // Create a new Gds Library
+            let mut lib = gds21::GdsLibrary::new(&self.name, units);
+            // And convert each of our `cells` into its `structs`
+            lib.structs = self.cells.iter().map(|c| c.to_gds()).collect();
+            lib
         }
     }
     /// Raw-Layout Cell Definition
@@ -466,16 +464,13 @@ pub mod raw {
             for s in self.elems.iter() {
                 elems.push(s.to_gds());
             }
-            gds21::GdsStruct {
-                name: self.name.clone(),
-                date_info: vec![0; 12], // FIXME: real date-time
-                elems,
-            }
+            let mut s = gds21::GdsStruct::new(&self.name);
+            s.elems = elems;
+            s
         }
     }
-    /// Implement conversion of [Instance] to GDS [gds21::StructRef]
     impl Instance {
-        /// Convert to a GDS instance, AKA StructRef
+        /// Convert to a GDS instance, AKA [gds21::GdsStructRef]
         pub fn to_gds(&self) -> gds21::GdsStructRef {
             gds21::GdsStructRef {
                 name: self.cell_name.clone(),
@@ -503,7 +498,7 @@ pub mod raw {
         pub angle: Option<f64>,
     }
     impl InstArray {
-        /// Convert an Instance Array to GDS Format
+        /// Convert an Instance Array to GDS Format [gds21::GdsArrayRef]
         ///
         /// GDS requires three "points" to define an array,
         /// Essentially at its origin and opposite edges
