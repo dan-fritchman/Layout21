@@ -37,18 +37,29 @@ impl Pattern {
 /// # Stack
 ///
 /// The metal and base layer stack
+#[derive(Debug, Clone)]
 pub struct Stack {
-    pub units: Unit,        // Measurement units
-    pub xpitch: usize,      // Primitive cell horizontal unit-pitch, denominated in `units`
-    pub ypitch: usize,      // Primitive cell vertical unit-pitch, denominated in `units`
-    pub layers: Vec<Layer>, // Set of defined layers
+    /// Measurement units
+    pub units: Unit,
+    /// Primitive cell horizontal unit-pitch, denominated in `units`
+    pub xpitch: usize,
+    /// Primitive cell vertical unit-pitch, denominated in `units`
+    pub ypitch: usize,
+    /// Layer used for cell outlines/ boundaries
+    pub boundary_layer: Option<(isize, isize)>,
+    /// Set of defined layers
+    pub layers: Vec<Layer>,
 }
 impl Stack {
-    pub fn get_unit(&self, layer: usize) -> Result<raw::Cell, LayoutError> {
+    /// Create a [raw::Cell] for the unit area on Layer `layer`
+    pub fn get_unit(&mut self, layer: usize) -> Result<raw::Cell, LayoutError> {
         self.layers[layer].raw_unit(self)
     }
 }
-
+/// # Layer
+///
+/// Metal layer in a [Stack]
+#[derive(Debug, Clone)]
 pub struct Layer {
     pub index: usize,
     pub name: String,
@@ -112,7 +123,7 @@ impl Layer {
                                     y: cursor + *d as isize,
                                 },
                             },
-                        }, 
+                        },
                         Dir::Vert => Element {
                             layer_spec: stream_layer,
                             inner: Shape::Rect {
@@ -122,7 +133,7 @@ impl Layer {
                                     y: width as isize,
                                 },
                             },
-                        }, 
+                        },
                     };
                     elems.push(e);
                     cursor += *d as isize;
@@ -135,66 +146,138 @@ impl Layer {
             }
         }
         Ok(raw::Cell {
-            name: format!("{}::unit", self.name.clone()),
+            name: self.get_unit_name(),
             insts: Vec::new(),
             arrays: Vec::new(),
             elems,
         })
     }
+    fn get_unit_name(&self) -> String {
+        format!("{}::unit", self.name.clone())
+    }
 }
-/// Assignment of a net onto a track
+/// Assignment of a net onto a track-intersection
+#[derive(Debug, Clone)]
 pub struct Assign {
-    net: String,  // Net Name
-    layer: usize, // Layer Index
-    track: usize, // Track Index
-    cross: Cross, // Crossing-layer track index, either above or below `layer`
+    /// Net Name
+    net: String,
+    /// Layer Index
+    layer: usize,
+    /// Track Index
+    track: usize,
+    /// Intersecting Track Index
+    at: usize,
+    /// Whether `at` refers to the track-indices above or below
+    relz: RelZ,
 }
-/// This should really be private to `Assign`, figure out how to organize it as such
-pub enum Cross {
-    Above(usize), // Cross at this track index on layer *above* `layer`
-    Below(usize), // Cross at this track index on layer *below* `layer`
+/// Relative Z-Axis Reference to one Layer `Above` or `Below` another
+#[derive(Debug, Clone)]
+pub enum RelZ {
+    Above,
+    Below,
+}
+/// Instance of another Cell
+#[derive(Debug, Clone)]
+pub struct Instance {
+    /// Instance Name
+    pub inst_name: String,
+    /// Cell Name/ Path
+    pub cell_name: String,
+    /// Bottom-Left Corner Point
+    pub p0: Point,
+    /// Reflection
+    pub reflect: bool,
+    /// Angle of Rotation (Degrees)
+    pub angle: Option<f64>,
+}
+/// # Layout Library
+///
+/// A combination of cell definitions, sub-libraries, and metadata
+///
+#[derive(Debug, Clone)]
+pub struct Library<'a> {
+    /// Library Name
+    pub name: String,
+    /// Reference to the z-stack
+    pub stack: &'a Stack,
+    /// Cell Names
+    pub cell_names: Vec<String>,
+    /// Abstracts
+    pub abstracts: Vec<abstrakt::Cell<'a>>,
+    /// Cell Implementations
+    pub cells: Vec<Cell<'a>>,
+    /// Sub-Libraries
+    pub libs: Vec<Library<'a>>,
+}
+impl<'a> Library<'a> {
+    /// Create a new and initially empty [Library]
+    pub fn new(name: impl Into<String>, stack: &'a Stack) -> Self {
+        Self {
+            name: name.into(),
+            stack,
+            cell_names: Vec::new(),
+            abstracts: Vec::new(),
+            cells: Vec::new(),
+            libs: Vec::new(),
+        }
+    }
+    /// Convert to a [raw::Library]
+    pub fn to_raw_lib(&self) -> Result<raw::Library, LayoutError> {
+        let mut lib = raw::Library::new(self.name.clone(), self.stack.units);
+        // Collect up unit-cells on each layer
+        for layer in self.stack.layers.iter() {
+            let unit = layer.raw_unit(&self.stack)?;
+            lib.cells.push(unit);
+        }
+        // Convert each defined [Cell] to a [raw::Cell]
+        for cell in self.cells.iter() {
+            lib.cells.push(cell.to_raw_cell()?);
+        }
+        // And convert each (un-implemented) Abstract as a boundary
+        for abs in self.abstracts.iter() {
+            // Check whether the same name is already defined
+            for cell in lib.cells.iter() {
+                if abs.name == cell.name {
+                    continue;
+                }
+            }
+            lib.cells.push(abs.to_raw_cell()?);
+        }
+        Ok(lib)
+    }
 }
 /// # Layout Cell
 ///
 /// A combination of lower-level cell instances and net-assignments to tracks.
 ///
+#[derive(Debug, Clone)]
 pub struct Cell<'a> {
     name: String,             // Cell Name
     stack: &'a Stack,         // Reference to the z-stack
     top_layer: usize,         // Top-layer index
     outline: Outline,         // Outline shape, counted in x and y pitches of `stack`
-    instances: Vec<Tbd>,      // Layout-Abstract Instances
+    instances: Vec<Instance>, // Layout-Abstract Instances
     assignments: Vec<Assign>, // Net-to-track assignments
     cuts: Vec<Tbd>,           // Track cuts
 }
 impl Cell<'_> {
-    /// Create a new raw::Library with ourselves as the notional "top" cell
-    pub fn to_raw_lib(&self) -> Result<raw::Library, LayoutError> {
-        let mut lib = raw::Library::new(self.name.clone(), self.stack.units);
-        // Collect up unit-cells on each layer
-        for layer in 0..self.top_layer {
-            let unit = self.stack.get_unit(layer)?;
-            lib.cells.push(unit);
-        }
-        lib.cells.push(self.to_raw_cell()?);
-        Ok(lib)
-    }
     /// Convert to a raw layout cell
     pub fn to_raw_cell(&self) -> Result<raw::Cell, LayoutError> {
         if self.outline.x.len() > 1 {
-            // Non-rectangular outline; not supported yet
-            return Err(LayoutError::Tbd);
+            return Err(LayoutError::Message(
+                "Non-rectangular outline; not supported yet".into(),
+            ));
         };
         let rows = self.outline.x[0];
         let cols = self.outline.y[0];
 
         // Collect up arrays of unit-cells on each layer
         let mut arrays: Vec<raw::InstArray> = Vec::new();
-        for layer in 0..self.top_layer {
-            let unit = self.stack.get_unit(layer)?;
+        for layer in self.stack.layers.iter() {
+            let unit_name = layer.get_unit_name();
             let a = raw::InstArray {
-                inst_name: format!("{}.array", unit.name),
-                cell_name: unit.name.clone(),
+                inst_name: format!("{}.array", unit_name),
+                cell_name: unit_name,
                 rows,
                 cols,
                 xpitch: self.stack.xpitch,
@@ -205,11 +288,17 @@ impl Cell<'_> {
             };
             arrays.push(a);
         }
+        // Scale the location of each instance by our pitches
+        let scale = (self.stack.xpitch as isize, self.stack.ypitch as isize);
+        let mut instances = self.instances.clone();
+        for inst in instances.iter_mut() {
+            inst.p0 = inst.p0.scale(scale.0, scale.1);
+        }
         Ok(raw::Cell {
             name: self.name.clone(),
-            insts: Vec::new(),
+            insts: instances, // Note instances are of the same type, but use Points of different units.
             arrays,
-            elems: Vec::new(),
+            elems: Vec::new(), // FIXME! cut up metals and such
         })
     }
 }
@@ -231,15 +320,19 @@ impl Cell<'_> {
 /// Example: a rectangular Outline would require a single entry for each of `x` and `y`,
 /// at the rectangle's vertex opposite the origin in both axes.
 ///
+#[derive(Debug, Clone)]
 pub struct Outline {
-    x: Vec<usize>,
-    y: Vec<usize>,
+    pub x: Vec<usize>,
+    pub y: Vec<usize>,
 }
 impl Outline {
     /// Outline constructor, with inline checking for validity of `x` & `y` vectors
     pub fn new(x: Vec<usize>, y: Vec<usize>) -> Result<Self, LayoutError> {
         // Check that x and y are of compatible lengths
         if x.len() != y.len() {
+            return Err(LayoutError::Tbd);
+        }
+        if x.len() < 1 {
             return Err(LayoutError::Tbd);
         }
         // Check for x non-increasing-ness
@@ -276,27 +369,34 @@ impl Outline {
         pts
     }
 }
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Point {
     x: isize,
     y: isize,
 }
 impl Point {
+    /// Create a new [Point] from (x,y) coordinates
     pub fn new(x: isize, y: isize) -> Self {
         Self {
             x: x.into(),
             y: y.into(),
         }
     }
+    /// Create a new point scaled by `x` in the x-dimension and by `y` in the y-dimension
+    pub fn scale(&self, x: isize, y: isize) -> Point {
+        Point {
+            x: x * self.x,
+            y: y * self.y,
+        }
+    }
 }
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Tbd {}
 
 /// "Raw" Layout
 pub mod raw {
     use super::*;
     use gds21;
-    use gds21::{GdsBoundary, GdsElement, GdsLibrary, GdsStruct, GdsStructRef};
 
     #[derive(Debug)]
     pub struct Library {
@@ -336,17 +436,17 @@ pub mod raw {
             for c in self.cells.iter() {
                 structs.push(c.to_gds());
             }
-            let lib = gds21::GdsLibrary {
+            gds21::GdsLibrary {
                 name: self.name.clone(),
                 version: 3,             // FIXME!
                 date_info: vec![0; 12], // FIXME: real date-time
                 units,
                 structs,
                 ..Default::default()
-            };
-            lib
+            }
         }
     }
+    /// Raw-Layout Cell Definition
     #[derive(Debug)]
     pub struct Cell {
         pub name: String,           // Cell Name
@@ -355,35 +455,29 @@ pub mod raw {
         pub elems: Vec<Element>,    // Primitive Elements
     }
     impl Cell {
-        pub fn to_gds(&self) -> GdsStruct {
+        pub fn to_gds(&self) -> gds21::GdsStruct {
             let mut elems = Vec::new();
             for inst in self.insts.iter() {
-                elems.push(GdsElement::GdsStructRef(inst.to_gds()));
+                elems.push(gds21::GdsElement::GdsStructRef(inst.to_gds()));
             }
             for arr in self.arrays.iter() {
-                elems.push(GdsElement::GdsArrayRef(arr.to_gds()));
+                elems.push(gds21::GdsElement::GdsArrayRef(arr.to_gds()));
             }
             for s in self.elems.iter() {
                 elems.push(s.to_gds());
             }
-            GdsStruct {
+            gds21::GdsStruct {
                 name: self.name.clone(),
                 date_info: vec![0; 12], // FIXME: real date-time
                 elems,
             }
         }
     }
-    #[derive(Debug)]
-    pub struct Instance {
-        pub inst_name: String,
-        pub cell_name: String,
-        pub p0: Point,
-        pub reflect: bool,
-        pub angle: Option<f64>,
-    }
+    /// Implement conversion of [Instance] to GDS [gds21::StructRef]
     impl Instance {
-        pub fn to_gds(&self) -> GdsStructRef {
-            GdsStructRef {
+        /// Convert to a GDS instance, AKA StructRef
+        pub fn to_gds(&self) -> gds21::GdsStructRef {
+            gds21::GdsStructRef {
                 name: self.cell_name.clone(),
                 xy: vec![self.p0.x as i32, self.p0.y as i32],
                 strans: None, //FIXME!
@@ -392,6 +486,10 @@ pub mod raw {
             }
         }
     }
+    /// Array of Instances
+    ///
+    /// Arrays are two-dimensional, of identical instances of the same Cell.
+    ///
     #[derive(Debug)]
     pub struct InstArray {
         pub inst_name: String,
@@ -405,13 +503,15 @@ pub mod raw {
         pub angle: Option<f64>,
     }
     impl InstArray {
+        /// Convert an Instance Array to GDS Format
+        ///
+        /// GDS requires three "points" to define an array,
+        /// Essentially at its origin and opposite edges
         pub fn to_gds(&self) -> gds21::GdsArrayRef {
-            // GDS requires three "points" to define an array,
-            // Essentially at its origin and opposite edges
             let x0 = self.p0.x as i32;
             let y0 = self.p0.y as i32;
-            let x1 = x0 + (self.xpitch * self.cols+1) as i32;
-            let y1 = y0 + (self.ypitch * self.rows+1) as i32;
+            let x1 = x0 + (self.xpitch * self.cols + 1) as i32;
+            let y1 = y0 + (self.ypitch * self.rows + 1) as i32;
             gds21::GdsArrayRef {
                 name: self.cell_name.clone(),
                 xy: vec![x0, y0, x1, y0, x0, y1],
@@ -431,7 +531,7 @@ pub mod raw {
         pub inner: Shape,
     }
     impl Element {
-        pub fn to_gds(&self) -> GdsElement {
+        pub fn to_gds(&self) -> gds21::GdsElement {
             self.inner.to_gds(&self.layer_spec).into()
         }
     }
@@ -441,10 +541,13 @@ pub mod raw {
         Poly { pts: Vec<Point> },
     }
     impl Shape {
-        pub fn to_gds(&self, layer_spec: &(i16, i16)) -> GdsBoundary {
-            // Gds shapes are flattened vectors of (x,y) coordinates,
-            // and include an explicit repetition of their origin for closure.
-            // So an N-sided polygon is described by a 2*(N+1)-entry vector.
+        /// Convert a [Shape] to GDSII Format
+        ///
+        /// GDS shapes are flattened vectors of (x,y) coordinates,
+        /// and include an explicit repetition of their origin for closure.
+        /// So an N-sided polygon is described by a 2*(N+1)-entry vector.
+        ///
+        pub fn to_gds(&self, layer_spec: &(i16, i16)) -> gds21::GdsBoundary {
             let xy = match self {
                 Shape::Rect { p0, p1 } => {
                     let x0 = p0.x as i32;
@@ -453,9 +556,20 @@ pub mod raw {
                     let y1 = p1.y as i32;
                     vec![x0, y0, x1, y0, x1, y1, x0, y1, x0, y0]
                 }
-                Shape::Poly { pts } => unimplemented!("FIXME!"),
+                Shape::Poly { pts } => {
+                    // Flatten our points-vec, converting to 32-bit along the way
+                    let mut xy = Vec::new();
+                    for p in pts.iter() {
+                        xy.push(p.x as i32);
+                        xy.push(p.y as i32);
+                    }
+                    // Add the origin a second time, to "close" the polygon
+                    xy.push(pts[0].x as i32);
+                    xy.push(pts[0].y as i32);
+                    xy
+                }
             };
-            GdsBoundary {
+            gds21::GdsBoundary {
                 layer: layer_spec.0,
                 datatype: layer_spec.1,
                 xy,
@@ -470,26 +584,182 @@ pub mod raw {
         }
     }
 }
+/// # Abstract Layout Module
+///
+/// Abstract layouts describe a block's outline and interface,
+/// without exposing implementation details.
+/// Cells primarily comprise their outlines and pins.
+/// Outlines follow the same "Tetris-Shapes" as (OtherNameTbd) layout cells,
+/// including the requirements for a uniform z-axis.
+/// Internal layers are "fully blocked", in that parent layouts may not route through them.
+/// In legacy layout systems this would be akin to including blockages of the same shape as [Outline] on each layer.
+///
+/// Sadly the english-spelled name "abstract" is reserved as a potential [future Rust keyword](https://doc.rust-lang.org/reference/keywords.html#reserved-keywords).
+/// Hence the misspelling.
+///
+pub mod abstrakt {
+    use super::raw;
+    use super::{Assign, LayoutError, Outline, RelZ, Stack};
+
+    /// Abstract-Layout Cell
+    #[derive(Debug, Clone)]
+    pub struct Cell<'a> {
+        /// Cell Name
+        pub name: String,
+        /// Reference to the Stack
+        pub stack: &'a Stack,
+        /// Outline in "Tetris-Shapes"
+        pub outline: Outline,
+        /// Top Metal Layer
+        pub top_layer: usize,
+        /// Ports
+        pub ports: Vec<Port>,
+    }
+    impl Cell<'_> {
+        /// Convert to a [raw::Cell], just including an Outline
+        pub fn to_raw_cell(&self) -> Result<raw::Cell, LayoutError> {
+            let layer_spec = match self.stack.boundary_layer {
+                Some((l1, l2)) => (l1 as i16, l2 as i16),
+                None => {
+                    return Err(LayoutError::Message(
+                        "Cannot Convert Abstract to Raw without Boundary Layer".into(),
+                    ))
+                }
+            };
+            // Create an array of Outline-Points
+            let pts = self.outline.points();
+            // Scale them to our pitches
+            let pitch = (self.stack.xpitch as isize, self.stack.ypitch as isize);
+            let pts = pts.iter().map(|p| p.scale(pitch.0, pitch.1)).collect();
+            // Create the Outline Element
+            let outline = raw::Element {
+                layer_spec,
+                inner: raw::Shape::Poly { pts },
+            };
+            // And return a new [raw::Cell]
+            Ok(raw::Cell {
+                name: self.name.clone(),
+                insts: Vec::new(),
+                arrays: Vec::new(),
+                elems: vec![outline],
+            })
+        }
+    }
+    /// Abstract-Layout Port
+    #[derive(Debug, Clone)]
+    pub struct Port {
+        /// Port/ Signal Name
+        pub name: String,
+        /// Physical Info
+        pub kind: PortKind,
+    }
+    /// Abstract-Layout Port Inner Detail
+    ///
+    /// All location and "geometric" information per Port is stored here,
+    /// among a few enumerated variants.
+    ///
+    /// Ports may either connect on x/y edges, or on the top (in the z-axis) layer.
+    #[derive(Debug, Clone)]
+    pub enum PortKind {
+        /// Ports which connect on x/y outline edges
+        Edge {
+            layer: usize,
+            track: usize,
+            side: Side,
+        },
+        /// Ports which are internal to the cell outline,
+        /// but connect from above in the z-stack.
+        /// These can be assigned at several locations across their track,
+        /// and are presumed to be internally-connected between such locations.
+        Zlocs {
+            /// Locations
+            locs: Vec<TopLoc>,
+        },
+        /// Ports which occupy an entire top-level track from edge to edge
+        Zfull { track: usize },
+        // FIXME:
+        // * Sort out cases for "both", i.e. pins on the top-level which also go to X/Y edges
+        // * Primitives may need a different kinda `cross`
+    }
+    /// A location (track intersection) on our top z-axis layer
+    #[derive(Debug, Clone)]
+    pub struct TopLoc {
+        /// Track Index
+        track: usize,
+        /// Intersecting Track Index
+        at: usize,
+        /// Whether `at` refers to the track-indices above or below
+        relz: RelZ,
+    }
+    /// X/Y Side Enumeration
+    /// Note the requirements on [Outline] shapes ensure each track has a unique left/right or top/bottom pair of edges.
+    #[derive(Debug, Clone)]
+    pub enum Side {
+        Left,
+        Right,
+        Top,
+        Bottom,
+    }
+}
+/// Interfaces Module,
+/// Describing Cells in terms of their IO Interfaces
+pub mod interface {
+    pub struct Port {
+        /// Port Name
+        pub name: String,
+        /// Port Type & Content
+        pub kind: PortKind,
+    }
+    pub enum PortKind {
+        /// Flat Scalar Port, e.g. `clk`
+        Scalar,
+        /// Array-Based Port, e.g. `data[31:0]`
+        Array { width: usize },
+        /// Instance of a Hierarchical Bundle
+        Bundle { bundle_name: String },
+    }
+    pub struct Bundle {
+        pub name: String,
+        pub ports: Vec<Port>,
+    }
+}
+/// # Cell View Enumeration
+/// All of the ways in which a Cell is represented
+pub enum CellView<'a> {
+    Interface(interface::Bundle),
+    Abstract(abstrakt::Cell<'a>),
+    Layout(Cell<'a>),
+    RawLayout(raw::Cell),
+}
+/// Collection of the Views describing a Cell
+pub struct CellViews<'a> {
+    name: String,
+    views: Vec<CellView<'a>>,
+}
+
 ///
 /// # Layout Error Enumeration
 ///
 #[derive(Clone, Debug)]
 pub enum LayoutError {
-    Tbd, // Everything to be categorized
+    /// Uncategorized Error with Message
     Message(String),
+    /// Everything to be categorized
+    Tbd,
 }
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn it_works() -> Result<(), LayoutError> {
+    /// Create a [Stack] used by a number of tests
+    fn stack() -> Stack {
         use Entry::*;
 
-        let s = Stack {
+        Stack {
             units: Unit::Nano,
             xpitch: 6600,
             ypitch: 6600,
+            boundary_layer: Some((236, 0)),
             layers: vec![
                 Layer {
                     index: 1,
@@ -521,24 +791,220 @@ mod tests {
                     offset: (-245, 0),
                     stream_layer: Some((69, 20)),
                 },
+                Layer {
+                    index: 3,
+                    name: "M3".into(),
+                    entries: vec![
+                        Gnd(490),
+                        Pat(Pattern::new(vec![Gap(230), Sig(140)], 7)),
+                        Gap(230),
+                        Pwr(490),
+                        Pat(Pattern::new(vec![Gap(230), Sig(140)], 7)),
+                        Gap(230),
+                    ],
+                    dir: Dir::Horiz,
+                    offset: (0, -245),
+                    stream_layer: Some((70, 20)),
+                },
             ],
-        };
+        }
+    }
 
+    /// Create a cell
+    #[test]
+    fn create_cell() -> Result<(), LayoutError> {
+        let s = stack();
         let c = Cell {
             name: "HereGoes".into(),
             stack: &s,
-            top_layer: 2,
-            outline: Outline::rect(3, 3)?,
+            top_layer: 3,
+            outline: Outline::rect(5, 5)?,
             instances: Vec::new(),
             assignments: vec![Assign {
                 net: "clk".into(),
                 layer: 1,
                 track: 0,
-                cross: Cross::Above(1),
+                at: 1,
+                relz: RelZ::Above,
             }],
             cuts: Vec::new(),
         };
-        c.to_raw_lib()?.to_gds().save("test.gds")?;
+        Ok(())
+    }
+    /// Create a library
+    #[test]
+    fn create_lib() -> Result<(), LayoutError> {
+        let s = stack();
+        let c = Cell {
+            name: "HereGoes".into(),
+            stack: &s,
+            top_layer: 3,
+            outline: Outline::rect(5, 5)?,
+            instances: Vec::new(),
+            assignments: vec![Assign {
+                net: "clk".into(),
+                layer: 1,
+                track: 0,
+                at: 1,
+                relz: RelZ::Above,
+            }],
+            cuts: Vec::new(),
+        };
+        let mut lib = Library::new("HereGoesLib", &s);
+        lib.cells.push(c);
+        lib.to_raw_lib()?.to_gds().save("test.gds")?;
+        Ok(())
+    }
+    /// Create a cell with instances
+    #[test]
+    fn create_lib2() -> Result<(), LayoutError> {
+        let s = stack();
+        let c = Cell {
+            name: "HasInst".into(),
+            stack: &s,
+            top_layer: 3,
+            outline: Outline::rect(5, 5)?,
+            instances: vec![Instance {
+                inst_name: "inst1".into(),
+                cell_name: "IsInst".into(),
+                p0: Point::new(0, 0),
+                reflect: false,
+                angle: None,
+            }],
+            assignments: vec![Assign {
+                net: "clk".into(),
+                layer: 1,
+                track: 0,
+                at: 1,
+                relz: RelZ::Above,
+            }],
+            cuts: Vec::new(),
+        };
+        let c2 = Cell {
+            name: "IsInst".into(),
+            stack: &s,
+            top_layer: 2,
+            outline: Outline::rect(1, 1)?,
+            instances: vec![],
+            assignments: vec![],
+            cuts: Vec::new(),
+        };
+        let mut lib = Library::new("InstLib", &s);
+        lib.cells.push(c);
+        lib.cells.push(c2);
+        lib.to_raw_lib()?.to_gds().save("test_insts.gds")?;
+        Ok(())
+    }
+
+    /// Create an abstract layout, with its variety of supported port types
+    #[test]
+    fn create_abstract() -> Result<(), LayoutError> {
+        let outline = Outline::rect(11, 11)?;
+        let ports = vec![
+            abstrakt::Port {
+                name: "edge_bot".into(),
+                kind: abstrakt::PortKind::Edge {
+                    layer: 2,
+                    track: 2,
+                    side: abstrakt::Side::Bottom,
+                },
+            },
+            abstrakt::Port {
+                name: "edge_top".into(),
+                kind: abstrakt::PortKind::Edge {
+                    layer: 2,
+                    track: 4,
+                    side: abstrakt::Side::Top,
+                },
+            },
+            abstrakt::Port {
+                name: "edge_left".into(),
+                kind: abstrakt::PortKind::Edge {
+                    layer: 1,
+                    track: 1,
+                    side: abstrakt::Side::Left,
+                },
+            },
+            abstrakt::Port {
+                name: "edge_right".into(),
+                kind: abstrakt::PortKind::Edge {
+                    layer: 1,
+                    track: 5,
+                    side: abstrakt::Side::Right,
+                },
+            },
+            abstrakt::Port {
+                name: "zfull".into(),
+                kind: abstrakt::PortKind::Zfull { track: 3 },
+            },
+            // abstrakt::Port {
+            //     name: "zlocs".into(),
+            //     kind: abstrakt::PortKind::Zlocs {
+            //         locs: vec![Assign {}],
+            //     },
+            // },
+        ];
+        abstrakt::Cell {
+            name: "abstrack".into(),
+            stack: &stack(),
+            outline,
+            top_layer: 3,
+            ports,
+        };
+        Ok(())
+    }
+
+    /// Create a cell with abstract instances
+    #[test]
+    fn create_lib3() -> Result<(), LayoutError> {
+        let s = stack();
+        let c = Cell {
+            name: "HasAbstrakts".into(),
+            stack: &s,
+            top_layer: 3,
+            outline: Outline::rect(5, 5)?,
+            instances: vec![
+                Instance {
+                    inst_name: "inst1".into(),
+                    cell_name: "IsAbstrakt".into(),
+                    p0: Point::new(0, 0),
+                    reflect: false,
+                    angle: None,
+                },
+                Instance {
+                    inst_name: "inst2".into(),
+                    cell_name: "IsAbstrakt".into(),
+                    p0: Point::new(2, 2),
+                    reflect: false,
+                    angle: None,
+                },
+                Instance {
+                    inst_name: "inst4".into(),
+                    cell_name: "IsAbstrakt".into(),
+                    p0: Point::new(4, 4),
+                    reflect: false,
+                    angle: None,
+                },
+            ],
+            assignments: vec![],
+            cuts: Vec::new(),
+        };
+        let c2 = abstrakt::Cell {
+            name: "IsAbstrakt".into(),
+            stack: &s,
+            top_layer: 2,
+            outline: Outline::rect(1, 1)?,
+            ports: Vec::new(),
+        };
+        let l = Library {
+            name: "InstLib".into(),
+            stack: &s,
+            cell_names: vec![],
+            abstracts: vec![c2],
+            cells: vec![c],
+            libs: vec![],
+        };
+        l.to_raw_lib()?.to_gds().save("test_abstracts.gds")?;
         Ok(())
     }
 }
