@@ -198,7 +198,7 @@ impl GdsRecord {
         let record_type: GdsRecordType =
             FromPrimitive::from_u8(record_type).ok_or(GdsError::InvalidRecordType(record_type))?;
         if !record_type.valid() {
-            return Err(GdsError::UnsupportedRecordType(record_type));
+            return Err(GdsError::InvalidRecordType(record_type as u8));
         }
         // Read and decode its DataType
         let data_type = file.read_u8()?;
@@ -574,9 +574,9 @@ impl GdsFloat64 {
     }
 }
 
-/// A placeholder for Unsupported elements
+/// Placeholder for Unsupported elements
 #[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq)]
-pub struct UnImplemented {}
+pub struct Unsupported;
 
 /// # Gds Translation Settings
 /// For text-elements and references.
@@ -686,7 +686,7 @@ pub enum GdsFormatType {
     /// Default, sole fully-supported case.
     Archive,
     /// Filtered-format includes a list of Mask records. Not supported.
-    Filtered(Vec<UnImplemented>),
+    Filtered(Vec<Unsupported>),
 }
 /// # Gds Property
 /// Spec BNF:
@@ -1155,9 +1155,12 @@ impl ToRecords for GdsTextElem {
 #[builder(setter(into), private)]
 pub struct GdsNode {
     // Required Fields
-    pub layer: i16,    // Layer Number
-    pub nodetype: i16, // Node-Type ID
-    pub xy: Vec<i32>,  // Vector of x,y coordinates
+    /// Layer Number
+    pub layer: i16,
+    /// Node-Type ID
+    pub nodetype: i16,
+    /// Vector of x,y coordinates
+    pub xy: Vec<i32>,
 
     // Optional Fields
     #[serde(default)]
@@ -1166,6 +1169,48 @@ pub struct GdsNode {
     #[serde(default)]
     #[builder(default, setter(strip_option))]
     pub plex: Option<GdsPlex>,
+}
+impl GdsNode {
+    fn parse(it: &mut GdsReaderIter) -> Result<GdsNode, GdsError> {
+        let mut b = GdsNodeBuilder::default();
+
+        while let Some(r) = it.next()? {
+            if let GdsRecord::EndElement = r {
+                break; // End-of-element
+            }
+            match r {
+                GdsRecord::Layer(d) => b.layer(d),
+                GdsRecord::Nodetype(d) => b.nodetype(d),
+                GdsRecord::Xy(d) => b.xy(d),
+                GdsRecord::Plex(d) => b.plex(GdsPlex(d)),
+                GdsRecord::ElemFlags(d0, d1) => b.elflags(GdsElemFlags(d0, d1)),
+                GdsRecord::PropAttr(_) | GdsRecord::PropValue(_) => {
+                    return Err(GdsError::Unsupported(Some(r), Some(GdsContext::Node)))
+                }
+                // Invalid
+                _ => return Err(GdsError::RecordContext(r, GdsContext::Node)),
+            };
+        }
+        Ok(b.build()?)
+    }
+}
+impl ToRecords for GdsNode {
+    fn to_records(&self) -> Vec<GdsRecord> {
+        let mut records = vec![
+            GdsRecord::Node,
+            GdsRecord::Layer(self.layer),
+            GdsRecord::Nodetype(self.nodetype),
+            GdsRecord::Xy(self.xy.clone()),
+        ];
+        if let Some(ref e) = self.elflags {
+            records.push(GdsRecord::ElemFlags(e.0, e.1));
+        }
+        if let Some(ref e) = self.plex {
+            records.push(GdsRecord::Plex(e.0));
+        }
+        records.push(GdsRecord::EndElement);
+        records
+    }
 }
 ///
 /// # Gds Box Element
@@ -1179,9 +1224,12 @@ pub struct GdsNode {
 #[builder(setter(into), private)]
 pub struct GdsBox {
     // Required Fields
-    pub layer: i16,   // Layer Number
-    pub boxtype: i16, // Box-Type ID
-    pub xy: Vec<i32>, // Vector of x,y coordinates
+    /// Layer Number
+    pub layer: i16,
+    /// Box-Type ID
+    pub boxtype: i16,
+    /// Vector of x,y coordinates
+    pub xy: Vec<i32>,
 
     // Optional Fields
     #[serde(default)]
@@ -1233,16 +1281,13 @@ impl ToRecords for GdsBox {
         records
     }
 }
-impl ToRecords for GdsNode {
-    fn to_records(&self) -> Vec<GdsRecord> {
-        unimplemented!("")
-    }
-}
 ///
 /// # Gds Element Enumeration  
 ///
 /// Spec BNF:
+/// ```text
 /// {<boundary> | <path> | <SREF> | <AREF> | <text> | <node> | <box>} {<property>}* ENDEL
+/// ```
 ///
 #[enum_dispatch]
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
@@ -1258,7 +1303,6 @@ pub enum GdsElement {
 /// Trait for conversion of [GdsElement]s and similar tree-elements to sequences of [GdsRecord]s.  
 ///
 /// Dispatched from the [GdsElement] enum by the `enum_dispatch` macros.
-///
 #[enum_dispatch(GdsElement)]
 pub trait ToRecords {
     fn to_records(&self) -> Vec<GdsRecord>;
@@ -1432,7 +1476,7 @@ impl GdsStruct {
 /// and secondarily include library-level meta-data, including the distance units, GDS-spec version, and modification dates.
 ///
 /// Several more esoteric library-level GDSII features are included as [GdsLibrary] fields,
-/// but are not materially supported. The empty [UnImplemented] value generally denotes these fields.
+/// but are not materially supported. The empty [Unsupported] value generally denotes these fields.
 ///
 /// Spec BNF:
 /// ```text
@@ -1458,25 +1502,25 @@ pub struct GdsLibrary {
     // Optional (and all thus far unsupported) fields
     #[serde(default)]
     #[builder(default, setter(strip_option))]
-    pub libdirsize: Option<UnImplemented>,
+    pub libdirsize: Option<Unsupported>,
     #[serde(default)]
     #[builder(default, setter(strip_option))]
-    pub srfname: Option<UnImplemented>,
+    pub srfname: Option<Unsupported>,
     #[serde(default)]
     #[builder(default, setter(strip_option))]
-    pub libsecur: Option<UnImplemented>,
+    pub libsecur: Option<Unsupported>,
     #[serde(default)]
     #[builder(default, setter(strip_option))]
-    pub reflibs: Option<UnImplemented>,
+    pub reflibs: Option<Unsupported>,
     #[serde(default)]
     #[builder(default, setter(strip_option))]
-    pub fonts: Option<UnImplemented>,
+    pub fonts: Option<Unsupported>,
     #[serde(default)]
     #[builder(default, setter(strip_option))]
-    pub attrtable: Option<UnImplemented>,
+    pub attrtable: Option<Unsupported>,
     #[serde(default)]
     #[builder(default, setter(strip_option))]
-    pub generations: Option<UnImplemented>,
+    pub generations: Option<Unsupported>,
     #[serde(default)]
     #[builder(default, setter(strip_option))]
     pub format_type: Option<GdsFormatType>,
@@ -1674,8 +1718,6 @@ pub enum GdsError {
     InvalidDataType(u8),
     /// Invalid record type
     InvalidRecordType(u8),
-    /// Unsupported (but spec valid) record type
-    UnsupportedRecordType(GdsRecordType),
     /// Unsupported feature, in the decoded context
     Unsupported(Option<GdsRecord>, Option<GdsContext>),
     /// Other decoding errors
