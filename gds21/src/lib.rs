@@ -1,10 +1,10 @@
 //!
-//! # Gds21 
-//! 
-//! GDSII Integrated Circuit Layout Format Parser and Writer 
-//! 
-//! 
-//! 
+//! # Gds21
+//!
+//! GDSII Integrated Circuit Layout Format Parser and Writer
+//!
+//!
+//!
 
 use std::fmt;
 use std::fs::File;
@@ -17,6 +17,8 @@ use std::str;
 use std::io::prelude::*;
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use chrono::prelude::*;
+use chrono::{Datelike, NaiveDate, NaiveDateTime};
 use enum_dispatch::enum_dispatch;
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
@@ -126,11 +128,11 @@ impl GdsRecordType {
 #[derive(Debug, Clone, PartialEq)]
 pub enum GdsRecord {
     Header { version: i16 },
-    BgnLib { date_info: Vec<i16> },
+    BgnLib { dates: Vec<i16> },
     LibName(String),
     Units(f64, f64),
     EndLib,
-    BgnStruct { date_info: Vec<i16> },
+    BgnStruct { dates: Vec<i16> },
     StructName(String),    // STRNAME
     StructRefName(String), // SNAME
     EndStruct,
@@ -211,7 +213,7 @@ impl GdsRecord {
                 version: read_i16(file, len)?[0],
             },
             (GdsRecordType::BgnLib, I16, 24) => GdsRecord::BgnLib {
-                date_info: read_i16(file, len)?,
+                dates: read_i16(file, len)?,
             },
             (GdsRecordType::LibName, Str, _) => GdsRecord::LibName(read_str(file, len)?),
             (GdsRecordType::Units, F64, 16) => {
@@ -222,7 +224,7 @@ impl GdsRecord {
 
             // Structure (Cell) Level Records
             (GdsRecordType::BgnStruct, I16, 24) => GdsRecord::BgnStruct {
-                date_info: read_i16(file, len)?,
+                dates: read_i16(file, len)?,
             },
             (GdsRecordType::StructName, Str, _) => GdsRecord::StructName(read_str(file, len)?),
             (GdsRecordType::StructRefName, Str, _) => {
@@ -425,8 +427,8 @@ impl GdsRecord {
             }
             // Vectors
             GdsRecord::TapeCode(d)
-            | GdsRecord::BgnLib { date_info: d }
-            | GdsRecord::BgnStruct { date_info: d } => {
+            | GdsRecord::BgnLib { dates: d }
+            | GdsRecord::BgnStruct { dates: d } => {
                 for val in d.iter() {
                     writer.write_i16::<BigEndian>(*val)?;
                 }
@@ -1191,6 +1193,53 @@ pub enum GdsElement {
 pub trait ToRecords {
     fn to_records(&self) -> Vec<GdsRecord>;
 }
+
+/// # Gds Modification Dates & Times
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct GdsDateTimes {
+    /// Last Modification Date & Time
+    modified: NaiveDateTime,
+    /// Last Access Date & Time
+    accessed: NaiveDateTime,
+}
+impl GdsDateTimes {
+    /// Parse from GDSII's vector of i16's format
+    fn parse(d: Vec<i16>) -> Result<Self, GdsError> {
+        if d.len() != 12 {
+            return Err(GdsError::Decode);
+        }
+        Ok(Self {
+            modified: NaiveDate::from_ymd(d[0] as i32, d[1] as u32, d[2] as u32).and_hms(
+                d[3] as u32,
+                d[4] as u32,
+                d[5] as u32,
+            ),
+            accessed: NaiveDate::from_ymd(d[6] as i32, d[7] as u32, d[8] as u32).and_hms(
+                d[9] as u32,
+                d[10] as u32,
+                d[11] as u32,
+            ),
+        })
+    }
+    /// Encode in GDSII's vector of i16's format
+    pub fn encode(&self) -> Vec<i16> {
+        vec![
+            self.modified.date().year() as i16,
+            self.modified.date().month() as i16,
+            self.modified.date().day() as i16,
+            self.modified.time().hour() as i16,
+            self.modified.time().minute() as i16,
+            self.modified.time().second() as i16,
+            self.accessed.date().year() as i16,
+            self.accessed.date().month() as i16,
+            self.accessed.date().day() as i16,
+            self.accessed.time().hour() as i16,
+            self.accessed.time().minute() as i16,
+            self.accessed.time().second() as i16,
+        ]
+    }
+}
+
 ///
 /// # Gds Struct
 /// (Usually this means a Cell)
@@ -1198,19 +1247,23 @@ pub trait ToRecords {
 /// Spec BNF:
 /// BGNSTR STRNAME [STRCLASS] {<element>}* ENDSTR
 ///
-#[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
 #[builder(setter(into))]
 pub struct GdsStruct {
-    pub name: String,           // Struct Name
-    pub date_info: Vec<i16>,    // Creation/ Modification-Date Info
-    pub elems: Vec<GdsElement>, // Elements List
+    /// Struct Name
+    pub name: String,
+    /// Creation/ Modification-Date Info
+    pub dates: GdsDateTimes,
+    /// Elements List
+    pub elems: Vec<GdsElement>,
 }
 impl GdsStruct {
     /// Parse from record-iterator `it`
-    fn parse(it: &mut GdsReaderIter, date_info: Vec<i16>) -> Result<GdsStruct, GdsError> {
+    fn parse(it: &mut GdsReaderIter, dates: Vec<i16>) -> Result<GdsStruct, GdsError> {
         let mut strukt = GdsStructBuilder::default();
-        strukt.date_info(date_info);
         let mut elems = Vec::<GdsElement>::new();
+
+        strukt.dates(GdsDateTimes::parse(dates)?);
         while let Some(r) = it.next()? {
             if let GdsRecord::EndStruct = r {
                 break; // End-of-struct
@@ -1254,13 +1307,16 @@ impl GdsStruct {
         strukt.elems(elems);
         Ok(strukt.build()?)
     }
+    /// Encode and write to `writer` 
     pub fn encode(&self, writer: &mut impl Write) -> Result<(), GdsError> {
+        // Write our modification-date info
         GdsRecord::BgnStruct {
-            date_info: self.date_info.clone(),
+            dates: self.dates.encode(),
         }
         .encode(writer)?;
+        // Write our name
         GdsRecord::StructName(self.name.clone()).encode(writer)?;
-        // Write each of its elements
+        // Write each of our elements
         for elem in self.elems.iter() {
             for record in elem.to_records().iter() {
                 record.encode(writer)?;
@@ -1278,15 +1334,20 @@ impl GdsStruct {
 /// HEADER BGNLIB [LIBDIRSIZE] [SRFNAME] [LIBSECUR] LIBNAME [REFLIBS] [FONTS] [ATTRTABLE] [GENERATIONS] [<FormatType>]
 /// UNITS {<structure>}* ENDLIB
 ///
-#[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
 #[builder(setter(into))]
 pub struct GdsLibrary {
     // Required fields
-    pub name: String,            // Library Name
-    pub version: i16,            // Gds Spec Version
-    pub date_info: Vec<i16>,     // Creation Date, in 16b ints as per spec
-    pub units: GdsUnits,         // Spatial Units
-    pub structs: Vec<GdsStruct>, // Vector of defined Stucts, generally Cells
+    /// Library Name
+    pub name: String,
+    /// Gds Spec Version
+    pub version: i16,
+    // Modification Date(s)
+    pub dates: GdsDateTimes,
+    /// Spatial Units    
+    pub units: GdsUnits,
+    /// Struct Definitions
+    pub structs: Vec<GdsStruct>,
 
     // Optional (and all thus far unsupported) fields
     #[serde(default)]
@@ -1334,7 +1395,7 @@ impl GdsLibrary {
         };
         // Read the begin-lib
         match it.next()? {
-            Some(GdsRecord::BgnLib { date_info: d }) => lib.date_info(d),
+            Some(GdsRecord::BgnLib { dates: d }) => lib.dates(GdsDateTimes::parse(d)?),
             _ => return Err(GdsError::Decode),
         };
         // Iterate over all others
@@ -1349,8 +1410,8 @@ impl GdsLibrary {
                 GdsRecord::Units(d0, d1) => {
                     lib.units(GdsUnits { dbu: d0, uu: d1 });
                 }
-                GdsRecord::BgnStruct { date_info } => {
-                    let strukt = GdsStruct::parse(it, date_info)?;
+                GdsRecord::BgnStruct { dates } => {
+                    let strukt = GdsStruct::parse(it, dates)?;
                     structs.push(strukt);
                 }
                 // Spec-valid but unsupported records
@@ -1398,11 +1459,14 @@ impl GdsLibrary {
             version: self.version,
         }
         .encode(writer)?;
+        // Write our modification-date info
         GdsRecord::BgnLib {
-            date_info: self.date_info.clone(),
+            dates: self.dates.encode(),
         }
         .encode(writer)?;
+        // Write our library name
         GdsRecord::LibName(self.name.clone()).encode(writer)?;
+        // Write our units
         GdsRecord::Units(self.units.dbu, self.units.uu).encode(writer)?;
         // Write all of our Structs/Cells
         for strukt in self.structs.iter() {
@@ -1417,8 +1481,10 @@ impl GdsLibrary {
 ///
 /// A peekable iterator which loads GdsRecords from file, one at a time
 struct GdsReaderIter {
-    rdr: BufReader<File>,   // File being read
-    nxt: Option<GdsRecord>, // Next record, stored for peeking
+    /// File being read
+    rdr: BufReader<File>,
+    /// Next record, stored for peeking
+    nxt: Option<GdsRecord>,
 }
 impl GdsReaderIter {
     /// Create a new GdsReader iterator for the file at path `fname`
@@ -1447,12 +1513,12 @@ impl GdsReaderIter {
     }
 }
 /// # GdsLayerSpec
-/// Each GDSII element's layer is specified by a set of two numbers, 
-/// commonly referred to as `layer` and `datatype`. 
-/// Several element-types refer to their analog of `datatype` by different names, 
-/// e.g. `texttype` and `nodetype`. 
-/// `GdsLayerSpecs` generalize across these via the `xtype` field, 
-/// which holds whichever is appropriate for the given element. 
+/// Each GDSII element's layer is specified by a set of two numbers,
+/// commonly referred to as `layer` and `datatype`.
+/// Several element-types refer to their analog of `datatype` by different names,
+/// e.g. `texttype` and `nodetype`.
+/// `GdsLayerSpecs` generalize across these via the `xtype` field,
+/// which holds whichever is appropriate for the given element.
 pub struct GdsLayerSpec {
     pub layer: i16, // Layer ID Number
     pub xtype: i16, // DataType (or TextType, NodeType etc) ID Number
@@ -1513,6 +1579,14 @@ impl From<String> for GdsError {
 mod tests {
     use super::*;
 
+    /// Specified creation date for test cases
+    fn test_dates() -> GdsDateTimes {
+        let test_date = NaiveDate::from_ymd(1970, 1, 1).and_hms(0, 0, 1);
+        GdsDateTimes {
+            modified: test_date.clone(),
+            accessed: test_date.clone(),
+        }
+    }
     #[test]
     fn it_reads() -> Result<(), GdsError> {
         // Read a sample GDS and compare to golden data
@@ -1537,7 +1611,7 @@ mod tests {
         lib.name = "has_inst_lib".into();
         let s = GdsStruct {
             name: "has_inst".into(),
-            date_info: vec![0; 12], // FIXME: real date-time
+            dates: test_dates(),
             elems: vec![GdsElement::GdsStructRef(GdsStructRef {
                 name: "dff1".into(),
                 xy: vec![11_000, 11_000],
@@ -1561,7 +1635,7 @@ mod tests {
         lib.name = "has_array_lib".into();
         let s = GdsStruct {
             name: "has_array".into(),
-            date_info: vec![0; 12], // FIXME: real date-time
+            dates: test_dates(),
             elems: vec![GdsElement::GdsArrayRef(GdsArrayRef {
                 name: "dff1".into(),
                 xy: vec![0, 0, 0, 10_000_000, 10_000_000, 0],
@@ -1582,7 +1656,7 @@ mod tests {
     /// Compare `lib` to "golden" data loaded from JSON at path `golden`.
     fn check(lib: &GdsLibrary, fname: &str) {
         // Uncomment this bit to over-write the golden data
-        // save_json(lib, fname);
+        save_json(lib, fname);
 
         let golden = load_json(fname);
         assert_eq!(*lib, golden);

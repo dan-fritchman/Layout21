@@ -16,6 +16,8 @@ serde_json = "1.0"
 serde_yaml = "0.8"
 tempfile = {version = "3", optional = true}
 toml = "0.5.7"
+chrono = {version = "0.4", features = ["serde"]}
+
 
 [dev-dependencies]
 tempfile = {version = "3"}
