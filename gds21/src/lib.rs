@@ -1,9 +1,67 @@
 //!
-//! # Gds21
+//! # Gds21 Integrated Circuit Layout Parser & Writer
 //!
-//! GDSII Integrated Circuit Layout Format Parser and Writer
+//! GDSII is the IC industry's de facto standard for storing and sharing layout data.
+//! Gds21 is a library for reading and creating GDSII data, similar to and largely inspired by libraries such as [gdstk](https://github.com/heitzmann/gdstk) and its predecessor [gdspy](https://github.com/heitzmann/gdspy).
+//! Gds21 differs in being designed primarily as an interface layer to GDSII for the larger Layout21 library.
+//! Reading and generating GDSII-format data are primary goals;
+//! offering ease-of-use functionality for more elaborate manipulations of GDS data is not.
+//! (Although these manipulations can be performed on Gds21's data structures).
+//! Gds21 accordingly stores layout data on GDSII's terms, using GDSII's idioms and naming conventions.
 //!
+//! Layout data is represented in three primary forms:
 //!
+//! * A short tree with three layers:
+//!   * The root is a [GdsLibrary], which primarily consists of a set of cells ([GdsStruct]s), and secondarily a set of metadata.
+//!     Each [GdsLibrary] is a universe unto itself, in that it has no mechanisms for comprehending layout cells or data defined outside itself.
+//!     On-disk each [GdsLibrary] is typically paired one-to-one with a `.gds` file.
+//!   * Libraries consist of cell definitions AKA [GdsStruct]s, which define each layout cell (or module, or "struct" in GDSII terms).
+//!   * Cells consist of [GdsElement]s, an enumeration which includes individual polygons ([GdsBoundary]),
+//!     instances of other layout cells ([GdsStructRef]), text ([GdsTextElem]), and a few other geometric elements.
+//! * For storage on disk, the [GdsLibrary] tree is flattened to a series of [GdsRecord]s.
+//!   These records indicate the beginning, end, and content of each tree-node.
+//!   Detailed descriptions of these records comprise the majority of the GDSII spec.
+//! * Records are stored on-disk in binary form as detailed in the GDSII spec.
+//!   Each includes a record-type header, datatype, length field, and optional additional content.
+//!   These raw-bytes are never stored by Gds21, only generated and consumed on their way into and out of [Read] and [Write] objects (typically [File]s).
+//!
+//! ## Alternate Serialization
+//!
+//! Each element in Gds21's [GdsLibrary] tree is [serde]-serializable.
+//! Gds21 includes dependencies for serializing and de-serializing to and from [JSON](serde_json), [YAML](serde_yaml), and [TOML](toml) formats.
+//! Note these text-based representations will generally be substantially larger than binary GDSII data.
+//!
+//! ## Usage
+//!
+//! Loading a [GdsLibrary] from disk:
+//!
+//! ```skip
+//! let lib = GdsLibrary::load("sample.gds")?;
+//! ```
+//!
+//! Creating a new and empty [GdsLibrary], and adding a [GdsStruct] cell-definition:
+//!
+//! ```
+//! use gds21::{GdsLibrary, GdsStruct, GdsUnits};
+//! let mut lib = GdsLibrary::new("mylib", GdsUnits::default());
+//! lib.structs.push(GdsStruct::new("mycell"));
+//! ```
+//!
+//! Saving a [GdsLibrary] to disk:
+//!
+//! ```skip
+//! lib.save("mylib.gds");
+//! ```
+//!
+//! Converting a [GdsLibrary] to JSON, YAML, or TOML:
+//!
+//! ```
+//! use gds21::{GdsLibrary, GdsUnits};
+//! let lib = GdsLibrary::new("mylib", GdsUnits::default());
+//! let json = serde_json::to_string(&lib);
+//! let yaml = serde_yaml::to_string(&lib);
+//! let toml = toml::to_string(&lib);
+//! ```
 //!
 
 use std::fmt;
@@ -178,8 +236,8 @@ pub enum GdsRecord {
     LibSecur(i16),
 }
 impl GdsRecord {
-    /// Decode the next binary-encoded `GdsRecord` from open `Read`-object `file`.
-    /// Returns a `GdsError` if `file` cursor is not on a record-boundary,
+    /// Decode the next binary-encoded [GdsRecord] from open [Read]-object `file`.
+    /// Returns a [GdsError] if `file` cursor is not on a record-boundary,
     /// or if binary decoding otherwise fails.
     pub fn decode(file: &mut impl Read) -> Result<GdsRecord, GdsError> {
         // Read the 16-bit record-size. (In bytes, including the four header bytes.)
@@ -516,15 +574,15 @@ fn read_f64(file: &mut impl Read, len: u16) -> Result<Vec<f64>, GdsError> {
     }
     Ok(data)
 }
-/// # Gds's home-grown floating-point format  
+/// # GDSII's Home-Grown Floating-Point Format  
 ///
 /// Incredibly, GDSII is old enough to have its own float-format,
 /// like most computers did before IEEE754.
 ///
-/// The [GdsFloat64] is not used as a data-store, but largely a namespace
+/// The [GdsFloat64] struct is not used as a data-store, but largely a namespace
 /// for the `encode` and `decode` operations to and from IEEE754 double-precision format.
 ///
-pub struct GdsFloat64 {}
+pub struct GdsFloat64;
 impl GdsFloat64 {
     /// Decode eight GDSII-float-encoded bytes to `f64`
     pub fn decode(bytes: &[u8]) -> Result<f64, GdsError> {
@@ -552,7 +610,7 @@ impl GdsFloat64 {
         };
         Ok(val)
     }
-    /// Encode `f64` to eight bytes, this time stored as `u64`.
+    /// Encode `f64` to eight bytes, this time represented as `u64`.
     pub fn encode(mut val: f64) -> u64 {
         if val == 0.0 {
             return 0;
@@ -574,23 +632,28 @@ impl GdsFloat64 {
     }
 }
 
-/// Placeholder for Unsupported elements
+/// Placeholder for Unsupported (But Spec-Valid) Features
 #[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct Unsupported;
 
 /// # Gds Translation Settings
-/// For text-elements and references.
-/// As configured by the STRANS records.
+/// Reflection, rotation, and magnification for text-elements and references.
+/// As configured by `STRANS` records.
 #[derive(Default, Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct GdsStrans {
     // Required Fields
-    pub reflected: bool, // Reflection
-    pub abs_mag: bool,   // Absolute Magnification Setting. Not supported
-    pub abs_angle: bool, // Absolute Angle Setting. Not supported
+    /// Reflection
+    pub reflected: bool,
+    /// Absolute Magnification Setting
+    pub abs_mag: bool,
+    /// Absolute Angle Setting
+    pub abs_angle: bool,
 
     // Optional Fields
-    pub mag: Option<f64>,   // Magnification Factor
-    pub angle: Option<f64>, // Angle, in degrees counter-clockwise
+    /// Magnification Factor. Defaults to 1.0 if not specified.
+    pub mag: Option<f64>,
+    /// Angle, in degrees counter-clockwise. Defaults to zero if not specified.
+    pub angle: Option<f64>,
 }
 impl GdsStrans {
     /// Decode boolean fields from bytes
@@ -640,12 +703,20 @@ impl ToRecords for GdsStrans {
 }
 /// # Gds Text-Presentation Flags
 /// Sets fonts, text justification, and the like.
+/// Stored in raw `u8` form.
 #[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct GdsPresentation(u8, u8);
 
+/// # Gds Element Flags
+/// As configured by `ELFLAGS` records.
+/// ElemFlags two bytes of bit-fields are stored in raw `u8` form.
 #[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct GdsElemFlags(u8, u8);
 
+/// # Gds Plex
+/// From the spec:
+/// "A unique positive number which is common to all elements of the Plex to which this element belongs."
+/// In Gds21's experience, `PLEX` records and settings are highly uncommon.
 #[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct GdsPlex(i32);
 
@@ -741,6 +812,7 @@ pub struct GdsPath {
     pub plex: Option<GdsPlex>,
 }
 impl GdsPath {
+    /// Parse from record-iterator `it`
     fn parse(it: &mut GdsReaderIter) -> Result<GdsPath, GdsError> {
         let mut b = GdsPathBuilder::default();
 
@@ -1054,10 +1126,14 @@ impl ToRecords for GdsArrayRef {
 #[builder(setter(into), private)]
 pub struct GdsTextElem {
     // Required Fields
-    pub string: String, // Text Value
-    pub layer: i16,     // Layer Number
-    pub texttype: i16,  // Text-Type ID
-    pub xy: Vec<i32>,   // Vector of x,y coordinates
+    /// Text Value
+    pub string: String,
+    /// Layer Number
+    pub layer: i16,
+    /// Text-Type ID
+    pub texttype: i16,
+    /// Vector of x,y coordinates
+    pub xy: Vec<i32>,
 
     // Optional Fields
     #[serde(default)]
@@ -1081,7 +1157,7 @@ pub struct GdsTextElem {
     pub plex: Option<GdsPlex>,
 }
 impl GdsTextElem {
-    /// Parse a `GdsTextElement` from an iterator of `GdsRecords`
+    /// Parse a [GdsTextElem] from an iterator of [GdsRecord]s.
     /// Assumes the initial `Text` record has already been parsed.
     fn parse(it: &mut GdsReaderIter) -> Result<GdsTextElem, GdsError> {
         let mut b = GdsTextElemBuilder::default();
@@ -1401,43 +1477,25 @@ impl GdsStruct {
     /// Parse from record-iterator `it`
     fn parse(it: &mut GdsReaderIter, dates: Vec<i16>) -> Result<GdsStruct, GdsError> {
         let mut strukt = GdsStructBuilder::default();
-        let mut elems = Vec::<GdsElement>::new();
-
+        // Parse and store `dates`
         strukt.dates(GdsDateTimes::parse(dates)?);
-        while let Some(r) = it.next()? {
-            if let GdsRecord::EndStruct = r {
-                break; // End-of-struct
-            }
+        // Parse [GdsElement] records until hitting a [GdsRecord::EndStruct]
+        let mut elems = Vec::<GdsElement>::new();
+        while let Some(r) = it.next()? { 
             match r {
+                GdsRecord::EndStruct => break, // End-of-struct
                 GdsRecord::StructName(d) => {
                     strukt.name(d);
                 }
-                GdsRecord::Boundary => {
-                    let b = GdsBoundary::parse(it)?;
-                    elems.push(GdsElement::GdsBoundary(b));
-                }
-                GdsRecord::Text => {
-                    let b = GdsTextElem::parse(it)?;
-                    elems.push(GdsElement::GdsTextElem(b));
-                }
-                GdsRecord::Path => {
-                    let b = GdsPath::parse(it)?;
-                    elems.push(GdsElement::GdsPath(b));
-                }
-                GdsRecord::Box => {
-                    let b = GdsBox::parse(it)?;
-                    elems.push(GdsElement::GdsBox(b));
-                }
-                GdsRecord::StructRef => {
-                    let b = GdsStructRef::parse(it)?;
-                    elems.push(GdsElement::GdsStructRef(b));
-                }
-                GdsRecord::ArrayRef => {
-                    let b = GdsArrayRef::parse(it)?;
-                    elems.push(GdsElement::GdsArrayRef(b));
-                }
+                GdsRecord::Boundary => elems.push(GdsBoundary::parse(it)?.into()),
+                GdsRecord::Text => elems.push(GdsTextElem::parse(it)?.into()),
+                GdsRecord::Path => elems.push(GdsPath::parse(it)?.into()),
+                GdsRecord::Box => elems.push(GdsBox::parse(it)?.into()),
+                GdsRecord::StructRef => elems.push(GdsStructRef::parse(it)?.into()),
+                GdsRecord::ArrayRef => elems.push(GdsArrayRef::parse(it)?.into()),
+                GdsRecord::Node => elems.push(GdsNode::parse(it)?.into()),
                 // Spec-valid but unsupported records
-                GdsRecord::Node | GdsRecord::PropAttr(_) => {
+                GdsRecord::PropAttr(_) => {
                     return Err(GdsError::Unsupported(Some(r), Some(GdsContext::Struct)))
                 }
                 // Invalid

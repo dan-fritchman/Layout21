@@ -55,8 +55,10 @@ pub struct Stack {
     pub ypitch: usize,
     /// Layer used for cell outlines/ boundaries
     pub boundary_layer: Option<(isize, isize)>,
-    /// Set of defined layers
+    /// Set of metal layers
     pub layers: Vec<Layer>,
+    /// Set of via layers
+    pub vias: Vec<ViaLayer>,
 }
 impl Stack {
     /// Create a [raw::Cell] for the unit area on Layer `layer`
@@ -163,6 +165,21 @@ impl Layer {
     fn get_unit_name(&self) -> String {
         format!("{}::unit", self.name.clone())
     }
+}
+/// # Via / Insulator Layer Between Metals
+///
+#[derive(Debug, Clone)]
+pub struct ViaLayer {
+    /// Layer index
+    pub index: usize,
+    /// Layer name
+    pub name: String,
+    /// Connected metal-layer indices
+    pub between: (usize, usize),
+    /// Via size
+    pub size: Point,
+    /// Stream-out layer numbers
+    pub stream_layer: Option<(i16, i16)>,
 }
 /// Assignment of a net onto a track-intersection
 #[derive(Debug, Clone)]
@@ -304,7 +321,7 @@ impl Cell<'_> {
         }
         Ok(raw::Cell {
             name: self.name.clone(),
-            insts: instances, // Note instances are of the same type, but use Points of different units.
+            insts: instances, // Note instances are of the same type, but use [Points] of different units.
             arrays,
             elems: Vec::new(), // FIXME! cut up metals and such
         })
@@ -377,6 +394,7 @@ impl Outline {
         pts
     }
 }
+/// # Point in two-dimensional layout-space
 #[derive(Debug, Clone)]
 pub struct Point {
     x: isize,
@@ -385,10 +403,7 @@ pub struct Point {
 impl Point {
     /// Create a new [Point] from (x,y) coordinates
     pub fn new(x: isize, y: isize) -> Self {
-        Self {
-            x: x.into(),
-            y: y.into(),
-        }
+        Self { x, y }
     }
     /// Create a new point scaled by `x` in the x-dimension and by `y` in the y-dimension
     pub fn scale(&self, x: isize, y: isize) -> Point {
@@ -481,10 +496,9 @@ pub mod raw {
             }
         }
     }
-    /// Array of Instances
+    /// # Array of Instances
     ///
-    /// Arrays are two-dimensional, of identical instances of the same Cell.
-    ///
+    /// Two-dimensional array of identical [Instance]s of the same [Cell].
     #[derive(Debug)]
     pub struct InstArray {
         pub inst_name: String,
@@ -498,7 +512,7 @@ pub mod raw {
         pub angle: Option<f64>,
     }
     impl InstArray {
-        /// Convert an Instance Array to GDS Format [gds21::GdsArrayRef]
+        /// Convert an Instance Array to GDS-format [gds21::GdsArrayRef]
         ///
         /// GDS requires three "points" to define an array,
         /// Essentially at its origin and opposite edges
@@ -800,6 +814,44 @@ mod tests {
                     dir: Dir::Horiz,
                     offset: (0, -245),
                     stream_layer: Some((70, 20)),
+                },
+                Layer {
+                    index: 4,
+                    name: "M4".into(),
+                    entries: vec![
+                        Gnd(490),
+                        Pat(Pattern::new(vec![Gap(230), Sig(140)], 7)),
+                        Gap(230),
+                        Pwr(490),
+                        Pat(Pattern::new(vec![Gap(230), Sig(140)], 7)),
+                        Gap(230),
+                    ],
+                    dir: Dir::Vert,
+                    offset: (-245, 0),
+                    stream_layer: Some((71, 20)),
+                },
+            ],
+            vias: vec![
+                ViaLayer {
+                    index: 0,
+                    name: "mcon".into(),
+                    between: (0, 1),
+                    size: Point::new(140, 140),
+                    stream_layer: Some((67, 44)),
+                },
+                ViaLayer {
+                    index: 1,
+                    name: "via1".into(),
+                    between: (1, 2),
+                    size: Point::new(140, 140),
+                    stream_layer: Some((68, 44)),
+                },
+                ViaLayer {
+                    index: 2,
+                    name: "via2".into(),
+                    between: (2, 3),
+                    size: Point::new(140, 140),
+                    stream_layer: Some((69, 44)),
                 },
             ],
         }
