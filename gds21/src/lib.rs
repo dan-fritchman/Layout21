@@ -42,7 +42,7 @@
 //! Creating a new and empty [GdsLibrary], and adding a [GdsStruct] cell-definition:
 //!
 //! ```
-//! use gds21::{GdsLibrary, GdsStruct, GdsUnits};
+//! use gds21::{GdsLibrary, GdsStruct};
 //! let mut lib = GdsLibrary::new("mylib");
 //! lib.structs.push(GdsStruct::new("mycell"));
 //! ```

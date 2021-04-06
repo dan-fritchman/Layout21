@@ -1,6 +1,6 @@
 [package]
 name = "gds21"
-version = "0.1.0"
+version = "0.1.1"
 description = "Gds21 Integrated Circuit Layout Parser & Writer"
 edition = "2018"
 license = "BSD-3-Clause"
