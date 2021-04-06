@@ -453,7 +453,8 @@ pub mod raw {
                 Unit::Micro => gds21::GdsUnits::new(1e-3, 1e-6),
             };
             // Create a new Gds Library
-            let mut lib = gds21::GdsLibrary::new(&self.name, units);
+            let mut lib = gds21::GdsLibrary::new(&self.name);
+            lib.units = units;
             // And convert each of our `cells` into its `structs`
             lib.structs = self.cells.iter().map(|c| c.to_gds()).collect();
             lib
