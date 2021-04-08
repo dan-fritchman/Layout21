@@ -38,7 +38,7 @@ Note these text-based representations will generally be substantially larger tha
 
 Loading a `GdsLibrary` from disk:
 
-```skip
+```rust
 let lib = GdsLibrary::load("sample.gds")?;
 ```
 
@@ -52,7 +52,7 @@ lib.structs.push(GdsStruct::new("mycell"));
 
 Saving a `GdsLibrary` to disk:
 
-```skip
+```rust
 lib.save("mylib.gds");
 ```
 

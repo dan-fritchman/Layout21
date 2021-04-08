@@ -1,3 +1,7 @@
+use std::collections::{HashMap, HashSet};
+use std::fmt::Debug;
+
+use id_arena::{Arena, Id};
 use serde::{Deserialize, Serialize};
 
 /// Distance Units Enumeration
@@ -19,6 +23,15 @@ impl Default for Unit {
 pub enum Dir {
     Horiz,
     Vert,
+}
+impl Dir {
+    /// Whichever direction we are, return the other one.
+    fn other(&self) -> Self {
+        match self {
+            Self::Horiz => Self::Vert,
+            Self::Vert => Self::Horiz,
+        }
+    }
 }
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub enum Entry {
@@ -71,15 +84,54 @@ impl Stack {
 /// Metal layer in a [Stack]
 #[derive(Debug, Clone)]
 pub struct Layer {
+    /// Layer Index
     pub index: usize,
+    /// Layer Name
     pub name: String,
+    /// Direction Enumeration (Horizontal/ Vertical)
     pub dir: Dir,
+    /// Track Size & Type Entries
     pub entries: Vec<Entry>,
+    /// X/Y Origin Offset
     pub offset: (isize, isize),
+    /// Layer for streaming exports
     pub stream_layer: Option<(i16, i16)>,
 }
 impl Layer {
-    /// Flatten our [entries] into a vector
+    /// Convert to a vector of [Track]s
+    fn tracks(&self) -> Vec<Track> {
+        let mut cursor = match self.dir {
+            Dir::Horiz => self.offset.1,
+            Dir::Vert => self.offset.0,
+        };
+        let mut index = 0;
+        let mut tracks: Vec<Track> = Vec::new();
+        for e in self.flat_entries().iter() {
+            match e {
+                Entry::Gap(d) => cursor += *d as isize,
+                Entry::Pwr(d) | Entry::Gnd(d) | Entry::Sig(d) => {
+                    tracks.push(Track {
+                        layer: self.index,
+                        index,
+                        dir: self.dir,
+                        start: cursor,
+                        width: *d,
+                        segments: Vec::new(),
+                    });
+                    cursor += *d as isize;
+                    index += 1;
+                }
+                Entry::Pat(_) => {
+                    panic!("FIXME!");
+                    // return Err(LayoutError::Message(
+                    //     "Internal Error: failed to flatten Patterns".into(),
+                    // ))
+                }
+            }
+        }
+        tracks
+    }
+    /// Flatten our [Entry]s into a vector
     /// Removes any nested patterns
     fn flat_entries(&self) -> Vec<Entry> {
         let mut v = Vec::new();
@@ -105,54 +157,24 @@ impl Layer {
     }
     /// Create a raw-cell covering a single unit of our layer
     pub fn raw_unit(&self, stack: &Stack) -> Result<raw::Cell, LayoutError> {
-        use raw::{Element, Shape};
-        let stream_layer = match self.stream_layer {
-            Some(s) => s,
-            None => return Err(LayoutError::Message("No Stream-Layer Defined".into())),
-        };
-        let mut elems: Vec<Element> = Vec::new();
-        let mut cursor = match self.dir {
-            Dir::Horiz => self.offset.1,
-            Dir::Vert => self.offset.0,
-        };
-        let width = match self.dir {
+        let layer_spec = self
+            .stream_layer
+            .ok_or(LayoutError::Message("No Stream-Layer Defined".into()))?;
+        let pitch = match self.dir {
             Dir::Horiz => stack.xpitch,
             Dir::Vert => stack.ypitch,
         };
-        for e in self.flat_entries().iter() {
-            match e {
-                Entry::Gap(d) => cursor += *d as isize,
-                Entry::Pwr(d) | Entry::Gnd(d) | Entry::Sig(d) => {
-                    let e = match self.dir {
-                        Dir::Horiz => Element {
-                            layer_spec: stream_layer,
-                            inner: Shape::Rect {
-                                p0: Point { x: 0, y: cursor },
-                                p1: Point {
-                                    x: width as isize,
-                                    y: cursor + *d as isize,
-                                },
-                            },
-                        },
-                        Dir::Vert => Element {
-                            layer_spec: stream_layer,
-                            inner: Shape::Rect {
-                                p0: Point { x: cursor, y: 0 },
-                                p1: Point {
-                                    x: cursor + *d as isize,
-                                    y: width as isize,
-                                },
-                            },
-                        },
-                    };
-                    elems.push(e);
-                    cursor += *d as isize;
-                }
-                Entry::Pat(_) => {
-                    return Err(LayoutError::Message(
-                        "Internal Error: failed to flatten Patterns".into(),
-                    ))
-                }
+        let mut elems: Vec<raw::Element> = Vec::new();
+        for track in self.tracks().iter_mut() {
+            track.segments = vec![TrackSegment {
+                net: None, // FIXME!
+                start: 0,
+                stop: pitch,
+            }];
+            // Convert into [raw::Element] rectangles.
+            // This vector always has just one element, but is easier to iterate over (once).
+            for e in track.to_raw_elems(stack, layer_spec)?.into_iter() {
+                elems.push(e);
             }
         }
         Ok(raw::Cell {
@@ -181,19 +203,25 @@ pub struct ViaLayer {
     /// Stream-out layer numbers
     pub stream_layer: Option<(i16, i16)>,
 }
+#[derive(Debug, Clone)]
+pub struct TrackIntersection {
+    /// Layer Index
+    pub layer: usize,
+    /// Track Index
+    pub track: usize,
+    /// Intersecting Track Index
+    pub at: usize,
+    /// Whether `at` refers to the track-indices above or below
+    pub relz: RelZ,
+}
+
 /// Assignment of a net onto a track-intersection
 #[derive(Debug, Clone)]
 pub struct Assign {
     /// Net Name
-    net: String,
-    /// Layer Index
-    layer: usize,
-    /// Track Index
-    track: usize,
-    /// Intersecting Track Index
-    at: usize,
-    /// Whether `at` refers to the track-indices above or below
-    relz: RelZ,
+    pub net: String,
+    /// Track Intersection Location
+    pub at: TrackIntersection,
 }
 /// Relative Z-Axis Reference to one Layer `Above` or `Below` another
 #[derive(Debug, Clone)]
@@ -208,6 +236,8 @@ pub struct Instance {
     pub inst_name: String,
     /// Cell Name/ Path
     pub cell_name: String,
+    /// Cell Definition Reference
+    pub cell: CellRef,
     /// Bottom-Left Corner Point
     pub p0: Point,
     /// Reflection
@@ -228,9 +258,9 @@ pub struct Library<'a> {
     /// Cell Names
     pub cell_names: Vec<String>,
     /// Abstracts
-    pub abstracts: Vec<abstrakt::Cell<'a>>,
+    pub abstracts: Arena<abstrakt::Abstract>,
     /// Cell Implementations
-    pub cells: Vec<Cell<'a>>,
+    pub cells: Arena<Cell>,
     /// Sub-Libraries
     pub libs: Vec<Library<'a>>,
 }
@@ -241,89 +271,272 @@ impl<'a> Library<'a> {
             name: name.into(),
             stack,
             cell_names: Vec::new(),
-            abstracts: Vec::new(),
-            cells: Vec::new(),
+            abstracts: Arena::new(),
+            cells: Arena::new(),
             libs: Vec::new(),
         }
     }
     /// Convert to a [raw::Library]
     pub fn to_raw_lib(&self) -> Result<raw::Library, LayoutError> {
-        let mut lib = raw::Library::new(self.name.clone(), self.stack.units);
+        let mut lib = raw::Library::new(&self.name, self.stack.units);
         // Collect up unit-cells on each layer
         for layer in self.stack.layers.iter() {
             let unit = layer.raw_unit(&self.stack)?;
             lib.cells.push(unit);
         }
         // Convert each defined [Cell] to a [raw::Cell]
-        for cell in self.cells.iter() {
-            lib.cells.push(cell.to_raw_cell()?);
+        for (_id, cell) in self.cells.iter() {
+            lib.cells.push(cell.to_raw_cell(self)?);
         }
+        // lib.cells = defs;
         // And convert each (un-implemented) Abstract as a boundary
-        for abs in self.abstracts.iter() {
-            // Check whether the same name is already defined
-            for cell in lib.cells.iter() {
+        for (_id, abs) in self.abstracts.iter() {
+            // FIXME: temporarily checking whether the same name is already defined
+            for (_id, cell) in self.cells.iter() {
                 if abs.name == cell.name {
                     continue;
                 }
             }
-            lib.cells.push(abs.to_raw_cell()?);
+            lib.cells.push(abs.to_raw_cell(self)?);
         }
         Ok(lib)
     }
+}
+#[derive(Debug, Clone)]
+pub struct Track {
+    /// Layer Index
+    pub layer: usize,
+    /// Track Index
+    pub index: usize,
+    /// Direction
+    pub dir: Dir,
+    /// Starting-point in off-dir axis
+    pub start: isize,
+    /// Track width
+    pub width: usize,
+    /// Set of wire-segments, in positional order
+    pub segments: Vec<TrackSegment>,
+}
+impl Track {
+    /// Convert our [TrackSegment]s to a vector of [raw::Element] rectangles
+    fn to_raw_elems(
+        &self,
+        stack: &Stack,
+        layer_spec: (i16, i16),
+    ) -> Result<Vec<raw::Element>, LayoutError> {
+        let pitch = match self.dir {
+            Dir::Horiz => stack.xpitch,
+            Dir::Vert => stack.ypitch,
+        };
+        let elems = self
+            .segments
+            .iter()
+            .map(|seg| match self.dir {
+                Dir::Horiz => raw::Element {
+                    layer_spec,
+                    inner: raw::Shape::Rect {
+                        p0: Point {
+                            x: (pitch * seg.start) as isize,
+                            y: (self.start as isize),
+                        },
+                        p1: Point {
+                            x: (pitch * seg.stop) as isize,
+                            y: (self.start + self.width as isize) as isize,
+                        },
+                    },
+                },
+                Dir::Vert => raw::Element {
+                    layer_spec,
+                    inner: raw::Shape::Rect {
+                        p0: Point {
+                            x: (self.start as isize),
+                            y: (pitch * seg.start) as isize,
+                        },
+                        p1: Point {
+                            x: (self.start + self.width as isize) as isize,
+                            y: (pitch * seg.stop) as isize,
+                        },
+                    },
+                },
+            })
+            .collect();
+        Ok(elems)
+    }
+}
+/// # Segments of un-split, single-net wire on a [Track]
+#[derive(Debug, Clone)]
+pub struct TrackSegment {
+    pub net: Option<String>,
+    pub start: usize,
+    pub stop: usize,
 }
 /// # Layout Cell
 ///
 /// A combination of lower-level cell instances and net-assignments to tracks.
 ///
 #[derive(Debug, Clone)]
-pub struct Cell<'a> {
-    name: String,             // Cell Name
-    stack: &'a Stack,         // Reference to the z-stack
-    top_layer: usize,         // Top-layer index
-    outline: Outline,         // Outline shape, counted in x and y pitches of `stack`
-    instances: Vec<Instance>, // Layout-Abstract Instances
-    assignments: Vec<Assign>, // Net-to-track assignments
-    cuts: Vec<Tbd>,           // Track cuts
+pub struct Cell {
+    /// Cell Name
+    pub name: String,
+    /// Top-layer index
+    pub top_layer: usize,
+    /// Outline shape, counted in x and y pitches of `stack`
+    pub outline: Outline,
+    /// Layout Instances
+    pub instances: Vec<Instance>,
+    /// Net-to-track assignments
+    pub assignments: Vec<Assign>,
+    /// Track cuts
+    pub cuts: Vec<TrackIntersection>,
 }
-impl Cell<'_> {
+impl Cell {
+    /// Gather a list of the names of cells we instantiate
+    fn cell_ref_names(&self) -> Vec<String> {
+        self.instances.iter().map(|i| i.cell_name.clone()).collect()
+    }
     /// Convert to a raw layout cell
-    pub fn to_raw_cell(&self) -> Result<raw::Cell, LayoutError> {
+    pub fn to_raw_cell(&self, lib: &Library) -> Result<raw::Cell, LayoutError> {
+        println!("TO RAW CELL {:?}", self.name);
+
         if self.outline.x.len() > 1 {
             return Err(LayoutError::Message(
-                "Non-rectangular outline; not supported yet".into(),
+                "Non-rectangular outline; not supported (yet)".into(),
             ));
         };
         let rows = self.outline.x[0];
         let cols = self.outline.y[0];
+        let mut elems: Vec<raw::Element> = Vec::new();
 
-        // Collect up arrays of unit-cells on each layer
-        let mut arrays: Vec<raw::InstArray> = Vec::new();
-        for layer in self.stack.layers.iter() {
-            let unit_name = layer.get_unit_name();
-            let a = raw::InstArray {
-                inst_name: format!("{}.array", unit_name),
-                cell_name: unit_name,
-                rows,
-                cols,
-                xpitch: self.stack.xpitch,
-                ypitch: self.stack.ypitch,
-                p0: Point { x: 0, y: 0 },
-                reflect: false,
-                angle: None,
-            };
-            arrays.push(a);
+        /// A short-lived set of references to an [Instance] and its cell-definition
+        #[derive(Debug, Clone)]
+        struct TempInstance<'a> {
+            inst: &'a Instance,
+            def: &'a (HasOutline + 'static),
         }
-        // Scale the location of each instance by our pitches
-        let scale = (self.stack.xpitch as isize, self.stack.ypitch as isize);
-        let mut instances = self.instances.clone();
-        for inst in instances.iter_mut() {
-            inst.p0 = inst.p0.scale(scale.0, scale.1);
+        // Create one of these for each of our instances
+        let temp_instances: Vec<TempInstance> = self
+            .instances
+            .iter()
+            .map(|inst| {
+                match inst.cell {
+                    CellRef::Cell(c) => {
+                        let def = lib.cells.get(c).ok_or(LayoutError::Tbd).unwrap();
+                        TempInstance { inst, def }
+                    }
+                    CellRef::Abstract(c) => {
+                        let def = lib.abstracts.get(c).ok_or(LayoutError::Tbd).unwrap();
+                        TempInstance { inst, def }
+                    }
+                    _ => panic!("FIXME!"),
+                    // _ => return Err(LayoutError::Tbd),
+                }
+            })
+            .collect();
+
+        // Iterate over tracks, chopping them at instances and cuts
+        for layernum in 0..self.top_layer {
+            let layer = &lib.stack.layers[layernum];
+            println!("LAYER: {:?}", layer.index);
+
+            // Sort out which of our [Instance]s come up to this layer
+            let layer_instances: Vec<&TempInstance> = temp_instances
+                .iter()
+                .filter(|i| i.def.top_layer() >= layer.index)
+                .collect();
+            println!("LAYER_INSTS: {:?}", layer_instances);
+            for rown in 0..rows {
+                let rown = rown as isize;
+                println!("ROWN: {:?}", rown);
+                // For each row, decide which instances intersect
+                let intersecting_instances: Vec<&TempInstance> = layer_instances
+                    .iter()
+                    .filter(|i| {
+                        i.inst.p0.y <= rown && i.inst.p0.y + i.def.outline().ymax() as isize > rown
+                    })
+                    .map(|i| i.clone())
+                    .collect();
+                println!("INTERSECTING_INSTS: {:?}", intersecting_instances);
+                // Convert these into blockage-areas for the tracks
+                let blockages: Vec<(usize, usize)> = intersecting_instances
+                    .iter()
+                    .map(|i| {
+                        (
+                            i.inst.p0.x as usize,
+                            i.inst.p0.x as usize + i.def.outline().xmax(),
+                        )
+                    })
+                    .collect();
+                println!("BLOCKAGES: {:?}", blockages);
+                // FIXME: these blockages may need some sorting
+                // Convert these into "non-blockages", areas where we need Track
+                let mut segments: Vec<(usize, usize)> = Vec::new();
+                let mut cursor = 0;
+                for b in blockages {
+                    if b.0 > cursor {
+                        segments.push((cursor, b.0));
+                    }
+                    cursor = b.1;
+                }
+                if cursor < cols {
+                    segments.push((cursor, cols));
+                    cursor = cols;
+                }
+                // FIXME: sorting out where, conceptually, we wanna delineate between signal-tracks and power/ground rails
+                // Generally the "API" should use "signal tracks", at some point in conversion to raw::Layout
+                // things must move to "raw tracks"
+
+                let layer_spec = layer.stream_layer.ok_or(LayoutError::Tbd)?;
+
+                for t in layer.tracks().iter_mut() {
+                    t.segments = segments
+                        .iter()
+                        .map(|(n1, n2)| TrackSegment {
+                            net: None, // FIXME!
+                            start: *n1,
+                            stop: *n2,
+                        })
+                        .collect();
+                    let shift = Point::offset(rown * lib.stack.xpitch as isize, layer.dir.other());
+                    for mut e in t.to_raw_elems(&lib.stack, layer_spec)?.into_iter() {
+                        e.inner.shift(&shift);
+                        elems.push(e);
+                    }
+                }
+                println!("ELEMS: {:?}", elems);
+            }
         }
+        // for cut in self.cuts.iter() {
+        //     unimplemented!("???");
+        //     // Split the track into segments
+        // }
+        // for assn in self.assignments.iter() {
+        //     unimplemented!("???");
+        //     // Find the coordinate of each track-pair
+        //     // Insert a corresponding via
+        //     // Assign both track-segments to the net
+        // }
+
+        // Convert our [Outline] into a polygon
+        elems.push(self.outline.to_raw_elem(lib)?);
+        // Convert our [Instance]s dimensions
+        // Note instances are of the same type, but use [Points] of different units.
+        let scale = (lib.stack.xpitch as isize, lib.stack.ypitch as isize);
+        let insts = self
+            .instances
+            .iter()
+            .map(|inst| {
+                // Scale the location of each instance by our pitches
+                let mut i = inst.clone();
+                i.p0 = inst.p0.scale(scale.0, scale.1);
+                i
+            })
+            .collect();
+        // Aaaand create & return our new [raw::Cell]
         Ok(raw::Cell {
             name: self.name.clone(),
-            insts: instances, // Note instances are of the same type, but use [Points] of different units.
-            arrays,
-            elems: Vec::new(), // FIXME! cut up metals and such
+            insts,
+            arrays: Vec::new(),
+            elems,
         })
     }
 }
@@ -374,6 +587,16 @@ impl Outline {
         }
         Ok(Self { x, y })
     }
+    /// Maximum x-coordinate
+    /// (Which is also always the *first* x-coordinate)
+    pub fn xmax(&self) -> usize {
+        self.x[0]
+    }
+    /// Maximum y-coordinate
+    /// (Which is also always the *last* y-coordinate)
+    pub fn ymax(&self) -> usize {
+        self.y[self.y.len() - 1]
+    }
     /// Create a new rectangular outline of dimenions `x` by `y`
     pub fn rect(x: usize, y: usize) -> Result<Self, LayoutError> {
         Self::new(vec![x], vec![y])
@@ -393,6 +616,28 @@ impl Outline {
         pts.push(Point::new(0, yp));
         pts
     }
+    /// Convert to a [raw::Element] polygon
+    pub fn to_raw_elem(&self, lib: &Library) -> Result<raw::Element, LayoutError> {
+        // Doing so requires our [Stack] specify a `boundary_layer`. If not, fail.
+        let layer_spec = match lib.stack.boundary_layer {
+            Some((l1, l2)) => (l1 as i16, l2 as i16),
+            None => {
+                return Err(LayoutError::Message(
+                    "Cannot Convert Abstract to Raw without Boundary Layer".into(),
+                ))
+            }
+        };
+        // Create an array of Outline-Points
+        let pts = self.points();
+        // Scale them to our pitches
+        let pitch = (lib.stack.xpitch as isize, lib.stack.ypitch as isize);
+        let pts = pts.iter().map(|p| p.scale(pitch.0, pitch.1)).collect();
+        // Create the [raw::Element]
+        Ok(raw::Element {
+            layer_spec,
+            inner: raw::Shape::Poly { pts },
+        })
+    }
 }
 /// # Point in two-dimensional layout-space
 #[derive(Debug, Clone)]
@@ -405,6 +650,13 @@ impl Point {
     pub fn new(x: isize, y: isize) -> Self {
         Self { x, y }
     }
+    /// Create a new [Point] which serves as an offset in direction `dir`
+    pub fn offset(val: isize, dir: Dir) -> Self {
+        match dir {
+            Dir::Horiz => Self { x: val, y: 0 },
+            Dir::Vert => Self { x: 0, y: val },
+        }
+    }
     /// Create a new point scaled by `x` in the x-dimension and by `y` in the y-dimension
     pub fn scale(&self, x: isize, y: isize) -> Point {
         Point {
@@ -413,13 +665,17 @@ impl Point {
         }
     }
 }
+
+/// Placeholder for Elements to be implemented
 #[derive(Debug, Clone)]
-pub struct Tbd {}
+pub struct Tbd;
 
 /// "Raw" Layout
 pub mod raw {
     use super::*;
     use gds21;
+
+    // FIXME: need something like raw::Abstract, representing arbitrary-shaped abstract layouts
 
     #[derive(Debug, Default)]
     /// # Raw Layout Library  
@@ -463,12 +719,17 @@ pub mod raw {
     /// Raw-Layout Cell Definition
     #[derive(Debug)]
     pub struct Cell {
-        pub name: String,           // Cell Name
-        pub insts: Vec<Instance>,   // Cell Instances
-        pub arrays: Vec<InstArray>, // Instance Arrays
-        pub elems: Vec<Element>,    // Primitive Elements
+        /// Cell Name
+        pub name: String,
+        /// Cell Instances
+        pub insts: Vec<Instance>,
+        /// Instance Arrays
+        pub arrays: Vec<InstArray>,
+        /// Primitive Elements
+        pub elems: Vec<Element>,
     }
     impl Cell {
+        /// Convert to a [gds21::GdsStruct] cell-definition
         pub fn to_gds(&self) -> gds21::GdsStruct {
             let mut elems = Vec::new();
             for inst in self.insts.iter() {
@@ -551,6 +812,25 @@ pub mod raw {
         Poly { pts: Vec<Point> },
     }
     impl Shape {
+        pub fn shift(&mut self, pt: &Point) {
+            match *self {
+                Shape::Rect {
+                    ref mut p0,
+                    ref mut p1,
+                } => {
+                    p0.x += pt.x;
+                    p0.y += pt.y;
+                    p1.x += pt.x;
+                    p1.y += pt.y;
+                }
+                Shape::Poly { ref mut pts } => {
+                    for p in pts.iter_mut() {
+                        p.x += pt.x;
+                        p.y += pt.y;
+                    }
+                }
+            }
+        }
         /// Convert a [Shape] to GDSII Format
         ///
         /// GDS shapes are flattened vectors of (x,y) coordinates,
@@ -609,15 +889,15 @@ pub mod raw {
 ///
 pub mod abstrakt {
     use super::raw;
-    use super::{Assign, LayoutError, Outline, RelZ, Stack};
+    use super::{Assign, LayoutError, Library, Outline, RelZ};
 
-    /// Abstract-Layout Cell
+    // FIXME: also need a raw::Abstract, for more-arbitrary-shaped abstract layouts
+
+    /// Abstract-Layout
     #[derive(Debug, Clone)]
-    pub struct Cell<'a> {
+    pub struct Abstract {
         /// Cell Name
         pub name: String,
-        /// Reference to the Stack
-        pub stack: &'a Stack,
         /// Outline in "Tetris-Shapes"
         pub outline: Outline,
         /// Top Metal Layer
@@ -625,27 +905,12 @@ pub mod abstrakt {
         /// Ports
         pub ports: Vec<Port>,
     }
-    impl Cell<'_> {
+    impl Abstract {
         /// Convert to a [raw::Cell], just including an Outline
-        pub fn to_raw_cell(&self) -> Result<raw::Cell, LayoutError> {
-            let layer_spec = match self.stack.boundary_layer {
-                Some((l1, l2)) => (l1 as i16, l2 as i16),
-                None => {
-                    return Err(LayoutError::Message(
-                        "Cannot Convert Abstract to Raw without Boundary Layer".into(),
-                    ))
-                }
-            };
-            // Create an array of Outline-Points
-            let pts = self.outline.points();
-            // Scale them to our pitches
-            let pitch = (self.stack.xpitch as isize, self.stack.ypitch as isize);
-            let pts = pts.iter().map(|p| p.scale(pitch.0, pitch.1)).collect();
-            // Create the Outline Element
-            let outline = raw::Element {
-                layer_spec,
-                inner: raw::Shape::Poly { pts },
-            };
+        /// FIXME: also include the pins!
+        pub fn to_raw_cell(&self, lib: &Library) -> Result<raw::Cell, LayoutError> {
+            // Create our [Outline]s boundary
+            let outline = self.outline.to_raw_elem(lib)?;
             // And return a new [raw::Cell]
             Ok(raw::Cell {
                 name: self.name.clone(),
@@ -735,16 +1000,16 @@ pub mod interface {
 }
 /// # Cell View Enumeration
 /// All of the ways in which a Cell is represented
-pub enum CellView<'a> {
+pub enum CellView {
     Interface(interface::Bundle),
-    Abstract(abstrakt::Cell<'a>),
-    Layout(Cell<'a>),
+    Abstract(abstrakt::Abstract),
+    Layout(Cell),
     RawLayout(raw::Cell),
 }
 /// Collection of the Views describing a Cell
-pub struct CellViews<'a> {
+pub struct CellViews {
     name: String,
-    views: Vec<CellView<'a>>,
+    views: Arena<CellView>,
 }
 
 ///
@@ -781,6 +1046,7 @@ mod tests {
                         Pwr(490),
                         Pat(Pattern::new(vec![Gap(230), Sig(140)], 7)),
                         Gap(230),
+                        Gnd(490),
                     ],
                     dir: Dir::Horiz,
                     offset: (0, -245),
@@ -796,6 +1062,7 @@ mod tests {
                         Pwr(490),
                         Pat(Pattern::new(vec![Gap(230), Sig(140)], 7)),
                         Gap(230),
+                        Gnd(490),
                     ],
                     dir: Dir::Vert,
                     offset: (-245, 0),
@@ -811,6 +1078,7 @@ mod tests {
                         Pwr(490),
                         Pat(Pattern::new(vec![Gap(230), Sig(140)], 7)),
                         Gap(230),
+                        Gnd(490),
                     ],
                     dir: Dir::Horiz,
                     offset: (0, -245),
@@ -826,6 +1094,7 @@ mod tests {
                         Pwr(490),
                         Pat(Pattern::new(vec![Gap(230), Sig(140)], 7)),
                         Gap(230),
+                        Gnd(490),
                     ],
                     dir: Dir::Vert,
                     offset: (-245, 0),
@@ -864,16 +1133,17 @@ mod tests {
         let s = stack();
         let c = Cell {
             name: "HereGoes".into(),
-            stack: &s,
             top_layer: 3,
             outline: Outline::rect(5, 5)?,
             instances: Vec::new(),
             assignments: vec![Assign {
                 net: "clk".into(),
-                layer: 1,
-                track: 0,
-                at: 1,
-                relz: RelZ::Above,
+                at: TrackIntersection {
+                    layer: 1,
+                    track: 0,
+                    at: 1,
+                    relz: RelZ::Above,
+                },
             }],
             cuts: Vec::new(),
         };
@@ -883,23 +1153,24 @@ mod tests {
     #[test]
     fn create_lib() -> Result<(), LayoutError> {
         let s = stack();
-        let c = Cell {
+        let mut lib = Library::new("HereGoesLib", &s);
+
+        let c = lib.cells.alloc(Cell {
             name: "HereGoes".into(),
-            stack: &s,
             top_layer: 3,
             outline: Outline::rect(5, 5)?,
             instances: Vec::new(),
             assignments: vec![Assign {
                 net: "clk".into(),
-                layer: 1,
-                track: 0,
-                at: 1,
-                relz: RelZ::Above,
+                at: TrackIntersection {
+                    layer: 1,
+                    track: 0,
+                    at: 1,
+                    relz: RelZ::Above,
+                },
             }],
             cuts: Vec::new(),
-        };
-        let mut lib = Library::new("HereGoesLib", &s);
-        lib.cells.push(c);
+        });
         lib.to_raw_lib()?.to_gds().save("test.gds")?;
         Ok(())
     }
@@ -907,39 +1178,40 @@ mod tests {
     #[test]
     fn create_lib2() -> Result<(), LayoutError> {
         let s = stack();
-        let c = Cell {
-            name: "HasInst".into(),
-            stack: &s,
-            top_layer: 3,
-            outline: Outline::rect(5, 5)?,
-            instances: vec![Instance {
-                inst_name: "inst1".into(),
-                cell_name: "IsInst".into(),
-                p0: Point::new(0, 0),
-                reflect: false,
-                angle: None,
-            }],
-            assignments: vec![Assign {
-                net: "clk".into(),
-                layer: 1,
-                track: 0,
-                at: 1,
-                relz: RelZ::Above,
-            }],
-            cuts: Vec::new(),
-        };
-        let c2 = Cell {
+        let mut lib = Library::new("InstLib", &s);
+
+        let c2 = lib.cells.alloc(Cell {
             name: "IsInst".into(),
-            stack: &s,
             top_layer: 2,
             outline: Outline::rect(1, 1)?,
             instances: vec![],
             assignments: vec![],
             cuts: Vec::new(),
-        };
-        let mut lib = Library::new("InstLib", &s);
-        lib.cells.push(c);
-        lib.cells.push(c2);
+        });
+
+        let c = lib.cells.alloc(Cell {
+            name: "HasInst".into(),
+            top_layer: 4,
+            outline: Outline::rect(5, 5)?,
+            instances: vec![Instance {
+                inst_name: "inst1".into(),
+                cell_name: "IsInst".into(),
+                cell: CellRef::Cell(c2),
+                p0: Point::new(1, 2),
+                reflect: false,
+                angle: None,
+            }],
+            assignments: vec![Assign {
+                net: "clk".into(),
+                at: TrackIntersection {
+                    layer: 1,
+                    track: 0,
+                    at: 1,
+                    relz: RelZ::Above,
+                },
+            }],
+            cuts: Vec::new(),
+        });
         lib.to_raw_lib()?.to_gds().save("test_insts.gds")?;
         Ok(())
     }
@@ -992,9 +1264,8 @@ mod tests {
             //     },
             // },
         ];
-        abstrakt::Cell {
+        abstrakt::Abstract {
             name: "abstrack".into(),
-            stack: &stack(),
             outline,
             top_layer: 3,
             ports,
@@ -1006,15 +1277,24 @@ mod tests {
     #[test]
     fn create_lib3() -> Result<(), LayoutError> {
         let s = stack();
-        let c = Cell {
+        let mut lib = Library::new("InstLib", &s);
+
+        let c2 = lib.abstracts.alloc(abstrakt::Abstract {
+            name: "IsAbstrakt".into(),
+            top_layer: 2,
+            outline: Outline::rect(1, 1)?,
+            ports: Vec::new(),
+        });
+
+        let c = lib.cells.alloc(Cell {
             name: "HasAbstrakts".into(),
-            stack: &s,
             top_layer: 3,
             outline: Outline::rect(5, 5)?,
             instances: vec![
                 Instance {
                     inst_name: "inst1".into(),
                     cell_name: "IsAbstrakt".into(),
+                    cell: CellRef::Abstract(c2),
                     p0: Point::new(0, 0),
                     reflect: false,
                     angle: None,
@@ -1022,6 +1302,7 @@ mod tests {
                 Instance {
                     inst_name: "inst2".into(),
                     cell_name: "IsAbstrakt".into(),
+                    cell: CellRef::Abstract(c2),
                     p0: Point::new(2, 2),
                     reflect: false,
                     angle: None,
@@ -1029,30 +1310,55 @@ mod tests {
                 Instance {
                     inst_name: "inst4".into(),
                     cell_name: "IsAbstrakt".into(),
+                    cell: CellRef::Abstract(c2),
                     p0: Point::new(4, 4),
                     reflect: false,
                     angle: None,
                 },
             ],
-            assignments: vec![],
+            assignments: vec![Assign {
+                net: "clk".into(),
+                at: TrackIntersection {
+                    layer: 3,
+                    track: 11,
+                    at: 11,
+                    relz: RelZ::Above,
+                },
+            }],
             cuts: Vec::new(),
-        };
-        let c2 = abstrakt::Cell {
-            name: "IsAbstrakt".into(),
-            stack: &s,
-            top_layer: 2,
-            outline: Outline::rect(1, 1)?,
-            ports: Vec::new(),
-        };
-        let l = Library {
-            name: "InstLib".into(),
-            stack: &s,
-            cell_names: vec![],
-            abstracts: vec![c2],
-            cells: vec![c],
-            libs: vec![],
-        };
-        l.to_raw_lib()?.to_gds().save("test_abstracts.gds")?;
+        });
+        lib.to_raw_lib()?.to_gds().save("test_abstracts.gds")?;
         Ok(())
+    }
+}
+
+///
+#[derive(Debug, Clone)]
+pub enum CellRef {
+    Cell(Id<Cell>),
+    Abstract(Id<abstrakt::Abstract>),
+    Name(String),
+}
+/// Trait for accessing three-dimensional [Outline] data from several views of Layouts
+trait HasOutline: Debug {
+    /// Retrieve a reference to the x-y [Outline]
+    fn outline(&self) -> &Outline;
+    /// Retrieve the top z-axis layer
+    fn top_layer(&self) -> usize;
+}
+impl HasOutline for Cell {
+    fn outline(&self) -> &Outline {
+        &self.outline
+    }
+    fn top_layer(&self) -> usize {
+        self.top_layer
+    }
+}
+impl HasOutline for abstrakt::Abstract {
+    fn outline(&self) -> &Outline {
+        &self.outline
+    }
+    fn top_layer(&self) -> usize {
+        self.top_layer
     }
 }

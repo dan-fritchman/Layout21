@@ -39,7 +39,7 @@
                     "kind": "lib"
                 }
             },
-            "args": [],
+            "args": ["lib2"],
             "cwd": "${workspaceFolder}"
         },
         {
