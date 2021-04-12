@@ -39,21 +39,69 @@ impl Dir {
     }
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum Entry {
-    Sig(usize),
-    Pwr(usize),
-    Gnd(usize),
-    Gap(usize),
+pub struct TrackEntry {
+    pub width: usize,
+    pub ttype: TrackType,
+}
+impl TrackEntry {
+    /// Helper method: create of [TrackEntry] of [TrackType] [TrackType::Gap]
+    pub fn gap(width: usize) -> Self {
+        TrackEntry {
+            width,
+            ttype: TrackType::Gap,
+        }
+    }
+    /// Helper method: create of [TrackEntry] of [TrackType] [TrackType::Signal]
+    pub fn sig(width: usize) -> Self {
+        TrackEntry {
+            width,
+            ttype: TrackType::Signal,
+        }
+    }
+}
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub enum TrackType {
+    Gap,
+    Signal,
+    Rail,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum TrackSpec {
+    Entry(TrackEntry),
     Pat(Pattern),
+}
+impl TrackSpec {
+    pub fn gap(width: usize) -> Self {
+        Self::Entry(TrackEntry {
+            width,
+            ttype: TrackType::Gap,
+        })
+    }
+    pub fn sig(width: usize) -> Self {
+        Self::Entry(TrackEntry {
+            width,
+            ttype: TrackType::Signal,
+        })
+    }
+    pub fn rail(width: usize) -> Self {
+        Self::Entry(TrackEntry {
+            width,
+            ttype: TrackType::Rail,
+        })
+    }
+    pub fn pat(e: impl Into<Vec<TrackEntry>>, nrep: usize) -> Self {
+        Self::Pat(Pattern::new(e, nrep))
+    }
 }
 /// An array of layout `Entries`, repeated `nrep` times
 #[derive(Default, Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct Pattern {
-    pub entries: Vec<Entry>,
+    pub entries: Vec<TrackEntry>,
     pub nrep: usize,
 }
 impl Pattern {
-    pub fn new(e: impl Into<Vec<Entry>>, nrep: usize) -> Self {
+    pub fn new(e: impl Into<Vec<TrackEntry>>, nrep: usize) -> Self {
         Self {
             entries: e.into(),
             nrep,
@@ -72,7 +120,7 @@ pub struct Stack {
     /// Primitive cell vertical unit-pitch, denominated in `units`
     pub ypitch: usize,
     /// Layer used for cell outlines/ boundaries
-    pub boundary_layer: Option<raw::LayerSpec>,
+    pub boundary_layer: Option<raw::DataTypeMap>,
     /// Set of metal layers
     pub layers: Vec<Layer>,
     /// Set of via layers
@@ -81,6 +129,9 @@ pub struct Stack {
 /// # Layer
 ///
 /// Metal layer in a [Stack]
+/// Each layer is effectively infinite-spanning in one dimension, and periodic in the other.
+/// Layers with `dir=Dir::Horiz` extend to infinity in x, and repeat in y, and vice-versa.
+///
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Layer {
     /// Layer Index
@@ -89,28 +140,78 @@ pub struct Layer {
     pub name: String,
     /// Direction Enumeration (Horizontal/ Vertical)
     pub dir: Dir,
+    /// Default size of wire-cuts
+    pub cutsize: usize,
     /// Track Size & Type Entries
-    pub entries: Vec<Entry>,
-    /// X/Y Origin Offset
-    pub offset: (isize, isize),
+    pub entries: Vec<TrackSpec>,
+    /// Offset, in our periodic dimension
+    pub offset: isize,
     /// Layer for streaming exports
     pub stream_layer: Option<raw::LayerSpec>,
+    pub raw: Option<raw::DataTypeMap>,
 }
 impl Layer {
+    /// Convert this [Layer]'s track-info into a [TrackPeriod]
+    fn to_track_period(&self, stop: usize) -> TrackPeriod {
+        let mut cursor = self.offset;
+        let mut period = TrackPeriod {
+            rails: Vec::new(),
+            signals: Vec::new(),
+        };
+        for e in self.flat_entries().iter() {
+            let d = &e.width;
+            match e.ttype {
+                TrackType::Gap => (),
+                TrackType::Rail => {
+                    period.rails.push(Track {
+                        layer: self,
+                        ttype: e.ttype,
+                        index: period.rails.len(),
+                        dir: self.dir,
+                        start: cursor,
+                        width: *d,
+                        segments: vec![TrackSegment {
+                            net: Some("POWER_OR_GROUND_HERE_BRO".to_string()), // FIXME!
+                            start: 0,
+                            stop,
+                        }],
+                    });
+                }
+                TrackType::Signal => {
+                    period.signals.push(Track {
+                        layer: self,
+                        ttype: e.ttype,
+                        index: period.signals.len(),
+                        dir: self.dir,
+                        start: cursor,
+                        width: *d,
+                        segments: vec![TrackSegment {
+                            net: None,
+                            start: 0,
+                            stop,
+                        }],
+                    });
+                }
+            };
+            cursor += *d as isize;
+        }
+        period
+    }
     /// Convert to a vector of [Track]s
     fn tracks(&self) -> Vec<Track> {
-        let mut cursor = match self.dir {
-            Dir::Horiz => self.offset.1,
-            Dir::Vert => self.offset.0,
-        };
+        let mut cursor = self.offset;
         let mut index = 0;
         let mut tracks: Vec<Track> = Vec::new();
         for e in self.flat_entries().iter() {
-            match e {
-                Entry::Gap(d) => cursor += *d as isize,
-                Entry::Pwr(d) | Entry::Gnd(d) | Entry::Sig(d) => {
+            let d = &e.width;
+            match e.ttype {
+                TrackType::Gap => cursor += *d as isize,
+                TrackType::Rail | TrackType::Signal => {
+                    // FIXME: initial segments
+                    // FIXME: nets for Pwr/Gnd
                     tracks.push(Track {
-                        layer: self.index,
+                        layer: self,
+                        ttype: e.ttype,
                         index,
                         dir: self.dir,
                         start: cursor,
@@ -120,39 +221,66 @@ impl Layer {
                     cursor += *d as isize;
                     index += 1;
                 }
-                Entry::Pat(_) => {
-                    panic!("FIXME!");
-                    // return Err(LayoutError::Message(
-                    //     "Internal Error: failed to flatten Patterns".into(),
-                    // ))
-                }
             }
         }
         tracks
     }
+    /// Count the number of signal-tracks per period
+    fn num_signal_tracks(&self) -> usize {
+        let mut n = 0;
+        for e in self.flat_entries().iter() {
+            match e.ttype {
+                TrackType::Signal => n += 1,
+                _ => (),
+            };
+        }
+        n
+    }
+    /// Find the center-coordinate of the `idx`th signal track
+    /// FIXME: probably move to [TrackPeriod]
+    fn signal_track_center(&self, idx: usize) -> isize {
+        let mut cursor = self.offset;
+        let idx_mod_tracks = idx % self.num_signal_tracks(); // FIXME: num tracks
+        cursor += (self.pitch() * idx / self.num_signal_tracks()) as isize;
+        let mut index = 0;
+        for e in self.flat_entries().iter() {
+            let d = &e.width;
+            match e.ttype {
+                TrackType::Rail | TrackType::Gap => cursor += *d as isize,
+                TrackType::Signal => {
+                    if index > idx_mod_tracks {
+                        panic!("COULDNT FIND TRACK SOMEHOW");
+                    } else if index == idx_mod_tracks {
+                        return cursor + *d as isize / 2;
+                    }
+                    cursor += *d as isize;
+                    index += 1;
+                }
+            }
+        }
+        panic!("COULDNT FIND TRACK SOMEHOW");
+    }
     /// Flatten our [Entry]s into a vector
     /// Removes any nested patterns
-    fn flat_entries(&self) -> Vec<Entry> {
-        let mut v = Vec::new();
-        Self::flattener_helper(&self.entries, &mut v);
-        v
-    }
-    /// Helper method for depth-first traversing vectors of (potentially) hierarchical entries
-    /// Results are appended to vector `accum` in depth-first order
-    fn flattener_helper(inp: &Vec<Entry>, accum: &mut Vec<Entry>) {
-        for e in inp.iter() {
+    fn flat_entries(&self) -> Vec<TrackEntry> {
+        let mut v: Vec<TrackEntry> = Vec::new();
+        for e in self.entries.iter() {
             match e {
-                Entry::Gap(d) => accum.push(Entry::Gap(*d)),
-                Entry::Pwr(d) => accum.push(Entry::Pwr(*d)),
-                Entry::Gnd(d) => accum.push(Entry::Gnd(*d)),
-                Entry::Sig(d) => accum.push(Entry::Sig(*d)),
-                Entry::Pat(p) => {
+                TrackSpec::Entry(ee) => v.push(ee.clone()),
+                TrackSpec::Pat(p) => {
                     for _i in 0..p.nrep {
-                        Self::flattener_helper(&p.entries, accum);
+                        for ee in p.entries.iter() {
+                            v.push(ee.clone());
+                        }
                     }
                 }
             }
         }
+        v
+    }
+    /// Sum up this [Layer]'s pitch
+    fn pitch(&self) -> usize {
+        self.flat_entries().iter().map(|e| e.width).sum()
     }
 }
 /// # Via / Insulator Layer Between Metals
@@ -169,17 +297,6 @@ pub struct ViaLayer {
     pub size: Point,
     /// Stream-out layer numbers
     pub stream_layer: Option<raw::LayerSpec>,
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TrackIntersection {
-    /// Layer Index
-    pub layer: usize,
-    /// Track Index
-    pub track: usize,
-    /// Intersecting Track Index
-    pub at: usize,
-    /// Whether `at` refers to the track-indices above or below
-    pub relz: RelZ,
 }
 /// Assignment of a net onto a track-intersection
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -248,9 +365,11 @@ impl Library {
     }
 }
 #[derive(Debug, Clone)]
-pub struct Track {
+pub struct Track<'a> {
     /// Layer Index
-    pub layer: usize,
+    pub layer: &'a Layer,
+    /// Track Type (Rail, Signal)
+    pub ttype: TrackType,
     /// Track Index
     pub index: usize,
     /// Direction
@@ -262,15 +381,130 @@ pub struct Track {
     /// Set of wire-segments, in positional order
     pub segments: Vec<TrackSegment>,
 }
+impl<'a> Track<'a> {
+    /// Retrieve a (mutable) reference to the segment at cross-dimension `dist`
+    /// Returns None for `dist` outside the segment, or in-between segments
+    pub fn segment_at(&mut self, dist: isize) -> Option<&mut TrackSegment> {
+        if self.segments.len() < 1 {
+            return None;
+        }
+        for seg in self.segments.iter_mut() {
+            if seg.start as isize > dist {
+                return None;
+            }
+            if seg.start as isize <= dist && seg.stop as isize >= dist {
+                return Some(seg);
+            }
+        }
+        None
+    }
+    /// Cut all of our segments from `start` to `stop`
+    pub fn cut(&mut self, start: usize, stop: usize) -> LayoutResult<()> {
+        if self.segments.len() == 0 || stop <= start {
+            return Err(LayoutError::msg("Error Cutting Track"));
+        }
+        // Find the segment to be cut
+        let mut to_be_removed: Vec<usize> = Vec::new();
+        let mut to_be_inserted: Option<(usize, TrackSegment)> = None;
+        for (idx, seg) in self.segments.iter_mut().enumerate() {
+            if seg.start > stop {
+                // Loop done case
+                break;
+            } else if stop < seg.start {
+                // Uninvolved, carry on
+                continue;
+            } else if start <= seg.start && stop >= seg.stop {
+                // Removal case; cut covers entire segment
+                to_be_removed.push(idx);
+            } else if start > seg.start && stop >= seg.stop {
+                // Stop-side trim case
+                seg.stop = start;
+            } else if start <= seg.start && stop < seg.stop {
+                // Start-side trim case
+                seg.start = stop;
+            } else if start > seg.start && stop < seg.stop {
+                // Internal cut case
+                let mut new_seg = seg.clone();
+                new_seg.stop = start;
+                seg.start = stop;
+                to_be_inserted = Some((idx, new_seg));
+            } else {
+                return Err(LayoutError::msg("Internal Error: Track::cut"));
+            }
+        }
+        if let Some((idx, seg)) = to_be_inserted {
+            self.segments.insert(idx, seg);
+        } else {
+            // Remove any fully-cut elements, in reverse order so as to not screw up indices
+            for idx in to_be_removed.iter().rev() {
+                self.segments.remove(*idx);
+            }
+        }
+        Ok(())
+    }
+    /// Set the stop position for our last [TrackSegment] to `stop`
+    pub fn stop(&mut self, stop: usize) -> LayoutResult<()> {
+        if self.segments.len() == 0 {
+            return Err(LayoutError::msg("Error Stopping Track"));
+        }
+        let idx = self.segments.len() - 1;
+        self.segments[idx].stop = stop;
+        Ok(())
+    }
+}
+/// Transformed single period of [Track]s on a [Layer]
+/// Splits track-info between signals and rails.
+/// Stores each as a [Track] struct, which moves to a (start, width) size-format,
+/// and includes a vector of track-segments for cutting and assigning nets.
+#[derive(Debug, Clone)]
+pub struct TrackPeriod<'a> {
+    pub signals: Vec<Track<'a>>,
+    pub rails: Vec<Track<'a>>,
+}
+impl<'a> TrackPeriod<'a> {
+    /// Set the stop position for all [Track]s to `stop`
+    pub fn stop(&mut self, stop: usize) -> LayoutResult<()> {
+        for t in self.rails.iter_mut() {
+            t.stop(stop)?;
+        }
+        for t in self.signals.iter_mut() {
+            t.stop(stop)?;
+        }
+        Ok(())
+    }
+    /// Cut all [Track]s from `start` to `stop`,
+    /// cutting, shortening, or deleting `segments` along the way
+    pub fn cut(&mut self, start: usize, stop: usize) -> LayoutResult<()> {
+        for t in self.rails.iter_mut() {
+            t.cut(start, stop)?;
+        }
+        for t in self.signals.iter_mut() {
+            t.cut(start, stop)?;
+        }
+        Ok(())
+    }
+}
 /// # Segments of un-split, single-net wire on a [Track]
 #[derive(Debug, Clone)]
 pub struct TrackSegment {
     /// Net Name
     pub net: Option<String>,
-    /// Start Location
+    /// Start Location, in [Stack]'s `units`
     pub start: usize,
-    /// End/Stop Location
+    /// End/Stop Location, in [Stack]'s `units`
     pub stop: usize,
+}
+/// Intersection Between Adjacent Layers in [Track]-Space
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrackIntersection {
+    /// Layer Index
+    pub layer: usize,
+    /// Track Index
+    pub track: usize,
+    /// Intersecting Track Index
+    pub at: usize,
+    /// Whether `at` refers to the track-indices above or below
+    pub relz: RelZ,
 }
 /// # Layout Cell
 ///
@@ -393,6 +627,13 @@ impl Point {
             Dir::Vert => Self { x: 0, y: val },
         }
     }
+    /// Create a new point shifted by `x` in the x-dimension and by `y` in the y-dimension
+    pub fn shift(&self, p: &Point) -> Point {
+        Point {
+            x: p.x + self.x,
+            y: p.y + self.y,
+        }
+    }
     /// Create a new point scaled by `x` in the x-dimension and by `y` in the y-dimension
     pub fn scale(&self, x: isize, y: isize) -> Point {
         Point {
@@ -481,14 +722,27 @@ pub mod raw {
             Self(n1, n2)
         }
     }
-    /// An instance of a primitive element,
-    /// e.g. a geometric shape or piece of text
-    /// 
-    /// FIXME: add connectivity 
-    /// 
+    /// # Per-Layer Datatype Specification
+    /// Includes the datatypes used for each category of element on layer `layernum`
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct DataTypeMap {
+        /// Layer Number
+        pub layernum: i16,
+        /// Drawing (Geometry) DataType Value
+        pub drawing: Option<i16>,
+        /// Text DataType Value
+        pub text: Option<i16>,
+        /// Any Other DataType Values
+        pub other: HashMap<String, i16>,
+    }
+    /// # Primitive Geometric Element
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Element {
-        pub layer_spec: LayerSpec,
+        /// Net Name
+        pub net: Option<String>,
+        /// Layer
+        pub layer: DataTypeMap,
+        /// Shape
         pub inner: Shape,
     }
     #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -497,6 +751,36 @@ pub mod raw {
         Poly { pts: Vec<Point> },
     }
     impl Shape {
+        /// Retrieve our "origin", or first [Point]
+        pub fn point0(&self) -> &Point {
+            match *self {
+                Shape::Rect { ref p0, ref p1 } => p0,
+                Shape::Poly { ref pts } => &pts[0],
+            }
+        }
+        /// Calculate our center-point
+        pub fn center(&self) -> Point {
+            match *self {
+                Shape::Rect { ref p0, ref p1 } => Point::new((p0.x + p1.x) / 2, (p0.y + p1.y) / 2),
+                Shape::Poly { ref pts } => {
+                    unimplemented!("Shape::Poly::center");
+                }
+            }
+        }
+        /// Indicate whether this shape is (more or less) horizontal or vertical
+        pub fn orientation(&self) -> Dir {
+            match *self {
+                Shape::Rect { ref p0, ref p1 } => {
+                    if (p1.x - p0.x).abs() < (p1.y - p0.y).abs() {
+                        return Dir::Vert;
+                    }
+                    Dir::Horiz
+                }
+                Shape::Poly { ref pts } => {
+                    unimplemented!("Shape::Poly::orientation");
+                }
+            }
+        }
         /// Shift coordinates by the (x,y) values specified in `pt`
         pub fn shift(&mut self, pt: &Point) {
             match *self {
@@ -530,9 +814,9 @@ pub mod raw {
         pub fn convert(lib: Library) -> LayoutResult<gds21::GdsLibrary> {
             Self { lib }.convert_all()
         }
-        fn convert_all(&self) -> LayoutResult<gds21::GdsLibrary> {
+        fn convert_all(self) -> LayoutResult<gds21::GdsLibrary> {
             if self.lib.libs.len() > 0 {
-                return Err(LayoutError::msg("No nested libraries to GDS, (yet)"));
+                return Err(LayoutError::msg("No nested libraries to GDS (yet)"));
             }
             // Create a new Gds Library
             let mut lib = gds21::GdsLibrary::new(&self.lib.name);
@@ -547,11 +831,11 @@ pub mod raw {
                 .cells
                 .iter()
                 .map(|c| self.convert_cell(c))
-                .collect();
+                .collect::<Result<Vec<_>, _>>()?;
             Ok(lib)
         }
         /// Convert a [Cell] to a [gds21::GdsStruct] cell-definition
-        fn convert_cell(&self, cell: &Cell) -> gds21::GdsStruct {
+        fn convert_cell(&self, cell: &Cell) -> LayoutResult<gds21::GdsStruct> {
             let mut elems = Vec::new();
             for inst in cell.insts.iter() {
                 elems.push(self.convert_instance(inst).into());
@@ -560,11 +844,13 @@ pub mod raw {
                 elems.push(self.convert_array(arr).into());
             }
             for elem in cell.elems.iter() {
-                elems.push(self.convert_element(elem).into());
+                for gdselem in self.convert_element(elem)?.into_iter() {
+                    elems.push(gdselem);
+                }
             }
             let mut s = gds21::GdsStruct::new(&cell.name);
             s.elems = elems;
-            s
+            Ok(s)
         }
         /// Convert an [Instance] to a GDS instance, AKA [gds21::GdsStructRef]
         fn convert_instance(&self, inst: &Instance) -> gds21::GdsStructRef {
@@ -576,18 +862,23 @@ pub mod raw {
                 plex: None,
             }
         }
-        /// Convert an [Element] to a [gds21::GdsElement]
-        pub fn convert_element(&self, elem: &Element) -> gds21::GdsElement {
-            self.convert_shape(&elem.inner, &elem.layer_spec).into()
-        }
-        /// Convert a [Shape] to GDSII Format [gds21::GdsBoundary]
+        /// Convert an [Element] into one or more [gds21::GdsElement]
+        ///
+        /// Our [Element]s often correspond to more than one GDSII element,
+        /// notably in the case in which a polygon is annotated with a net-name.
+        /// Here, the net-name is an attribute of the polygon [Element].
+        /// In GDSII, text is "free floating" as a separate element.
         ///
         /// GDS shapes are flattened vectors of (x,y) coordinates,
         /// and include an explicit repetition of their origin for closure.
         /// So an N-sided polygon is described by a 2*(N+1)-entry vector.
         ///
-        pub fn convert_shape(&self, shape: &Shape, layer_spec: &LayerSpec) -> gds21::GdsBoundary {
-            let xy = match shape {
+        pub fn convert_element(&self, elem: &Element) -> LayoutResult<Vec<gds21::GdsElement>> {
+            let datatype = elem
+                .layer
+                .drawing
+                .ok_or(LayoutError::msg("Drawing Layer Not Defined"))?;
+            let xy = match &elem.inner {
                 Shape::Rect { p0, p1 } => {
                     let x0 = p0.x as i32;
                     let y0 = p0.y as i32;
@@ -608,13 +899,44 @@ pub mod raw {
                     xy
                 }
             };
-            gds21::GdsBoundary {
-                layer: layer_spec.0,
-                datatype: layer_spec.1,
+            // Initialize our vector of elements with the shape
+            let mut gds_elems = vec![gds21::GdsBoundary {
+                layer: elem.layer.layernum,
+                datatype,
                 xy,
-                elflags: None,
-                plex: None,
+                ..Default::default()
             }
+            .into()];
+            // If there's an assigned net, create a corresponding text-element
+            if let Some(name) = &elem.net {
+                let texttype = elem
+                    .layer
+                    .text
+                    .ok_or(LayoutError::msg("Text Layer Not Defined"))?;
+
+                // Text is placed in the shape's (at least rough) center
+                let loc = elem.inner.center();
+                // Rotate that text 90 degrees for mostly-vertical shapes
+                let strans = match elem.inner.orientation() {
+                    Dir::Horiz => None,
+                    Dir::Vert => Some(gds21::GdsStrans {
+                        angle: Some(90.0),
+                        ..Default::default()
+                    }),
+                };
+                gds_elems.push(
+                    gds21::GdsTextElem {
+                        string: name.into(),
+                        layer: elem.layer.layernum,
+                        texttype,
+                        xy: vec![loc.x as i32, loc.y as i32],
+                        strans,
+                        ..Default::default()
+                    }
+                    .into(),
+                )
+            }
+            Ok(gds_elems)
         }
         /// Convert an [InstArray] to GDS-format [gds21::GdsArrayRef]
         ///
@@ -692,7 +1014,7 @@ impl RawConverter {
         #[derive(Debug, Clone)]
         struct TempInstance<'a> {
             inst: &'a Instance,
-            def: &'a (HasOutline + 'static),
+            def: &'a (dyn HasOutline + 'static),
         }
         // Create one of these for each of our instances
         let temp_instances: Vec<TempInstance> = cell
@@ -714,6 +1036,18 @@ impl RawConverter {
             })
             .collect();
 
+        // Collect our assignments up by layer
+        let mut assignments_by_layer: Vec<Vec<&Assign>> = vec![vec![]; cell.top_layer()];
+        let mut inverse_assignments_by_layer: Vec<Vec<&Assign>> = vec![vec![]; cell.top_layer()];
+        for assn in cell.assignments.iter() {
+            assignments_by_layer[assn.at.layer].push(&assn);
+            let other = match assn.at.relz {
+                RelZ::Above => assn.at.layer + 1,
+                RelZ::Below => assn.at.layer - 1,
+            };
+            inverse_assignments_by_layer[other].push(&assn);
+        }
+
         // Iterate over tracks, chopping them at instances and cuts
         for layernum in 0..cell.top_layer {
             let layer = &lib.stack.layers[layernum];
@@ -727,10 +1061,11 @@ impl RawConverter {
             println!("LAYER_INSTS: {:?}", layer_instances);
 
             // Sort out which direction we're working across
-            let (m, n) = match layer.dir {
-                Dir::Horiz => (cell.outline.y[0], cell.outline.x[0]),
-                Dir::Vert => (cell.outline.x[0], cell.outline.y[0]),
+            let (m, n, pitch) = match layer.dir {
+                Dir::Horiz => (cell.outline.y[0], cell.outline.x[0], lib.stack.xpitch),
+                Dir::Vert => (cell.outline.x[0], cell.outline.y[0], lib.stack.ypitch),
             };
+            let pitch = pitch as isize;
 
             for rown in 0..m {
                 let rown = rown as isize;
@@ -757,41 +1092,59 @@ impl RawConverter {
                         )
                     })
                     .collect();
-                println!("BLOCKAGES: {:?}", blockages);
-                // FIXME: these blockages may need some sorting
-                // Convert these into "non-blockages", areas where we need Track
-                let mut segments: Vec<(usize, usize)> = Vec::new();
-                let mut cursor = 0;
-                for b in blockages {
-                    if b.0 > cursor {
-                        segments.push((cursor, b.0));
-                    }
-                    cursor = b.1;
-                }
-                if cursor < n {
-                    segments.push((cursor, n));
-                    cursor = n;
-                }
-                // FIXME: sorting out where, conceptually, we wanna delineate between signal-tracks and power/ground rails
-                // Generally the "API" should use "signal tracks", at some point in conversion to raw::Layout
-                // things must move to "raw tracks"
 
-                let layer_spec = layer.stream_layer.ok_or(LayoutError::Tbd)?;
+                let mut track_period = layer.to_track_period(pitch as usize * n);
+                for (n1, n2) in blockages.iter() {
+                    track_period.cut(*n1 * pitch as usize, *n2 * pitch as usize)?;
+                }
+                // Handle Net Assignments
+                // First filter down to the ones in our row/col
+                let nsig = track_period.signals.len();
+                let relevant_track_nums = (rown * nsig as isize, (rown + 1) * nsig as isize);
+                let relevant_assignments: &Vec<&Assign> = &assignments_by_layer[layernum]
+                    .iter()
+                    .filter(|assn| {
+                        assn.at.track >= relevant_track_nums.0 as usize
+                            && assn.at.track < relevant_track_nums.1 as usize
+                    })
+                    .copied()
+                    .collect();
+                println!("RELEVANT_ASSIGNMENTS: {:?}", relevant_assignments);
+                for assn in relevant_assignments.iter() {
+                    // Grab a (mutable) reference to the assigned track
+                    let track = &mut track_period.signals[assn.at.track & nsig];
 
-                for t in layer.tracks().iter_mut() {
-                    t.segments = segments
-                        .iter()
-                        .map(|(n1, n2)| TrackSegment {
-                            net: None, // FIXME!
-                            start: *n1,
-                            stop: *n2,
-                        })
-                        .collect();
-                    let shift = Point::offset(rown * lib.stack.xpitch as isize, layer.dir.other());
-                    for mut e in self.convert_track(t, layer_spec)?.into_iter() {
+                    // Figure out the off-axis coordinate
+                    let other_layer: &Layer = match assn.at.relz {
+                        RelZ::Above => &lib.stack.layers[layernum + 1],
+                        RelZ::Below => &lib.stack.layers[layernum - 1],
+                    };
+                    let dist = other_layer.signal_track_center(assn.at.at);
+                    // Find the segment corresponding to the off-axis coordinate
+                    let mut segment = track
+                        .segment_at(dist)
+                        .ok_or(LayoutError::msg("COULDNT FIND SEGMENT"))?;
+                    // Assign both track-segments to the net
+                    segment.net = Some(assn.net.clone());
+                    // FIXME: Insert a corresponding via
+                }
+                // And assignments for which this is the secondary layer
+                for assn in inverse_assignments_by_layer.iter() {
+                    // unimplemented!("???");
+                }
+                // Convert all TrackSegments to raw Elements
+                let shift = Point::offset(rown * pitch, layer.dir.other());
+                let mut push_track = |t: &Track| {
+                    for mut e in self.convert_track(t).unwrap().into_iter() {
                         e.inner.shift(&shift);
                         elems.push(e);
                     }
+                };
+                for t in track_period.rails.iter() {
+                    push_track(t);
+                }
+                for t in track_period.signals.iter() {
+                    push_track(t);
                 }
                 println!("ELEMS: {:?}", elems);
             }
@@ -800,13 +1153,6 @@ impl RawConverter {
         // for cut in cell.cuts.iter() {
         //     unimplemented!("???");
         //     // Split the track into segments
-        // }
-        // FIXME: handle assignments!
-        // for assn in cell.assignments.iter() {
-        //     unimplemented!("???");
-        //     // Find the coordinate of each track-pair
-        //     // Insert a corresponding via
-        //     // Assign both track-segments to the net
         // }
 
         // Convert our [Outline] into a polygon
@@ -849,9 +1195,11 @@ impl RawConverter {
     /// Convert to a [raw::Element] polygon
     pub fn convert_outline(&self, outline: &Outline) -> Result<raw::Element, LayoutError> {
         // Doing so requires our [Stack] specify a `boundary_layer`. If not, fail.
-        let layer_spec = self.lib.stack.boundary_layer.ok_or(LayoutError::msg(
-            "Cannot Convert Abstract to Raw without Boundary Layer",
-        ))?;
+        let layer = (self.lib.stack.boundary_layer)
+            .as_ref()
+            .ok_or(LayoutError::msg(
+                "Cannot Convert Abstract to Raw without Boundary Layer",
+            ))?;
         // Create an array of Outline-Points
         let pts = outline.points();
         // Scale them to our pitches
@@ -862,60 +1210,65 @@ impl RawConverter {
         let pts = pts.iter().map(|p| p.scale(pitch.0, pitch.1)).collect();
         // Create the [raw::Element]
         Ok(raw::Element {
-            layer_spec,
+            net: None,
+            layer: layer.clone(), // FIXME: stop cloning
             inner: raw::Shape::Poly { pts },
         })
     }
     /// Convert a [Track]-full of [TrackSegment]s to a vector of [raw::Element] rectangles
-    fn convert_track(&self, track: &Track, ls: raw::LayerSpec) -> LayoutResult<Vec<raw::Element>> {
-        let pitch = match track.dir {
-            Dir::Horiz => self.lib.stack.xpitch,
-            Dir::Vert => self.lib.stack.ypitch,
-        };
+    fn convert_track(&self, track: &Track) -> LayoutResult<Vec<raw::Element>> {
+        let layer = track
+            .layer
+            .raw
+            .as_ref()
+            .ok_or(LayoutError::msg("Raw-Layout Layer Not Defined"))?;
+
         let elems = track
             .segments
             .iter()
-            .map(|seg| match track.dir {
-                Dir::Horiz => raw::Element {
-                    layer_spec: ls,
-                    inner: raw::Shape::Rect {
-                        p0: Point {
-                            x: (pitch * seg.start) as isize,
-                            y: (track.start as isize),
-                        },
-                        p1: Point {
-                            x: (pitch * seg.stop) as isize,
-                            y: (track.start + track.width as isize) as isize,
-                        },
-                    },
-                },
-                Dir::Vert => raw::Element {
-                    layer_spec: ls,
-                    inner: raw::Shape::Rect {
-                        p0: Point {
-                            x: (track.start as isize),
-                            y: (pitch * seg.start) as isize,
-                        },
-                        p1: Point {
-                            x: (track.start + track.width as isize) as isize,
-                            y: (pitch * seg.stop) as isize,
+            .map(|seg| {
+                match track.dir {
+                    Dir::Horiz => raw::Element {
+                        net: seg.net.clone(),
+                        layer: layer.clone(), // FIXME: dont really wanna clone here
+                        inner: raw::Shape::Rect {
+                            p0: Point {
+                                x: (seg.start) as isize,
+                                y: (track.start as isize),
+                            },
+                            p1: Point {
+                                x: (seg.stop) as isize,
+                                y: (track.start + track.width as isize) as isize,
+                            },
                         },
                     },
-                },
+                    Dir::Vert => raw::Element {
+                        net: seg.net.clone(),
+                        layer: layer.clone(), // FIXME: dont really wanna clone here
+                        inner: raw::Shape::Rect {
+                            p0: Point {
+                                x: (track.start as isize),
+                                y: (seg.start) as isize,
+                            },
+                            p1: Point {
+                                x: (track.start + track.width as isize) as isize,
+                                y: (seg.stop) as isize,
+                            },
+                        },
+                    },
+                }
             })
             .collect();
         Ok(elems)
     }
     /// Create a raw-cell covering a single unit of `layer`
     pub fn convert_layer_unit(&self, layer: &Layer) -> LayoutResult<raw::Cell> {
-        let layer_spec = layer
-            .stream_layer
-            .ok_or(LayoutError::Message("No Stream-Layer Defined".into()))?;
         let pitch = match layer.dir {
             Dir::Horiz => self.lib.stack.xpitch,
             Dir::Vert => self.lib.stack.ypitch,
         };
         let mut elems: Vec<raw::Element> = Vec::new();
+        // FIXME: probably get away from this Layer::tracks method. Everything else has.
         for track in layer.tracks().iter_mut() {
             track.segments = vec![TrackSegment {
                 net: None, // FIXME!
@@ -924,7 +1277,7 @@ impl RawConverter {
             }];
             // Convert into [raw::Element] rectangles.
             // This vector always has just one element, but is easier to iterate over (once).
-            for e in self.convert_track(&track, layer_spec)?.into_iter() {
+            for e in self.convert_track(&track)?.into_iter() {
                 elems.push(e);
             }
         }
@@ -950,9 +1303,7 @@ impl RawConverter {
 /// Hence the misspelling.
 ///
 pub mod abstrakt {
-    use super::raw;
-    use super::{Assign, LayoutError, Library, Outline, RelZ};
-
+    use super::*;
     // FIXME: also need a raw::Abstract, for more-arbitrary-shaped abstract layouts
 
     /// Abstract-Layout
@@ -1117,77 +1468,112 @@ mod tests {
     /// Create a [Stack] used by a number of tests
     fn stack() -> Stack {
         use raw::LayerSpec;
-        use Entry::*;
 
         Stack {
             units: Unit::Nano,
             xpitch: 6600,
             ypitch: 6600,
-            boundary_layer: Some(LayerSpec::new(236, 0)),
+            boundary_layer: Some(raw::DataTypeMap {
+                layernum: 236,
+                drawing: Some(0),
+                text: None,
+                other: HashMap::new(),
+            }),
             layers: vec![
                 Layer {
                     index: 1,
-                    name: "M1".into(),
+                    name: "met1".into(),
                     entries: vec![
-                        Gnd(490),
-                        Pat(Pattern::new(vec![Gap(230), Sig(140)], 7)),
-                        Gap(230),
-                        Pwr(490),
-                        Pat(Pattern::new(vec![Gap(230), Sig(140)], 7)),
-                        Gap(230),
-                        Gnd(490),
+                        TrackSpec::rail(490),
+                        TrackSpec::pat(vec![TrackEntry::gap(230), TrackEntry::sig(140)], 7),
+                        TrackSpec::gap(230),
+                        TrackSpec::rail(490),
+                        TrackSpec::pat(vec![TrackEntry::gap(230), TrackEntry::sig(140)], 7),
+                        TrackSpec::gap(230),
+                        TrackSpec::rail(490),
                     ],
                     dir: Dir::Horiz,
-                    offset: (0, -245),
+                    offset: -245,
+                    cutsize: 50,
                     stream_layer: Some(LayerSpec::new(68, 20)),
+                    raw: Some(raw::DataTypeMap {
+                        layernum: 68,
+                        drawing: Some(20),
+                        text: Some(5),
+                        other: HashMap::new(),
+                    }),
                 },
                 Layer {
                     index: 2,
-                    name: "M2".into(),
+                    name: "met2".into(),
                     entries: vec![
-                        Gnd(490),
-                        Pat(Pattern::new(vec![Gap(230), Sig(140)], 7)),
-                        Gap(230),
-                        Pwr(490),
-                        Pat(Pattern::new(vec![Gap(230), Sig(140)], 7)),
-                        Gap(230),
-                        Gnd(490),
+                        TrackSpec::rail(490),
+                        TrackSpec::pat(vec![TrackEntry::gap(230), TrackEntry::sig(140)], 7),
+                        TrackSpec::gap(230),
+                        TrackSpec::rail(490),
+                        TrackSpec::pat(vec![TrackEntry::gap(230), TrackEntry::sig(140)], 7),
+                        TrackSpec::gap(230),
+                        TrackSpec::rail(490),
                     ],
                     dir: Dir::Vert,
-                    offset: (-245, 0),
+                    cutsize: 50,
+                    offset: -245,
                     stream_layer: Some(LayerSpec::new(69, 20)),
+
+                    raw: Some(raw::DataTypeMap {
+                        layernum: 69,
+                        drawing: Some(20),
+                        text: Some(5),
+                        other: HashMap::new(),
+                    }),
                 },
                 Layer {
                     index: 3,
-                    name: "M3".into(),
+                    name: "met3".into(),
                     entries: vec![
-                        Gnd(490),
-                        Pat(Pattern::new(vec![Gap(230), Sig(140)], 7)),
-                        Gap(230),
-                        Pwr(490),
-                        Pat(Pattern::new(vec![Gap(230), Sig(140)], 7)),
-                        Gap(230),
-                        Gnd(490),
+                        TrackSpec::rail(490),
+                        TrackSpec::pat(vec![TrackEntry::gap(230), TrackEntry::sig(140)], 7),
+                        TrackSpec::gap(230),
+                        TrackSpec::rail(490),
+                        TrackSpec::pat(vec![TrackEntry::gap(230), TrackEntry::sig(140)], 7),
+                        TrackSpec::gap(230),
+                        TrackSpec::rail(490),
                     ],
                     dir: Dir::Horiz,
-                    offset: (0, -245),
+                    cutsize: 50,
+                    offset: -245,
                     stream_layer: Some(LayerSpec::new(70, 20)),
+
+                    raw: Some(raw::DataTypeMap {
+                        layernum: 70,
+                        drawing: Some(20),
+                        text: Some(5),
+                        other: HashMap::new(),
+                    }),
                 },
                 Layer {
                     index: 4,
-                    name: "M4".into(),
+                    name: "met4".into(),
                     entries: vec![
-                        Gnd(490),
-                        Pat(Pattern::new(vec![Gap(230), Sig(140)], 7)),
-                        Gap(230),
-                        Pwr(490),
-                        Pat(Pattern::new(vec![Gap(230), Sig(140)], 7)),
-                        Gap(230),
-                        Gnd(490),
+                        TrackSpec::rail(490),
+                        TrackSpec::pat(vec![TrackEntry::gap(230), TrackEntry::sig(140)], 7),
+                        TrackSpec::gap(230),
+                        TrackSpec::rail(490),
+                        TrackSpec::pat(vec![TrackEntry::gap(230), TrackEntry::sig(140)], 7),
+                        TrackSpec::gap(230),
+                        TrackSpec::rail(490),
                     ],
                     dir: Dir::Vert,
-                    offset: (-245, 0),
+                    cutsize: 50,
+                    offset: -245,
                     stream_layer: Some(LayerSpec::new(71, 20)),
+
+                    raw: Some(raw::DataTypeMap {
+                        layernum: 71,
+                        drawing: Some(20),
+                        text: Some(5),
+                        other: HashMap::new(),
+                    }),
                 },
             ],
             vias: vec![
@@ -1404,7 +1790,7 @@ mod tests {
             assignments: vec![Assign {
                 net: "clk".into(),
                 at: TrackIntersection {
-                    layer: 3,
+                    layer: 1,
                     track: 11,
                     at: 11,
                     relz: RelZ::Above,
@@ -1415,6 +1801,19 @@ mod tests {
         RawConverter::convert(lib)?
             .to_gds()?
             .save("test_abstracts.gds")?;
+        Ok(())
+    }
+    #[allow(unused_imports)]
+    use std::io::prelude::*;
+    #[test]
+    fn stack_to_yaml() -> LayoutResult<()> {
+        use std::fs::File;
+        use std::io::{BufReader, BufWriter};
+        let s = stack();
+        let mut file = BufWriter::new(File::create("stack.yaml").unwrap());
+        let yaml = serde_yaml::to_string(&s).unwrap();
+        file.write_all(yaml.as_bytes()).unwrap();
+        file.flush().unwrap();
         Ok(())
     }
 }
