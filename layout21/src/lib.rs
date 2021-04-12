@@ -1,8 +1,18 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt::Debug;
 
-use id_arena::{Arena, Id};
 use serde::{Deserialize, Serialize};
+use slotmap::{new_key_type, SlotMap};
+
+// Create key-types for each internal type stored in [SlotMap]s
+new_key_type! {
+    /// Keys for [Cell] entries
+    pub struct CellKey;
+    /// Keys for [abstrakt::Abstract] entries
+    pub struct AbstractKey;
+    /// Keys for [CellView] entries
+    pub struct CellViewKey;
+}
 
 pub type LayoutResult<T> = Result<T, LayoutError>;
 
@@ -313,7 +323,7 @@ pub enum RelZ {
     Below,
 }
 /// Instance of another Cell
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Instance {
     /// Instance Name
     pub inst_name: String,
@@ -332,7 +342,7 @@ pub struct Instance {
 ///
 /// A combination of cell definitions, sub-libraries, and metadata
 ///
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Library {
     /// Library Name
     pub name: String,
@@ -341,9 +351,9 @@ pub struct Library {
     /// Cell Names
     pub cell_names: Vec<String>,
     /// Abstracts
-    pub abstracts: Arena<abstrakt::Abstract>,
+    pub abstracts: SlotMap<AbstractKey, abstrakt::Abstract>,
     /// Cell Implementations
-    pub cells: Arena<Cell>,
+    pub cells: SlotMap<CellKey, Cell>,
     /// Sub-Libraries
     pub libs: Vec<Library>,
 }
@@ -354,8 +364,8 @@ impl Library {
             name: name.into(),
             stack,
             cell_names: Vec::new(),
-            abstracts: Arena::new(),
-            cells: Arena::new(),
+            abstracts: SlotMap::with_key(),
+            cells: SlotMap::with_key(),
             libs: Vec::new(),
         }
     }
@@ -485,7 +495,7 @@ impl<'a> TrackPeriod<'a> {
     }
 }
 /// # Segments of un-split, single-net wire on a [Track]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrackSegment {
     /// Net Name
     pub net: Option<String>,
@@ -510,7 +520,7 @@ pub struct TrackIntersection {
 ///
 /// A combination of lower-level cell instances and net-assignments to tracks.
 ///
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Cell {
     /// Cell Name
     pub name: String,
@@ -543,7 +553,7 @@ pub struct Cell {
 /// Example: a rectangular Outline would require a single entry for each of `x` and `y`,
 /// at the rectangle's vertex opposite the origin in both axes.
 ///
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Outline {
     pub x: Vec<usize>,
     pub y: Vec<usize>,
@@ -656,12 +666,12 @@ pub mod raw {
     use gds21;
 
     // FIXME: need something like raw::Abstract, representing arbitrary-shaped abstract layouts
-    #[derive(Debug, Default)]
+    #[derive(Debug, Clone, Default, Serialize, Deserialize)]
     pub struct Abstract;
 
     /// # Raw Layout Library  
     /// A collection of cell-definitions and sub-library definitions
-    #[derive(Debug, Default)]
+    #[derive(Debug, Clone, Default, Serialize, Deserialize)]
     pub struct Library {
         /// Library Name
         pub name: String,
@@ -687,7 +697,7 @@ pub mod raw {
         }
     }
     /// Raw-Layout Cell Definition
-    #[derive(Debug)]
+    #[derive(Debug, Clone, Default, Serialize, Deserialize)]
     pub struct Cell {
         /// Cell Name
         pub name: String,
@@ -701,7 +711,7 @@ pub mod raw {
     /// # Array of Instances
     ///
     /// Two-dimensional array of identical [Instance]s of the same [Cell].
-    #[derive(Debug)]
+    #[derive(Debug, Clone, Default, Serialize, Deserialize)]
     pub struct InstArray {
         pub inst_name: String,
         pub cell_name: String,
@@ -724,7 +734,7 @@ pub mod raw {
     }
     /// # Per-Layer Datatype Specification
     /// Includes the datatypes used for each category of element on layer `layernum`
-    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[derive(Debug, Clone, Default, Serialize, Deserialize)]
     pub struct DataTypeMap {
         /// Layer Number
         pub layernum: i16,
@@ -806,7 +816,7 @@ pub mod raw {
     ///
     /// The sole valid top-level entity for [gds21] conversion is always a [Library].
     ///
-    #[derive(Debug)]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct GdsConverter {
         pub lib: Library,
     }
@@ -1307,7 +1317,7 @@ pub mod abstrakt {
     // FIXME: also need a raw::Abstract, for more-arbitrary-shaped abstract layouts
 
     /// Abstract-Layout
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Abstract {
         /// Cell Name
         pub name: String,
@@ -1319,7 +1329,7 @@ pub mod abstrakt {
         pub ports: Vec<Port>,
     }
     /// Abstract-Layout Port
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Port {
         /// Port/ Signal Name
         pub name: String,
@@ -1332,7 +1342,7 @@ pub mod abstrakt {
     /// among a few enumerated variants.
     ///
     /// Ports may either connect on x/y edges, or on the top (in the z-axis) layer.
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum PortKind {
         /// Ports which connect on x/y outline edges
         Edge {
@@ -1355,7 +1365,7 @@ pub mod abstrakt {
         // * Primitives may need a different kinda `cross`
     }
     /// A location (track intersection) on our top z-axis layer
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct TopLoc {
         /// Track Index
         track: usize,
@@ -1366,7 +1376,7 @@ pub mod abstrakt {
     }
     /// X/Y Side Enumeration
     /// Note the requirements on [Outline] shapes ensure each track has a unique left/right or top/bottom pair of edges.
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum Side {
         Left,
         Right,
@@ -1377,12 +1387,15 @@ pub mod abstrakt {
 /// Interfaces Module,
 /// Describing Cells in terms of their IO Interfaces
 pub mod interface {
+    use serde::{Deserialize, Serialize};
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Port {
         /// Port Name
         pub name: String,
         /// Port Type & Content
         pub kind: PortKind,
     }
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum PortKind {
         /// Flat Scalar Port, e.g. `clk`
         Scalar,
@@ -1391,6 +1404,7 @@ pub mod interface {
         /// Instance of a Hierarchical Bundle
         Bundle { bundle_name: String },
     }
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Bundle {
         pub name: String,
         pub ports: Vec<Port>,
@@ -1398,6 +1412,7 @@ pub mod interface {
 }
 /// # Cell View Enumeration
 /// All of the ways in which a Cell is represented
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CellView {
     Interface(interface::Bundle),
     Abstract(abstrakt::Abstract),
@@ -1405,18 +1420,21 @@ pub enum CellView {
     RawLayout(raw::Cell),
 }
 /// Collection of the Views describing a Cell
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CellViews {
     name: String,
-    views: Arena<CellView>,
+    views: SlotMap<CellViewKey, CellView>,
 }
 
 ///
 /// # Layout Error Enumeration
 ///
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum LayoutError {
     /// Uncategorized Error with Message
     Message(String),
+    /// Error Exporting to Foreign Format
+    Export,
     /// Everything to be categorized
     Tbd,
 }
@@ -1428,10 +1446,10 @@ impl LayoutError {
 }
 /// # Cell Reference Enumeration
 /// Used for enumerating the different types of things an [Instance] may refer to
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CellRef {
-    Cell(Id<Cell>),
-    Abstract(Id<abstrakt::Abstract>),
+    Cell(CellKey),
+    Abstract(AbstractKey),
     Name(String),
 }
 /// Trait for accessing three-dimensional [Outline] data from several views of Layouts
@@ -1628,7 +1646,7 @@ mod tests {
     fn create_lib() -> Result<(), LayoutError> {
         let mut lib = Library::new("HereGoesLib", stack());
 
-        let c = lib.cells.alloc(Cell {
+        let c = lib.cells.insert(Cell {
             name: "HereGoes".into(),
             top_layer: 3,
             outline: Outline::rect(5, 5)?,
@@ -1644,15 +1662,14 @@ mod tests {
             }],
             cuts: Vec::new(),
         });
-        lib.to_raw()?.to_gds()?.save("test.gds")?;
-        Ok(())
+        exports(lib)
     }
     /// Create a cell with instances
     #[test]
     fn create_lib2() -> Result<(), LayoutError> {
         let mut lib = Library::new("InstLib", stack());
 
-        let c2 = lib.cells.alloc(Cell {
+        let c2 = lib.cells.insert(Cell {
             name: "IsInst".into(),
             top_layer: 2,
             outline: Outline::rect(1, 1)?,
@@ -1661,7 +1678,7 @@ mod tests {
             cuts: Vec::new(),
         });
 
-        let c = lib.cells.alloc(Cell {
+        let c = lib.cells.insert(Cell {
             name: "HasInst".into(),
             top_layer: 4,
             outline: Outline::rect(5, 11)?,
@@ -1684,8 +1701,7 @@ mod tests {
             }],
             cuts: Vec::new(),
         });
-        lib.to_raw()?.to_gds()?.save("test_insts.gds")?;
-        Ok(())
+        exports(lib)
     }
 
     /// Create an abstract layout, with its variety of supported port types
@@ -1750,14 +1766,14 @@ mod tests {
     fn create_lib3() -> Result<(), LayoutError> {
         let mut lib = Library::new("InstLib", stack());
 
-        let c2 = lib.abstracts.alloc(abstrakt::Abstract {
+        let c2 = lib.abstracts.insert(abstrakt::Abstract {
             name: "IsAbstrakt".into(),
             top_layer: 2,
             outline: Outline::rect(1, 1)?,
             ports: Vec::new(),
         });
 
-        let c = lib.cells.alloc(Cell {
+        let c = lib.cells.insert(Cell {
             name: "HasAbstrakts".into(),
             top_layer: 3,
             outline: Outline::rect(5, 5)?,
@@ -1798,20 +1814,34 @@ mod tests {
             }],
             cuts: Vec::new(),
         });
-        RawConverter::convert(lib)?
-            .to_gds()?
-            .save("test_abstracts.gds")?;
+        exports(lib)
+    }
+    /// Export [Library] `lib` in several formats
+    fn exports(lib: Library) -> LayoutResult<()> {
+        save_yaml(&lib, &resource(&format!("{}.yaml", &lib.name)))?;
+        let raw = RawConverter::convert(lib)?;
+        save_yaml(&raw, &resource(&format!("{}.raw.yaml", &raw.name)))?;
+        let gds = raw.to_gds()?;
+        save_yaml(&gds, &resource(&format!("{}.gds.yaml", &gds.name)))?;
+        gds.save(&resource(&format!("{}.gds", &gds.name)))?;
         Ok(())
     }
     #[allow(unused_imports)]
     use std::io::prelude::*;
     #[test]
     fn stack_to_yaml() -> LayoutResult<()> {
+        save_yaml(&stack(), &resource("stack.yaml"))
+    }
+    /// Grab the full path of resource-file `fname`
+    fn resource(fname: &str) -> String {
+        format!("{}/resources/{}", env!("CARGO_MANIFEST_DIR"), fname)
+    }
+    /// Save any [Serialize]-able type to yaml-format file `fname`
+    fn save_yaml(data: &impl Serialize, fname: &str) -> LayoutResult<()> {
         use std::fs::File;
-        use std::io::{BufReader, BufWriter};
-        let s = stack();
-        let mut file = BufWriter::new(File::create("stack.yaml").unwrap());
-        let yaml = serde_yaml::to_string(&s).unwrap();
+        use std::io::BufWriter;
+        let mut file = BufWriter::new(File::create(fname).unwrap());
+        let yaml = serde_yaml::to_string(data).unwrap();
         file.write_all(yaml.as_bytes()).unwrap();
         file.flush().unwrap();
         Ok(())
