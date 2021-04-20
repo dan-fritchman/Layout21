@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
 
+use num_integer;
 use serde::{Deserialize, Serialize};
 use slotmap::{new_key_type, SlotMap};
 
@@ -32,7 +33,7 @@ impl Default for Unit {
 }
 /// Direction Enumeration
 /// Primarily for [Layer] orientations
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Dir {
     /// Horizontal
     Horiz,
@@ -48,7 +49,7 @@ impl Dir {
         }
     }
 }
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TrackEntry {
     pub width: usize,
     pub ttype: TrackType,
@@ -69,7 +70,7 @@ impl TrackEntry {
         }
     }
 }
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum TrackType {
     Gap,
     Signal,
@@ -136,12 +137,6 @@ pub struct Stack {
     /// Set of via layers
     pub vias: Vec<ViaLayer>,
 }
-impl Stack {
-    /// Retrieve a [Point] two-tuple of our x/y pitches
-    fn pitches(&self) -> Point {
-        Point::new(self.xpitch as isize, self.ypitch as isize)
-    }
-}
 /// # Layer
 ///
 /// Metal layer in a [Stack]
@@ -150,8 +145,6 @@ impl Stack {
 ///
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Layer {
-    /// Layer Index
-    pub index: usize,
     /// Layer Name
     pub name: String,
     /// Direction Enumeration (Horizontal/ Vertical)
@@ -162,8 +155,7 @@ pub struct Layer {
     pub entries: Vec<TrackSpec>,
     /// Offset, in our periodic dimension
     pub offset: isize,
-    /// Layer for streaming exports
-    pub stream_layer: Option<raw::LayerSpec>,
+    /// Layer(s) for streaming exports
     pub raw: Option<raw::DataTypeMap>,
 }
 impl Layer {
@@ -171,18 +163,17 @@ impl Layer {
     fn to_layer_period(&self, stop: usize) -> LayerPeriod {
         let mut cursor = self.offset;
         let mut period = LayerPeriod::default();
-        for e in self.flat_entries().iter() {
-            let d = &e.width;
+        for e in self.entries().iter() {
+            let d = e.width;
             match e.ttype {
                 TrackType::Gap => (),
                 TrackType::Rail => {
                     period.rails.push(Track {
-                        layer: self,
                         ttype: e.ttype,
                         index: period.rails.len(),
                         dir: self.dir,
                         start: cursor,
-                        width: *d,
+                        width: d,
                         segments: vec![TrackSegment {
                             net: Some("POWER_OR_GROUND_HERE_BRO".to_string()), // FIXME!
                             start: 0,
@@ -192,12 +183,11 @@ impl Layer {
                 }
                 TrackType::Signal => {
                     period.signals.push(Track {
-                        layer: self,
                         ttype: e.ttype,
                         index: period.signals.len(),
                         dir: self.dir,
                         start: cursor,
-                        width: *d,
+                        width: d,
                         segments: vec![TrackSegment {
                             net: None,
                             start: 0,
@@ -206,47 +196,13 @@ impl Layer {
                     });
                 }
             };
-            cursor += *d as isize;
+            cursor += d as isize;
         }
         period
     }
-    /// Convert to a vector of [Track]s
-    fn tracks(&self) -> Vec<Track> {
-        let mut cursor = self.offset;
-        let mut index = 0;
-        let mut tracks: Vec<Track> = Vec::new();
-        for e in self.flat_entries().iter() {
-            let d = &e.width;
-            match e.ttype {
-                TrackType::Gap => cursor += *d as isize,
-                TrackType::Rail | TrackType::Signal => {
-                    // FIXME: initial segments
-                    // FIXME: nets for Pwr/Gnd
-                    tracks.push(Track {
-                        layer: self,
-                        ttype: e.ttype,
-                        index,
-                        dir: self.dir,
-                        start: cursor,
-                        width: *d,
-                        segments: Vec::new(),
-                    });
-                    cursor += *d as isize;
-                    index += 1;
-                }
-            }
-        }
-        tracks
-    }
-    /// Find the center-coordinate of the `idx`th signal track
-    fn signal_track_center(&self, idx: usize) -> isize {
-        // FIXME: this creates a very-temporary LayerPeriod.
-        // We can probably store these somewhere instead.
-        self.to_layer_period(1).center(idx)
-    }
     /// Flatten our [Entry]s into a vector
     /// Removes any nested patterns
-    fn flat_entries(&self) -> Vec<TrackEntry> {
+    fn entries(&self) -> Vec<TrackEntry> {
         let mut v: Vec<TrackEntry> = Vec::new();
         for e in self.entries.iter() {
             match e {
@@ -264,15 +220,13 @@ impl Layer {
     }
     /// Sum up this [Layer]'s pitch
     fn pitch(&self) -> usize {
-        self.flat_entries().iter().map(|e| e.width).sum()
+        self.entries().iter().map(|e| e.width).sum()
     }
 }
 /// # Via / Insulator Layer Between Metals
 ///
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ViaLayer {
-    /// Layer index
-    pub index: usize,
     /// Layer name
     pub name: String,
     /// Connected metal-layer indices
@@ -280,7 +234,7 @@ pub struct ViaLayer {
     /// Via size
     pub size: Point,
     /// Stream-out layer numbers
-    pub stream_layer: Option<raw::LayerSpec>,
+    pub raw: Option<raw::DataTypeMap>,
 }
 /// Assignment of a net onto a track-intersection
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -291,10 +245,18 @@ pub struct Assign {
     pub at: TrackIntersection,
 }
 /// Relative Z-Axis Reference to one Layer `Above` or `Below` another
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum RelZ {
     Above,
     Below,
+}
+impl RelZ {
+    pub fn other(&self) -> Self {
+        match *self {
+            RelZ::Above => RelZ::Below,
+            RelZ::Below => RelZ::Above,
+        }
+    }
 }
 /// Instance of another Cell
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -320,8 +282,6 @@ pub struct Instance {
 pub struct Library {
     /// Library Name
     pub name: String,
-    /// Reference to the z-stack
-    pub stack: Stack,
     /// Cell Names
     pub cell_names: Vec<String>,
     /// Abstracts
@@ -333,25 +293,18 @@ pub struct Library {
 }
 impl Library {
     /// Create a new and initially empty [Library]
-    pub fn new(name: impl Into<String>, stack: Stack) -> Self {
+    pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
-            stack,
             cell_names: Vec::new(),
             abstracts: SlotMap::with_key(),
             cells: SlotMap::with_key(),
             libs: Vec::new(),
         }
     }
-    /// Convert to a [raw::Library]
-    pub fn to_raw(self) -> Result<raw::Library, LayoutError> {
-        conv::RawConverter::convert(self)
-    }
 }
 #[derive(Debug, Clone)]
-pub struct Track<'a> {
-    /// Layer
-    pub layer: &'a Layer,
+pub struct Track {
     /// Track Type (Rail, Signal)
     pub ttype: TrackType,
     /// Track Index
@@ -365,7 +318,7 @@ pub struct Track<'a> {
     /// Set of wire-segments, in positional order
     pub segments: Vec<TrackSegment>,
 }
-impl<'a> Track<'a> {
+impl Track {
     /// Retrieve a (mutable) reference to the segment at cross-dimension `dist`
     /// Returns None for `dist` outside the segment, or in-between segments
     pub fn segment_at(&mut self, dist: isize) -> Option<&mut TrackSegment> {
@@ -394,16 +347,16 @@ impl<'a> Track<'a> {
             if seg.start > stop {
                 // Loop done case
                 break;
-            } else if stop < seg.start {
+            } else if start > seg.stop {
                 // Uninvolved, carry on
                 continue;
             } else if start <= seg.start && stop >= seg.stop {
                 // Removal case; cut covers entire segment
                 to_be_removed.push(idx);
-            } else if start > seg.start && stop >= seg.stop {
+            } else if start > seg.start && start <= seg.stop && stop >= seg.stop {
                 // Stop-side trim case
                 seg.stop = start;
-            } else if start <= seg.start && stop < seg.stop {
+            } else if start <= seg.start && stop > seg.start && stop < seg.stop {
                 // Start-side trim case
                 seg.start = stop;
             } else if start > seg.start && stop < seg.stop {
@@ -441,11 +394,21 @@ impl<'a> Track<'a> {
 /// Stores each as a [Track] struct, which moves to a (start, width) size-format,
 /// and includes a vector of track-segments for cutting and assigning nets.
 #[derive(Debug, Clone, Default)]
-pub struct LayerPeriod<'a> {
-    pub signals: Vec<Track<'a>>,
-    pub rails: Vec<Track<'a>>,
+pub struct LayerPeriod {
+    pub signals: Vec<Track>,
+    pub rails: Vec<Track>,
 }
-impl<'a> LayerPeriod<'a> {
+impl LayerPeriod {
+    /// Shift the period by `dist` in its periodic direction
+    pub fn offset(&mut self, dist: isize) -> LayoutResult<()> {
+        for t in self.rails.iter_mut() {
+            t.start += dist;
+        }
+        for t in self.signals.iter_mut() {
+            t.start += dist;
+        }
+        Ok(())
+    }
     /// Set the stop position for all [Track]s to `stop`
     pub fn stop(&mut self, stop: usize) -> LayoutResult<()> {
         for t in self.rails.iter_mut() {
@@ -466,16 +429,6 @@ impl<'a> LayerPeriod<'a> {
             t.cut(start, stop)?;
         }
         Ok(())
-    }
-    /// Get the center-coordinate of signal-track `idx`, in our periodic dimension
-    pub fn center(&self, idx: usize) -> isize {
-        let layer = self.signals[0].layer; // FIXME: store this somewhere better
-        let idx_mod_tracks = idx % self.signals.len();
-        let mut cursor = layer.offset;
-        cursor += (layer.pitch() * (idx / self.signals.len())) as isize;
-        let track = &self.signals[idx_mod_tracks];
-        cursor += track.start + track.width as isize / 2;
-        cursor
     }
 }
 /// # Segments of un-split, single-net wire on a [Track]
@@ -499,6 +452,20 @@ pub struct TrackIntersection {
     pub at: usize,
     /// Whether `at` refers to the track-indices above or below
     pub relz: RelZ,
+}
+impl TrackIntersection {
+    pub(crate) fn transpose(&self) -> Self {
+        let layer = match self.relz {
+            RelZ::Above => self.layer + 1,
+            RelZ::Below => self.layer - 1,
+        };
+        Self {
+            layer,
+            track: self.at,
+            at: self.track,
+            relz: self.relz.other(),
+        }
+    }
 }
 /// # Layout Cell
 ///
@@ -968,7 +935,11 @@ pub mod conv {
         inst: &'a Instance,
         def: &'a (dyn HasOutline + 'static),
     }
-
+    // Create key-types for each internal type stored in [SlotMap]s
+    new_key_type! {
+        /// Keys for [ValidAssign] entries
+        pub struct AssignKey;
+    }
     /// A short-lived Cell, largely organized by layer
     #[derive(Debug, Clone)]
     struct TempCell<'a> {
@@ -978,66 +949,18 @@ pub mod conv {
         lib: &'a Library,
         /// Instances and references to their definitions
         instances: Vec<TempInstance<'a>>,
-        /// Assignments, arranged by Layer
-        assignments: Vec<Vec<&'a Assign>>,
         /// Cuts, arranged by Layer
-        cuts: Vec<Vec<&'a TrackIntersection>>,
-    }
-    impl<'a> TempCell<'a> {
-        fn new(cell: &'a Cell, lib: &'a Library) -> TempCell<'a> {
-            // Create one of these for each of our instances
-            let instances: Vec<TempInstance> = cell
-                .instances
-                .iter()
-                .map(|inst| {
-                    match inst.cell {
-                        CellRef::Cell(c) => {
-                            let def = lib.cells.get(c).ok_or(LayoutError::Tbd).unwrap();
-                            TempInstance { inst, def }
-                        }
-                        CellRef::Abstract(c) => {
-                            let def = lib.abstracts.get(c).ok_or(LayoutError::Tbd).unwrap();
-                            TempInstance { inst, def }
-                        }
-                        _ => panic!("FIXME!"),
-                        // _ => return Err(LayoutError::Tbd),
-                    }
-                })
-                .collect();
-            // Collect our assignments up by layer
-            let mut assignments: Vec<Vec<&Assign>> = vec![vec![]; cell.top_layer()];
-            let mut inverse_assignments: Vec<Vec<&Assign>> =
-                vec![vec![]; cell.top_layer()];
-            for assn in cell.assignments.iter() {
-                assignments[assn.at.layer].push(&assn);
-                let other = match assn.at.relz {
-                    RelZ::Above => assn.at.layer + 1,
-                    RelZ::Below => assn.at.layer - 1,
-                };
-                inverse_assignments[other].push(&assn);
-            }
-            // And collect cuts by layer
-            let mut cuts: Vec<Vec<&TrackIntersection>> = vec![vec![]; cell.top_layer()];
-            for cut in cell.cuts.iter() {
-                cuts[cut.layer].push(&cut);
-            }
-
-            TempCell {
-                cell,
-                lib,
-                instances,
-                assignments,
-                cuts,
-            }
-        }
+        cuts: Vec<Vec<validate::ValidTrackLoc>>,
+        /// Assignments, arranged by Layer
+        assignments: SlotMap<AssignKey, validate::ValidAssign>,
+        top_assns: Vec<Vec<AssignKey>>,
+        bot_assns: Vec<Vec<AssignKey>>,
     }
     /// Temporary arrangement of data for a [Layer] within a [Cell]
     #[derive(Debug, Clone)]
     struct TempCellLayer<'a> {
-        /// Layer index
-        layernum: usize,
-        /// Reference to the library metal layer
-        layer: &'a Layer,
+        /// Reference to the validated metal layer
+        layer: &'a validate::ValidMetalLayer,
         /// Reference to the parent cell
         cell: &'a TempCell<'a>,
         /// Instances which intersect with this layer and period
@@ -1048,15 +971,11 @@ pub mod conv {
         nperiods: usize,
         /// Spanning distance in the layer's "infinite" dimension
         span: usize,
-        /// Template for all [LayerPeriod]s FIXME: this could be offloaded to something Stack/Lib wide
-        period: LayerPeriod<'a>,
     }
     impl<'a> TempCellLayer<'a> {
-        fn new(temp_cell: &'a TempCell, layernum: usize) -> TempCellLayer<'a> {
-            let layer = &temp_cell.lib.stack.layers[layernum];
-
+        fn new(temp_cell: &'a TempCell, layer: &'a validate::ValidMetalLayer) -> TempCellLayer<'a> {
             // Sort out which of the cell's [Instance]s come up to this layer
-            let layer_instances: Vec<&TempInstance> = temp_cell
+            let instances: Vec<&TempInstance> = temp_cell
                 .instances
                 .iter()
                 .filter(|i| i.def.top_layer() >= layer.index)
@@ -1064,29 +983,19 @@ pub mod conv {
 
             // Sort out which direction we're working across
             let cell = temp_cell.cell;
-            let (nperiods, span, pitch) = match layer.dir {
-                Dir::Horiz => (
-                    cell.outline.y[0],
-                    cell.outline.x[0],
-                    temp_cell.lib.stack.xpitch,
-                ),
-                Dir::Vert => (
-                    cell.outline.x[0],
-                    cell.outline.y[0],
-                    temp_cell.lib.stack.ypitch,
-                ),
+            let (nperiods, span) = match layer.spec.dir {
+                Dir::Horiz => (cell.outline.y[0], cell.outline.x[0]),
+                Dir::Vert => (cell.outline.x[0], cell.outline.y[0]),
             };
-            let pitch = pitch as isize;
+            let pitch = layer.pitch as isize;
 
             TempCellLayer {
-                layernum,
                 layer,
-                cell: &temp_cell,
-                instances: layer_instances,
+                cell: temp_cell,
+                instances,
                 nperiods,
                 pitch,
                 span: span * (pitch as usize), // FIXME: this span will almost certainly be in the wrong units, once we have rectangular units!
-                period: layer.to_layer_period(0),
             }
         }
     }
@@ -1095,12 +1004,14 @@ pub mod conv {
     #[derive(Debug, Clone)]
     struct TempPeriod<'a> {
         periodnum: isize,
+        cell: &'a TempCell<'a>,
         layer: &'a TempCellLayer<'a>,
         // Instances which intersect with this layer and period
         instances: Vec<&'a TempInstance<'a>>,
         blockages: Vec<(usize, usize)>,
-        cuts: Vec<&'a TrackIntersection>,
-        assignments: Vec<&'a Assign>,
+        cuts: Vec<&'a validate::ValidTrackLoc>,
+        top_assns: Vec<AssignKey>,
+        bot_assns: Vec<AssignKey>,
     }
     impl<'a> TempPeriod<'a> {
         fn new(temp_layer: &'a TempCellLayer, periodnum: isize) -> TempPeriod<'a> {
@@ -1112,9 +1023,9 @@ pub mod conv {
                 .instances
                 .iter()
                 .filter(|i| {
-                    i.inst.p0.coord(layer.dir.other()) <= periodnum
-                        && i.inst.p0.coord(layer.dir.other())
-                            + i.def.outline().max(layer.dir.other()) as isize
+                    i.inst.p0.coord(layer.spec.dir.other()) <= periodnum
+                        && i.inst.p0.coord(layer.spec.dir.other())
+                            + i.def.outline().max(layer.spec.dir.other()) as isize
                             > periodnum
                 })
                 .map(|i| i.clone())
@@ -1125,63 +1036,84 @@ pub mod conv {
                 .iter()
                 .map(|i| {
                     (
-                        i.inst.p0.coord(layer.dir) as usize,
-                        i.inst.p0.coord(layer.dir) as usize + i.def.outline().max(layer.dir),
+                        i.inst.p0.coord(layer.spec.dir) as usize,
+                        i.inst.p0.coord(layer.spec.dir) as usize
+                            + i.def.outline().max(layer.spec.dir),
                     )
                 })
                 .collect();
 
             // Grab indices of the relevant tracks for this period
-            let nsig = temp_layer.period.signals.len();
+            let nsig = temp_layer.layer.period.signals.len();
             let relevant_track_nums = (periodnum * nsig as isize, (periodnum + 1) * nsig as isize);
             // Filter cuts down to those in this period
-            let cuts: Vec<&TrackIntersection> = cell.cuts[temp_layer.layernum]
+            let cuts: Vec<&validate::ValidTrackLoc> = cell.cuts[temp_layer.layer.index]
                 .iter()
                 .filter(|cut| {
                     cut.track >= relevant_track_nums.0 as usize
                         && cut.track < relevant_track_nums.1 as usize
                 })
+                .collect();
+            // Filter assignments down to those in this period
+            let top_assns = cell.top_assns[temp_layer.layer.index]
+                .iter()
+                .filter(|id| {
+                    let assn = cell
+                        .assignments
+                        .get(**id)
+                        .ok_or(LayoutError::Export)
+                        .unwrap();
+                    assn.top.track >= relevant_track_nums.0 as usize
+                        && assn.top.track < relevant_track_nums.1 as usize
+                })
                 .copied()
                 .collect();
-
-            let assignments: Vec<&Assign> = cell.assignments[temp_layer.layernum]
+            let bot_assns = cell.bot_assns[temp_layer.layer.index]
                 .iter()
-                .filter(|assn| {
-                    assn.at.track >= relevant_track_nums.0 as usize
-                        && assn.at.track < relevant_track_nums.1 as usize
+                .filter(|id| {
+                    let assn = cell
+                        .assignments
+                        .get(**id)
+                        .ok_or(LayoutError::Export)
+                        .unwrap();
+                    assn.bot.track >= relevant_track_nums.0 as usize
+                        && assn.bot.track < relevant_track_nums.1 as usize
                 })
                 .copied()
                 .collect();
 
             TempPeriod {
                 periodnum,
+                cell,
                 layer: temp_layer,
                 instances,
                 blockages,
                 cuts,
-                assignments,
+                top_assns,
+                bot_assns,
             }
         }
     }
     /// # Converter from [Library] and constituent elements to [raw::Library]
     pub struct RawConverter {
-        pub lib: Library,
+        pub(crate) lib: Library,
+        pub(crate) stack: validate::ValidStack,
     }
-
     impl RawConverter {
         /// Convert [Library] `lib` to a [raw::Library]
         /// Consumes `lib` in the process
-        pub fn convert(lib: Library) -> Result<raw::Library, LayoutError> {
-            Self { lib }.convert_all()
+        pub fn convert(lib: Library, stack: Stack) -> Result<raw::Library, LayoutError> {
+            let stack = validate::StackValidator::validate(stack)?;
+            Self { lib, stack }.convert_all()
         }
         /// Convert everything in our [Library]
         fn convert_all(self) -> LayoutResult<raw::Library> {
-            let mut lib = raw::Library::new(&self.lib.name, self.lib.stack.units);
-            // Collect up unit-cells on each layer
-            for layer in self.lib.stack.layers.iter() {
-                let unit = self.convert_layer_unit(layer)?;
-                lib.cells.push(unit);
-            }
+            let mut lib = raw::Library::new(&self.lib.name, self.stack.units);
+            // // Collect up unit-cells on each layer
+            // for layer in self.stack.metals.iter() {
+            //     let unit = self.convert_layer_unit(&layer.spec)?;
+            //     lib.cells.push(unit);
+            // }
             // Convert each defined [Cell] to a [raw::Cell]
             for (_id, cell) in self.lib.cells.iter() {
                 lib.cells.push(self.convert_cell(cell)?);
@@ -1200,37 +1132,32 @@ pub mod conv {
         }
         /// Convert to a raw layout cell
         fn convert_cell(&self, cell: &Cell) -> Result<raw::Cell, LayoutError> {
-            let lib: &Library = &self.lib;
-
             if cell.outline.x.len() > 1 {
                 return Err(LayoutError::Message(
                     "Non-rectangular outline; not supported (yet)".into(),
                 ));
             };
             let mut elems: Vec<raw::Element> = Vec::new();
-
             // Re-organize the cell into the format most helpful here
-            let temp_cell = TempCell::new(cell, &self.lib);
+            let temp_cell = self.temp_cell(cell)?;
             // Convert a layer at a time, starting from bottom
             for layernum in 0..cell.top_layer {
                 // Organize the cell/layer combo into temporary conversion format
-                let temp_layer = TempCellLayer::new(&temp_cell, layernum);
+                let temp_layer = TempCellLayer::new(&temp_cell, &self.stack.metals[layernum]);
                 // Convert each "layer period" one at a time
                 for periodnum in 0..temp_layer.nperiods {
                     let periodnum = periodnum as isize;
                     // Again, re-organize into the relevant objects for this "layer period"
                     let temp_period = TempPeriod::new(&temp_layer, periodnum);
-
                     // And finally start doing stuff!
                     elems.extend(self.convert_cell_layer_period(&temp_period)?);
                 }
             }
-
             // Convert our [Outline] into a polygon
             elems.push(self.convert_outline(&cell.outline)?);
             // Convert our [Instance]s dimensions
             // Note instances are of the same type, but use [Points] of different units.
-            let scale = lib.stack.pitches();
+            let scale = self.stack.pitches();
             let insts = cell
                 .instances
                 .iter()
@@ -1249,17 +1176,69 @@ pub mod conv {
                 elems,
             })
         }
+        /// Create a [TempCell], organizing [Cell] data in more-convenient fashion for conversion 
+        fn temp_cell<'a>(&'a self, cell: &'a Cell) -> LayoutResult<TempCell<'a>> {
+            // Create one of these for each of our instances
+            let instances: Vec<TempInstance> = cell
+                .instances
+                .iter()
+                .map(|inst| match inst.cell {
+                    CellRef::Cell(c) => {
+                        let def = self.lib.cells.get(c).ok_or(LayoutError::Tbd).unwrap();
+                        Ok(TempInstance { inst, def })
+                    }
+                    CellRef::Abstract(c) => {
+                        let def = self.lib.abstracts.get(c).ok_or(LayoutError::Tbd).unwrap();
+                        Ok(TempInstance { inst, def })
+                    }
+                    _ => {
+                        return Err(LayoutError::Export);
+                    }
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            // Validate `cuts`, and arrange them by layer
+            let mut cuts: Vec<Vec<validate::ValidTrackLoc>> = vec![vec![]; cell.top_layer()];
+            for cut in cell.cuts.iter() {
+                let c = validate::ValidTrackLoc::validate(cut, &self.stack)?;
+                cuts[c.layer].push(c);
+                // FIXME: also check that this lies within our outline
+            }
+            // Validate all the cell's assignments, and arrange references by layer
+            let mut bot_assns = vec![vec![]; cell.top_layer()];
+            let mut top_assns = vec![vec![]; cell.top_layer()];
+            let mut assignments = SlotMap::with_key();
+            for assn in cell.assignments.iter() {
+                let v = validate::ValidAssign::validate(assn, &self.stack)?;
+                let bot = v.bot.layer;
+                let top = v.top.layer;
+                let k = assignments.insert(v);
+                bot_assns[bot].push(k);
+                top_assns[top].push(k);
+            }
+            // And create our (temporary) cell data!
+            Ok(TempCell {
+                cell,
+                lib: &self.lib,
+                instances,
+                assignments,
+                top_assns,
+                bot_assns,
+                cuts,
+            })
+        }
         /// Convert a single row/col (period) on a single layer in a single Cell.
         fn convert_cell_layer_period(
             &self,
             temp_period: &TempPeriod,
         ) -> LayoutResult<Vec<raw::Element>> {
-            let lib = temp_period.layer.cell.lib;
-            let layer = temp_period.layer.layer;
+            let mut elems: Vec<raw::Element> = Vec::new();
+            let layer = temp_period.layer.layer; // FIXME!
 
             // Create the layer-period object we'll manipulate most of the way
-            let mut layer_period = temp_period.layer.period.clone();
+            let mut layer_period = temp_period.layer.layer.period.clone();
             layer_period.stop(temp_period.layer.span)?;
+            // FIXME: translate to per-layer pitches
+            layer_period.offset(temp_period.periodnum * temp_period.layer.pitch)?;
             // Insert blockages on each track
             for (n1, n2) in temp_period.blockages.iter() {
                 layer_period.cut(
@@ -1270,60 +1249,75 @@ pub mod conv {
             let nsig = layer_period.signals.len();
             // Place all relevant cuts
             for cut in temp_period.cuts.iter() {
-                // Grab a (mutable) reference to the assigned track
+                // Cut the assigned track
                 let track = &mut layer_period.signals[cut.track & nsig];
-
-                // Figure out the off-axis coordinate
-                let other_layer: &Layer = match cut.relz {
-                    RelZ::Above => &lib.stack.layers[temp_period.layer.layernum + 1],
-                    RelZ::Below => &lib.stack.layers[temp_period.layer.layernum - 1],
-                };
-                let dist = other_layer.signal_track_center(cut.at);
                 track.cut(
-                    dist as usize - layer.cutsize / 2,
-                    dist as usize + layer.cutsize / 2,
+                    cut.dist as usize - layer.spec.cutsize / 2,
+                    cut.dist as usize + layer.spec.cutsize / 2,
                 )?;
             }
+            let via_layer = &self.stack.vias[layer.index];
             // Handle Net Assignments
-            for assn in temp_period.assignments.iter() {
+            // Start with those for which we're the lower of the two layers.
+            // These will also be where we add vias
+            for assn_id in temp_period.bot_assns.iter() {
+                let assn = temp_period
+                    .cell
+                    .assignments
+                    .get(*assn_id)
+                    .ok_or(LayoutError::Export)?;
                 // Grab a (mutable) reference to the assigned track
-                let track = &mut layer_period.signals[assn.at.track & nsig];
-
-                // Figure out the off-axis coordinate
-                let other_layer: &Layer = match assn.at.relz {
-                    RelZ::Above => &lib.stack.layers[temp_period.layer.layernum + 1],
-                    RelZ::Below => &lib.stack.layers[temp_period.layer.layernum - 1],
-                };
-                let dist = other_layer.signal_track_center(assn.at.at);
+                let track = &mut layer_period.signals[assn.bot.track & nsig];
                 // Find the segment corresponding to the off-axis coordinate
                 let mut segment = track
-                    .segment_at(dist)
+                    .segment_at(assn.bot.dist)
                     .ok_or(LayoutError::msg("COULDNT FIND SEGMENT"))?;
                 // Assign both track-segments to the net
                 segment.net = Some(assn.net.clone());
-                // FIXME: Insert a corresponding via
+
+                // FIXME: orientations will be wrong here
+                let raw_layer = via_layer
+                    .raw
+                    .as_ref()
+                    .ok_or(LayoutError::msg("Raw-Layout Layer Not Defined"))?;
+                let e = raw::Element {
+                    net: None,
+                    layer: raw_layer.clone(), // FIXME: dont really wanna clone here
+                    inner: raw::Shape::Rect {
+                        p0: Point {
+                            x: (assn.bot.dist - via_layer.size.x / 2) as isize,
+                            y: (assn.top.dist - via_layer.size.y / 2) as isize,
+                        },
+                        p1: Point {
+                            x: (assn.bot.dist + via_layer.size.x / 2) as isize,
+                            y: (assn.top.dist + via_layer.size.y / 2) as isize,
+                        },
+                    },
+                };
+                elems.push(e);
             }
-            // // And assignments for which this is the secondary layer
-            // for assn in inverse_assignments_by_layer.iter() {
-            //     // unimplemented!("???");
-            // }
+            // Assign all the segments for which we're the top layer
+            for assn_id in temp_period.top_assns.iter() {
+                let assn = temp_period
+                    .cell
+                    .assignments
+                    .get(*assn_id)
+                    .ok_or(LayoutError::Export)?;
+                // Grab a (mutable) reference to the assigned track
+                let track = &mut layer_period.signals[assn.top.track & nsig];
+                // Find the segment corresponding to the off-axis coordinate
+                let mut segment = track
+                    .segment_at(assn.top.dist)
+                    .ok_or(LayoutError::msg("COULDNT FIND SEGMENT"))?;
+                // Assign both track-segments to the net
+                segment.net = Some(assn.net.clone());
+            }
             // Convert all TrackSegments to raw Elements
-            let mut elems: Vec<raw::Element> = Vec::new();
-            let shift = Point::offset(
-                temp_period.periodnum * temp_period.layer.pitch,
-                layer.dir.other(),
-            );
-            let mut push_track = |t: &Track| {
-                for mut e in self.convert_track(t).unwrap().into_iter() {
-                    e.inner.shift(&shift);
-                    elems.push(e);
-                }
-            };
             for t in layer_period.rails.iter() {
-                push_track(t);
+                elems.extend(self.convert_track(t, &layer.spec)?);
             }
             for t in layer_period.signals.iter() {
-                push_track(t);
+                elems.extend(self.convert_track(t, &layer.spec)?);
             }
             Ok(elems)
         }
@@ -1344,7 +1338,7 @@ pub mod conv {
         /// Convert to a [raw::Element] polygon
         pub fn convert_outline(&self, outline: &Outline) -> Result<raw::Element, LayoutError> {
             // Doing so requires our [Stack] specify a `boundary_layer`. If not, fail.
-            let layer = (self.lib.stack.boundary_layer)
+            let layer = (self.stack.boundary_layer)
                 .as_ref()
                 .ok_or(LayoutError::msg(
                     "Cannot Convert Abstract to Raw without Boundary Layer",
@@ -1352,7 +1346,7 @@ pub mod conv {
             // Create an array of Outline-Points
             let pts = outline.points();
             // Scale them to our pitches
-            let pitch = self.lib.stack.pitches();
+            let pitch = self.stack.pitches();
             let pts = pts.iter().map(|p| p.scale(&pitch)).collect();
             // Create the [raw::Element]
             Ok(raw::Element {
@@ -1362,9 +1356,8 @@ pub mod conv {
             })
         }
         /// Convert a [Track]-full of [TrackSegment]s to a vector of [raw::Element] rectangles
-        fn convert_track(&self, track: &Track) -> LayoutResult<Vec<raw::Element>> {
-            let layer = track
-                .layer
+        fn convert_track(&self, track: &Track, layer: &Layer) -> LayoutResult<Vec<raw::Element>> {
+            let raw_layer = layer
                 .raw
                 .as_ref()
                 .ok_or(LayoutError::msg("Raw-Layout Layer Not Defined"))?;
@@ -1376,7 +1369,7 @@ pub mod conv {
                     match track.dir {
                         Dir::Horiz => raw::Element {
                             net: seg.net.clone(),
-                            layer: layer.clone(), // FIXME: dont really wanna clone here
+                            layer: raw_layer.clone(), // FIXME: dont really wanna clone here
                             inner: raw::Shape::Rect {
                                 p0: Point {
                                     x: (seg.start) as isize,
@@ -1390,7 +1383,7 @@ pub mod conv {
                         },
                         Dir::Vert => raw::Element {
                             net: seg.net.clone(),
-                            layer: layer.clone(), // FIXME: dont really wanna clone here
+                            layer: raw_layer.clone(), // FIXME: dont really wanna clone here
                             inner: raw::Shape::Rect {
                                 p0: Point {
                                     x: (track.start as isize),
@@ -1407,33 +1400,33 @@ pub mod conv {
                 .collect();
             Ok(elems)
         }
-        /// Create a raw-cell covering a single unit of `layer`
-        pub fn convert_layer_unit(&self, layer: &Layer) -> LayoutResult<raw::Cell> {
-            let pitch = match layer.dir {
-                Dir::Horiz => self.lib.stack.xpitch,
-                Dir::Vert => self.lib.stack.ypitch,
-            };
-            let mut elems: Vec<raw::Element> = Vec::new();
-            // FIXME: probably get away from this Layer::tracks method. Everything else has.
-            for track in layer.tracks().iter_mut() {
-                track.segments = vec![TrackSegment {
-                    net: None, // FIXME!
-                    start: 0,
-                    stop: pitch,
-                }];
-                // Convert into [raw::Element] rectangles.
-                // This vector always has just one element, but is easier to iterate over (once).
-                for e in self.convert_track(&track)?.into_iter() {
-                    elems.push(e);
-                }
-            }
-            Ok(raw::Cell {
-                name: format!("{}::unit", layer.name.clone()),
-                insts: Vec::new(),
-                arrays: Vec::new(),
-                elems,
-            })
-        }
+        // /// Create a raw-cell covering a single unit of `layer`
+        // pub fn convert_layer_unit(&self, layer: &Layer) -> LayoutResult<raw::Cell> {
+        //     let pitch = match layer.spec.dir {
+        //         Dir::Horiz => self.stack.xpitch,
+        //         Dir::Vert => self.stack.ypitch,
+        //     };
+        //     let mut elems: Vec<raw::Element> = Vec::new();
+        //     // FIXME: probably get away from this Layer::tracks method. Everything else has.
+        //     for track in layer.tracks().iter_mut() {
+        //         track.segments = vec![TrackSegment {
+        //             net: None, // FIXME!
+        //             start: 0,
+        //             stop: pitch,
+        //         }];
+        //         // Convert into [raw::Element] rectangles.
+        //         // This vector always has just one element, but is easier to iterate over (once).
+        //         for e in self.convert_track(&track, layer)?.into_iter() {
+        //             elems.push(e);
+        //         }
+        //     }
+        //     Ok(raw::Cell {
+        //         name: format!("{}::unit", layer.name.clone()),
+        //         insts: Vec::new(),
+        //         arrays: Vec::new(),
+        //         elems,
+        //     })
+        // }
     }
 }
 /// # Abstract Layout Module
@@ -1572,6 +1565,8 @@ pub enum LayoutError {
     Message(String),
     /// Error Exporting to Foreign Format
     Export,
+    /// Validation of input data
+    Validation,
     /// Everything to be categorized
     Tbd,
 }
@@ -1616,18 +1611,188 @@ impl HasOutline for abstrakt::Abstract {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Tbd;
 
+pub mod validate {
+    use super::*;
+    /// Helper-function for asserting all sorts of boolean conditions, returning [LayoutResult] and enabling the question-mark operator.
+    pub(crate) fn assert(b: bool) -> LayoutResult<()> {
+        match b {
+            true => Ok(()),
+            false => Err(LayoutError::Validation),
+        }
+    }
+    /// Derived data for a [Stack], after it has gone through some validation steps.
+    #[derive(Debug)]
+    pub(crate) struct ValidStack {
+        /// Measurement units
+        pub units: Unit,
+        /// Primitive cell horizontal unit-pitch, denominated in `units`
+        pub xpitch: usize,
+        /// Primitive cell vertical unit-pitch, denominated in `units`
+        pub ypitch: usize,
+        /// Layer used for cell outlines/ boundaries
+        pub boundary_layer: Option<raw::DataTypeMap>,
+
+        /// Set of via layers
+        pub vias: Vec<ViaLayer>,
+        /// Metal Layers
+        pub(crate) metals: Vec<ValidMetalLayer>,
+        /// Pitches per metal layer, one each for those in `stack`
+        pub(crate) pitches: Vec<usize>,
+    }
+    impl ValidStack {
+        /// Retrieve a [Point] two-tuple of our x/y pitches
+        pub(crate) fn pitches(&self) -> Point {
+            Point::new(self.xpitch as isize, self.ypitch as isize)
+        }
+    }
+    #[derive(Debug)]
+    pub(crate) struct StackValidator;
+    impl StackValidator {
+        pub(crate) fn validate(stack: Stack) -> LayoutResult<ValidStack> {
+            let Stack {
+                units,
+                xpitch,
+                ypitch,
+                boundary_layer,
+                vias,
+                layers,
+            } = stack;
+            // Validate each metal layer
+            let metals = layers
+                .into_iter()
+                .enumerate()
+                .map(|(num, layer)| ValidMetalLayer::validate(layer, num))
+                .collect::<Result<Vec<_>, _>>()?;
+            // Calculate pitches as the least-common multiple of same-direction layers below each layer
+            let mut pitches = vec![0; metals.len()];
+            for (num, metal) in metals.iter().enumerate() {
+                let mut pitch = match metal.spec.dir {
+                    Dir::Horiz => stack.xpitch,
+                    Dir::Vert => stack.ypitch,
+                };
+                for nn in 0..num + 1 {
+                    if metals[nn].spec.dir == metal.spec.dir {
+                        pitch = num_integer::lcm(pitch, metals[nn].pitch);
+                    }
+                }
+                pitches[num] = pitch;
+            }
+            // FIXME: checks on [ViaLayer]s
+            // Stack checks out! Return its derived data
+            Ok(ValidStack {
+                units,
+                xpitch,
+                ypitch,
+                boundary_layer,
+                vias,
+                pitches,
+                metals,
+            })
+        }
+    }
+    #[derive(Debug)]
+    pub(crate) struct ValidMetalLayer {
+        /// Original Layer Spec
+        pub(crate) spec: Layer,
+
+        // Derived data
+        /// Index in layers array
+        pub(crate) index: usize,
+        /// Derived single-period template
+        pub(crate) period: LayerPeriod,
+        /// Pitch in db-units
+        pub(crate) pitch: usize,
+    }
+    impl ValidMetalLayer {
+        /// Perform validation on a [Layer], return a corresponding [ValidMetalLayer]
+        pub(crate) fn validate(layer: Layer, index: usize) -> LayoutResult<ValidMetalLayer> {
+            // Check for non-zero widths of all entries
+            for entry in layer.entries().iter() {
+                assert(entry.width > 0)?;
+            }
+            let pitch = layer.pitch();
+            assert(pitch > 0)?;
+            // Given this, convert to a [LayerPeriod]
+            let period = layer.to_layer_period(0);
+            Ok(ValidMetalLayer {
+                spec: layer,
+                index,
+                period,
+                pitch,
+            })
+        }
+        /// Get the center-coordinate of signal-track `idx`, in our periodic dimension
+        pub fn center(&self, idx: usize) -> isize {
+            let track = &self.period.signals[idx % self.period.signals.len()];
+            let mut cursor = (self.pitch * (idx / self.period.signals.len())) as isize;
+            cursor += track.start + track.width as isize / 2;
+            cursor
+        }
+    }
+    /// Location on a [Track], including the db-unit cross-dimension
+    #[derive(Debug, Clone)]
+    pub(crate) struct ValidTrackLoc {
+        pub(crate) layer: usize,
+        pub(crate) track: usize,
+        pub(crate) dist: isize,
+    }
+    impl ValidTrackLoc {
+        /// Validate a [TrackIntersection], and convert the cross-dimension into db-units
+        pub(crate) fn validate(i: &TrackIntersection, stack: &ValidStack) -> LayoutResult<Self> {
+            // Check that we won't reach outside the stack, and grab the secondary layer
+            assert(i.layer < stack.metals.len())?;
+            let other = if i.relz == RelZ::Below {
+                assert(i.layer >= 1)?;
+                i.layer - 1
+            } else {
+                assert(i.layer < stack.metals.len() - 1)?;
+                i.layer + 1
+            };
+            // And find the center of the `other` track
+            Ok(ValidTrackLoc {
+                layer: i.layer,
+                track: i.track,
+                dist: stack.metals[other].center(i.at),
+            })
+        }
+    }
+    /// Intersection between two validated [ValidTrackLoc],
+    /// including the invariant that `top` is one layer above `bot`.
+    #[derive(Debug, Clone)]
+    pub(crate) struct ValidAssign {
+        pub(crate) net: String,
+        pub(crate) top: ValidTrackLoc,
+        pub(crate) bot: ValidTrackLoc,
+    }
+    impl ValidAssign {
+        /// Validate a [TrackIntersection], and convert into top/bottom coordinates
+        pub(crate) fn validate(assn: &Assign, stack: &ValidStack) -> LayoutResult<Self> {
+            // Name "validation": just empty-string checking, at least for now
+            assert(assn.net.len() > 0)?;
+            let net = assn.net.clone();
+            // Validate the location and its transpose
+            let loc1 = ValidTrackLoc::validate(&assn.at, stack)?;
+            let loc2 = ValidTrackLoc::validate(&assn.at.transpose(), stack)?;
+            // Finally arrange the two by top/bottom
+            let (top, bot) = if assn.at.relz == RelZ::Below {
+                (loc1, loc2)
+            } else {
+                (loc2, loc1)
+            };
+            Ok(Self { net, top, bot })
+        }
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
 
     /// Create a [Stack] used by a number of tests
     fn stack() -> Stack {
-        use raw::LayerSpec;
-
         Stack {
             units: Unit::Nano,
-            xpitch: 6600,
-            ypitch: 6600,
+            xpitch: 7110,
+            ypitch: 7110,
             boundary_layer: Some(raw::DataTypeMap {
                 layernum: 236,
                 drawing: Some(0),
@@ -1636,7 +1801,6 @@ mod tests {
             }),
             layers: vec![
                 Layer {
-                    index: 1,
                     name: "met1".into(),
                     entries: vec![
                         TrackSpec::rail(490),
@@ -1650,7 +1814,6 @@ mod tests {
                     dir: Dir::Horiz,
                     offset: -245,
                     cutsize: 250,
-                    stream_layer: Some(LayerSpec::new(68, 20)),
                     raw: Some(raw::DataTypeMap {
                         layernum: 68,
                         drawing: Some(20),
@@ -1659,7 +1822,6 @@ mod tests {
                     }),
                 },
                 Layer {
-                    index: 2,
                     name: "met2".into(),
                     entries: vec![
                         TrackSpec::rail(490),
@@ -1673,8 +1835,6 @@ mod tests {
                     dir: Dir::Vert,
                     cutsize: 250,
                     offset: -245,
-                    stream_layer: Some(LayerSpec::new(69, 20)),
-
                     raw: Some(raw::DataTypeMap {
                         layernum: 69,
                         drawing: Some(20),
@@ -1683,7 +1843,6 @@ mod tests {
                     }),
                 },
                 Layer {
-                    index: 3,
                     name: "met3".into(),
                     entries: vec![
                         TrackSpec::rail(490),
@@ -1697,8 +1856,6 @@ mod tests {
                     dir: Dir::Horiz,
                     cutsize: 250,
                     offset: -245,
-                    stream_layer: Some(LayerSpec::new(70, 20)),
-
                     raw: Some(raw::DataTypeMap {
                         layernum: 70,
                         drawing: Some(20),
@@ -1707,7 +1864,6 @@ mod tests {
                     }),
                 },
                 Layer {
-                    index: 4,
                     name: "met4".into(),
                     entries: vec![
                         TrackSpec::rail(490),
@@ -1721,8 +1877,6 @@ mod tests {
                     dir: Dir::Vert,
                     cutsize: 250,
                     offset: -245,
-                    stream_layer: Some(LayerSpec::new(71, 20)),
-
                     raw: Some(raw::DataTypeMap {
                         layernum: 71,
                         drawing: Some(20),
@@ -1733,30 +1887,59 @@ mod tests {
             ],
             vias: vec![
                 ViaLayer {
-                    index: 0,
                     name: "mcon".into(),
                     between: (0, 1),
-                    size: Point::new(140, 140),
-                    stream_layer: Some(LayerSpec::new(67, 44)),
+                    size: Point::new(240, 240),
+                    raw: Some(raw::DataTypeMap {
+                        layernum: 67,
+                        drawing: Some(44),
+                        text: None,
+                        other: HashMap::new(),
+                    }),
                 },
                 ViaLayer {
-                    index: 1,
                     name: "via1".into(),
                     between: (1, 2),
-                    size: Point::new(140, 140),
-                    stream_layer: Some(LayerSpec::new(68, 44)),
+                    size: Point::new(240, 240),
+                    raw: Some(raw::DataTypeMap {
+                        layernum: 68,
+                        drawing: Some(44),
+                        text: None,
+                        other: HashMap::new(),
+                    }),
                 },
                 ViaLayer {
-                    index: 2,
                     name: "via2".into(),
                     between: (2, 3),
-                    size: Point::new(140, 140),
-                    stream_layer: Some(LayerSpec::new(69, 44)),
+                    size: Point::new(240, 240),
+                    raw: Some(raw::DataTypeMap {
+                        layernum: 69,
+                        drawing: Some(44),
+                        text: None,
+                        other: HashMap::new(),
+                    }),
+                },
+                ViaLayer {
+                    name: "via3".into(),
+                    between: (3, 4),
+                    size: Point::new(240, 240),
+                    raw: Some(raw::DataTypeMap {
+                        layernum: 70,
+                        drawing: Some(44),
+                        text: None,
+                        other: HashMap::new(),
+                    }),
                 },
             ],
         }
     }
-
+    /// Run the test-stack through validation
+    #[test]
+    fn validate_stack() -> LayoutResult<()> {
+        let s = stack();
+        validate::StackValidator::validate(s)?;
+        Ok(())
+    }
     /// Create a cell
     #[test]
     fn create_cell() -> Result<(), LayoutError> {
@@ -1781,12 +1964,12 @@ mod tests {
     /// Create a library
     #[test]
     fn create_lib() -> Result<(), LayoutError> {
-        let mut lib = Library::new("HereGoesLib", stack());
+        let mut lib = Library::new("HereGoesLib");
 
         lib.cells.insert(Cell {
             name: "HereGoes".into(),
-            top_layer: 3,
-            outline: Outline::rect(5, 5)?,
+            top_layer: 2,
+            outline: Outline::rect(1, 1)?,
             instances: Vec::new(),
             assignments: vec![Assign {
                 net: "clk".into(),
@@ -1794,22 +1977,54 @@ mod tests {
                     layer: 1,
                     track: 4,
                     at: 2,
-                    relz: RelZ::Above,
+                    relz: RelZ::Below,
                 },
             }],
-            cuts: vec![TrackIntersection {
-                layer: 1,
-                track: 4,
-                at: 4,
-                relz: RelZ::Above,
-            }],
+            cuts: vec![
+                TrackIntersection {
+                    layer: 0,
+                    track: 1,
+                    at: 1,
+                    relz: RelZ::Above,
+                },
+                TrackIntersection {
+                    layer: 0,
+                    track: 1,
+                    at: 3,
+                    relz: RelZ::Above,
+                },
+                TrackIntersection {
+                    layer: 0,
+                    track: 1,
+                    at: 5,
+                    relz: RelZ::Above,
+                },
+                TrackIntersection {
+                    layer: 1,
+                    track: 1,
+                    at: 1,
+                    relz: RelZ::Below,
+                },
+                TrackIntersection {
+                    layer: 1,
+                    track: 1,
+                    at: 3,
+                    relz: RelZ::Below,
+                },
+                TrackIntersection {
+                    layer: 1,
+                    track: 1,
+                    at: 5,
+                    relz: RelZ::Below,
+                },
+            ],
         });
         exports(lib)
     }
     /// Create a cell with instances
     #[test]
     fn create_lib2() -> Result<(), LayoutError> {
-        let mut lib = Library::new("InstLib", stack());
+        let mut lib = Library::new("InstLib");
 
         let c2 = lib.cells.insert(Cell {
             name: "IsInst".into(),
@@ -1836,7 +2051,7 @@ mod tests {
                 net: "clk".into(),
                 at: TrackIntersection {
                     layer: 1,
-                    track: 0,
+                    track: 1,
                     at: 1,
                     relz: RelZ::Above,
                 },
@@ -1906,7 +2121,7 @@ mod tests {
     /// Create a cell with abstract instances
     #[test]
     fn create_lib3() -> Result<(), LayoutError> {
-        let mut lib = Library::new("AbstractsLib", stack());
+        let mut lib = Library::new("AbstractsLib");
 
         let c2 = lib.abstracts.insert(abstrakt::Abstract {
             name: "IsAbstrakt".into(),
@@ -1961,7 +2176,7 @@ mod tests {
     /// Export [Library] `lib` in several formats
     fn exports(lib: Library) -> LayoutResult<()> {
         save_yaml(&lib, &resource(&format!("{}.yaml", &lib.name)))?;
-        let raw = conv::RawConverter::convert(lib)?;
+        let raw = conv::RawConverter::convert(lib, stack())?;
         save_yaml(&raw, &resource(&format!("{}.raw.yaml", &raw.name)))?;
         let gds = raw.to_gds()?;
         save_yaml(&gds, &resource(&format!("{}.gds.yaml", &gds.name)))?;
