@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::ops::Add;
 
 use num_integer;
+use num_traits::Num;
 use serde::{Deserialize, Serialize};
 use slotmap::{new_key_type, SlotMap};
 
@@ -31,6 +33,41 @@ impl Default for Unit {
         Unit::Nano
     }
 }
+
+/// Much of the confusion in a multi-coordinate system such as this
+/// lies in keeping track of which numbers are in which units.
+/// There are three generally useful units of measure here:
+/// * DB Units generally correspond to physical length quantities, e.g. nanometers
+/// * Primitive pitches
+/// * Per-layer pitches, parameterized by a metal-layer index
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum UnitSpeced<T: Num + Copy> {
+    DbUnits(DbUnits<T>),
+    PrimPitches(PrimPitches<T>),
+    LayerPitches(LayerPitches<T>),
+}
+/// A Scalar Value in Database Units
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DbUnits<T: Num + Copy>(T);
+/// A Scalar Value in Primitive-Pitches
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PrimPitches<T: Num + Copy>(T);
+// Admittedly, this type-signature is about Rust at its worst.
+// Adding two references to [PrimPitches] with (potentially) different lifetimes makes this mouthful.
+impl<'a, 'b, T: 'b + Num + Copy + Add<&'b PrimPitches<T>, Output = T>> Add for &'a PrimPitches<T> {
+    type Output = PrimPitches<T>;
+
+    fn add(self, other: Self) -> Self::Output {
+        PrimPitches(self.0 + other.0)
+    }
+}
+/// A Scalar Value in Layer-Pitches
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub struct LayerPitches<T: Num + Copy> {
+    layer: usize,
+    val: T,
+}
+
 /// Direction Enumeration
 /// Primarily for [Layer] orientations
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -126,12 +163,10 @@ impl Pattern {
 pub struct Stack {
     /// Measurement units
     pub units: Unit,
-    /// Primitive cell horizontal unit-pitch, denominated in `units`
-    pub xpitch: usize,
-    /// Primitive cell vertical unit-pitch, denominated in `units`
-    pub ypitch: usize,
     /// Layer used for cell outlines/ boundaries
     pub boundary_layer: Option<raw::DataTypeMap>,
+    /// Primitive Layer
+    pub prim: PrimitiveLayer,
     /// Set of metal layers
     pub layers: Vec<Layer>,
     /// Set of via layers
@@ -157,6 +192,12 @@ pub struct Layer {
     pub offset: isize,
     /// Layer(s) for streaming exports
     pub raw: Option<raw::DataTypeMap>,
+    /// Setting for period-by-period flipping
+    pub flip: FlipMode,
+    /// Primitive-layer relationshio
+    pub prim: PrimitiveMode,
+    /// Overlap between periods
+    pub overlap: usize,
 }
 impl Layer {
     /// Convert this [Layer]'s track-info into a [LayerPeriod]
@@ -220,7 +261,7 @@ impl Layer {
     }
     /// Sum up this [Layer]'s pitch
     fn pitch(&self) -> usize {
-        self.entries().iter().map(|e| e.width).sum()
+        self.entries().iter().map(|e| e.width).sum::<usize>() - self.overlap
     }
 }
 /// # Via / Insulator Layer Between Metals
@@ -506,12 +547,12 @@ pub struct Cell {
 ///
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Outline {
-    pub x: Vec<usize>,
-    pub y: Vec<usize>,
+    pub x: Vec<PrimPitches<usize>>,
+    pub y: Vec<PrimPitches<usize>>,
 }
 impl Outline {
     /// Outline constructor, with inline checking for validity of `x` & `y` vectors
-    pub fn new(x: Vec<usize>, y: Vec<usize>) -> Result<Self, LayoutError> {
+    pub fn new(x: Vec<usize>, y: Vec<usize>) -> LayoutResult<Self> {
         // Check that x and y are of compatible lengths
         if x.len() != y.len() {
             return Err(LayoutError::Tbd);
@@ -531,24 +572,27 @@ impl Outline {
                 return Err(LayoutError::Tbd);
             }
         }
+        // Convert into [PrimPitches] united-objects, and return a new Self.
+        let x = x.into_iter().map(|i| PrimPitches(i)).collect();
+        let y = y.into_iter().map(|i| PrimPitches(i)).collect();
         Ok(Self { x, y })
     }
     /// Create a new rectangular outline of dimenions `x` by `y`
-    pub fn rect(x: usize, y: usize) -> Result<Self, LayoutError> {
+    pub fn rect(x: usize, y: usize) -> LayoutResult<Self> {
         Self::new(vec![x], vec![y])
     }
     /// Maximum x-coordinate
     /// (Which is also always the *first* x-coordinate)
-    pub fn xmax(&self) -> usize {
+    pub fn xmax(&self) -> PrimPitches<usize> {
         self.x[0]
     }
     /// Maximum y-coordinate
     /// (Which is also always the *last* y-coordinate)
-    pub fn ymax(&self) -> usize {
+    pub fn ymax(&self) -> PrimPitches<usize> {
         self.y[self.y.len() - 1]
     }
     /// Maximum coordinate in [Dir] `dir`
-    pub fn max(&self, dir: Dir) -> usize {
+    pub fn max(&self, dir: Dir) -> PrimPitches<usize> {
         match dir {
             Dir::Horiz => self.xmax(),
             Dir::Vert => self.ymax(),
@@ -560,9 +604,9 @@ impl Outline {
         let mut xp: isize;
         let mut yp: isize = 0;
         for i in 0..self.x.len() {
-            xp = self.x[i] as isize;
+            xp = self.x[i].0 as isize;
             pts.push(Point::new(xp, yp));
-            yp = self.y[i] as isize;
+            yp = self.y[i].0 as isize;
             pts.push(Point::new(xp, yp));
         }
         // Add the final implied Point at (x, y[-1])
@@ -571,7 +615,7 @@ impl Outline {
     }
 }
 /// # Point in two-dimensional layout-space
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Point {
     x: isize,
     y: isize,
@@ -616,9 +660,20 @@ pub mod raw {
     use super::*;
     use gds21;
 
-    // FIXME: need something like raw::Abstract, representing arbitrary-shaped abstract layouts
+    // // FIXME: need something like raw::Abstract, representing arbitrary-shaped abstract layouts
+    // #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+    // pub struct Abstract;
+
+    /// Raw Abstract-Layout
+    /// Contains geometric [Element]s generally representing pins and blockages
+    /// Does not contain instances, arrays, or layout-implementation details
     #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-    pub struct Abstract;
+    pub struct Abstract {
+        /// Cell Name
+        pub name: String,
+        /// Primitive Elements
+        pub elems: Vec<Element>,
+    }
 
     /// # Raw Layout Library  
     /// A collection of cell-definitions and sub-library definitions
@@ -951,9 +1006,11 @@ pub mod conv {
         instances: Vec<TempInstance<'a>>,
         /// Cuts, arranged by Layer
         cuts: Vec<Vec<validate::ValidTrackLoc>>,
-        /// Assignments, arranged by Layer
+        /// Validated Assignments
         assignments: SlotMap<AssignKey, validate::ValidAssign>,
+        /// Assignments, arranged by Layer
         top_assns: Vec<Vec<AssignKey>>,
+        /// Assignments, arranged by Layer
         bot_assns: Vec<Vec<AssignKey>>,
     }
     /// Temporary arrangement of data for a [Layer] within a [Cell]
@@ -970,35 +1027,9 @@ pub mod conv {
         /// Number of layer-periods
         nperiods: usize,
         /// Spanning distance in the layer's "infinite" dimension
-        span: usize,
+        span: DbUnits<usize>,
     }
-    impl<'a> TempCellLayer<'a> {
-        fn new(temp_cell: &'a TempCell, layer: &'a validate::ValidMetalLayer) -> TempCellLayer<'a> {
-            // Sort out which of the cell's [Instance]s come up to this layer
-            let instances: Vec<&TempInstance> = temp_cell
-                .instances
-                .iter()
-                .filter(|i| i.def.top_layer() >= layer.index)
-                .collect();
 
-            // Sort out which direction we're working across
-            let cell = temp_cell.cell;
-            let (nperiods, span) = match layer.spec.dir {
-                Dir::Horiz => (cell.outline.y[0], cell.outline.x[0]),
-                Dir::Vert => (cell.outline.x[0], cell.outline.y[0]),
-            };
-            let pitch = layer.pitch as isize;
-
-            TempCellLayer {
-                layer,
-                cell: temp_cell,
-                instances,
-                nperiods,
-                pitch,
-                span: span * (pitch as usize), // FIXME: this span will almost certainly be in the wrong units, once we have rectangular units!
-            }
-        }
-    }
     /// Short-Lived structure of the stuff relevant for converting a single LayerPeriod,
     /// on a single Layer, in a single Cell.
     #[derive(Debug, Clone)]
@@ -1006,93 +1037,11 @@ pub mod conv {
         periodnum: isize,
         cell: &'a TempCell<'a>,
         layer: &'a TempCellLayer<'a>,
-        // Instances which intersect with this layer and period
-        instances: Vec<&'a TempInstance<'a>>,
-        blockages: Vec<(usize, usize)>,
+        /// Instance Blockages
+        blockages: Vec<(PrimPitches<usize>, PrimPitches<usize>)>,
         cuts: Vec<&'a validate::ValidTrackLoc>,
         top_assns: Vec<AssignKey>,
         bot_assns: Vec<AssignKey>,
-    }
-    impl<'a> TempPeriod<'a> {
-        fn new(temp_layer: &'a TempCellLayer, periodnum: isize) -> TempPeriod<'a> {
-            let layer = temp_layer.layer;
-            let cell = temp_layer.cell;
-
-            // For each row, decide which instances intersect
-            let instances: Vec<&TempInstance> = temp_layer
-                .instances
-                .iter()
-                .filter(|i| {
-                    i.inst.p0.coord(layer.spec.dir.other()) <= periodnum
-                        && i.inst.p0.coord(layer.spec.dir.other())
-                            + i.def.outline().max(layer.spec.dir.other()) as isize
-                            > periodnum
-                })
-                .map(|i| i.clone())
-                .collect();
-
-            // Convert these into blockage-areas for the tracks
-            let blockages: Vec<(usize, usize)> = instances
-                .iter()
-                .map(|i| {
-                    (
-                        i.inst.p0.coord(layer.spec.dir) as usize,
-                        i.inst.p0.coord(layer.spec.dir) as usize
-                            + i.def.outline().max(layer.spec.dir),
-                    )
-                })
-                .collect();
-
-            // Grab indices of the relevant tracks for this period
-            let nsig = temp_layer.layer.period.signals.len();
-            let relevant_track_nums = (periodnum * nsig as isize, (periodnum + 1) * nsig as isize);
-            // Filter cuts down to those in this period
-            let cuts: Vec<&validate::ValidTrackLoc> = cell.cuts[temp_layer.layer.index]
-                .iter()
-                .filter(|cut| {
-                    cut.track >= relevant_track_nums.0 as usize
-                        && cut.track < relevant_track_nums.1 as usize
-                })
-                .collect();
-            // Filter assignments down to those in this period
-            let top_assns = cell.top_assns[temp_layer.layer.index]
-                .iter()
-                .filter(|id| {
-                    let assn = cell
-                        .assignments
-                        .get(**id)
-                        .ok_or(LayoutError::Export)
-                        .unwrap();
-                    assn.top.track >= relevant_track_nums.0 as usize
-                        && assn.top.track < relevant_track_nums.1 as usize
-                })
-                .copied()
-                .collect();
-            let bot_assns = cell.bot_assns[temp_layer.layer.index]
-                .iter()
-                .filter(|id| {
-                    let assn = cell
-                        .assignments
-                        .get(**id)
-                        .ok_or(LayoutError::Export)
-                        .unwrap();
-                    assn.bot.track >= relevant_track_nums.0 as usize
-                        && assn.bot.track < relevant_track_nums.1 as usize
-                })
-                .copied()
-                .collect();
-
-            TempPeriod {
-                periodnum,
-                cell,
-                layer: temp_layer,
-                instances,
-                blockages,
-                cuts,
-                top_assns,
-                bot_assns,
-            }
-        }
     }
     /// # Converter from [Library] and constituent elements to [raw::Library]
     pub struct RawConverter {
@@ -1134,7 +1083,7 @@ pub mod conv {
         fn convert_cell(&self, cell: &Cell) -> Result<raw::Cell, LayoutError> {
             if cell.outline.x.len() > 1 {
                 return Err(LayoutError::Message(
-                    "Non-rectangular outline; not supported (yet)".into(),
+                    "Non-rectangular outline; conversions not supported (yet)".into(),
                 ));
             };
             let mut elems: Vec<raw::Element> = Vec::new();
@@ -1143,18 +1092,18 @@ pub mod conv {
             // Convert a layer at a time, starting from bottom
             for layernum in 0..cell.top_layer {
                 // Organize the cell/layer combo into temporary conversion format
-                let temp_layer = TempCellLayer::new(&temp_cell, &self.stack.metals[layernum]);
+                let temp_layer = self.temp_cell_layer(&temp_cell, &self.stack.metals[layernum]);
                 // Convert each "layer period" one at a time
                 for periodnum in 0..temp_layer.nperiods {
                     let periodnum = periodnum as isize;
                     // Again, re-organize into the relevant objects for this "layer period"
-                    let temp_period = TempPeriod::new(&temp_layer, periodnum);
+                    let temp_period = self.temp_cell_layer_period(&temp_layer, periodnum);
                     // And finally start doing stuff!
                     elems.extend(self.convert_cell_layer_period(&temp_period)?);
                 }
             }
             // Convert our [Outline] into a polygon
-            elems.push(self.convert_outline(&cell.outline)?);
+            elems.push(self.convert_outline(cell)?);
             // Convert our [Instance]s dimensions
             // Note instances are of the same type, but use [Points] of different units.
             let scale = self.stack.pitches();
@@ -1164,7 +1113,7 @@ pub mod conv {
                 .map(|inst| {
                     // Scale the location of each instance by our pitches
                     let mut i = inst.clone();
-                    i.p0 = inst.p0.scale(&scale);
+                    i.p0 = inst.p0.scale(scale);
                     i
                 })
                 .collect();
@@ -1176,7 +1125,7 @@ pub mod conv {
                 elems,
             })
         }
-        /// Create a [TempCell], organizing [Cell] data in more-convenient fashion for conversion 
+        /// Create a [TempCell], organizing [Cell] data in more-convenient fashion for conversion
         fn temp_cell<'a>(&'a self, cell: &'a Cell) -> LayoutResult<TempCell<'a>> {
             // Create one of these for each of our instances
             let instances: Vec<TempInstance> = cell
@@ -1201,7 +1150,7 @@ pub mod conv {
             for cut in cell.cuts.iter() {
                 let c = validate::ValidTrackLoc::validate(cut, &self.stack)?;
                 cuts[c.layer].push(c);
-                // FIXME: also check that this lies within our outline
+                // FIXME: cell validation should also check that this lies within our outline. probably do this earlier
             }
             // Validate all the cell's assignments, and arrange references by layer
             let mut bot_assns = vec![vec![]; cell.top_layer()];
@@ -1232,22 +1181,21 @@ pub mod conv {
             temp_period: &TempPeriod,
         ) -> LayoutResult<Vec<raw::Element>> {
             let mut elems: Vec<raw::Element> = Vec::new();
-            let layer = temp_period.layer.layer; // FIXME!
+            let layer = temp_period.layer.layer; // FIXME! Can't love this name.
 
             // Create the layer-period object we'll manipulate most of the way
             let mut layer_period = temp_period.layer.layer.period.clone();
-            layer_period.stop(temp_period.layer.span)?;
-            // FIXME: translate to per-layer pitches
+            layer_period.stop(temp_period.layer.span.0)?;
             layer_period.offset(temp_period.periodnum * temp_period.layer.pitch)?;
             // Insert blockages on each track
             for (n1, n2) in temp_period.blockages.iter() {
-                layer_period.cut(
-                    *n1 * temp_period.layer.pitch as usize,
-                    *n2 * temp_period.layer.pitch as usize,
-                )?;
+                let prim_pitch = self.stack.prim.pitch.coord(layer.spec.dir);
+                let start = n1.0 * prim_pitch as usize;
+                let stop = n2.0 * prim_pitch as usize;
+                layer_period.cut(start, stop)?;
             }
-            let nsig = layer_period.signals.len();
             // Place all relevant cuts
+            let nsig = layer_period.signals.len();
             for cut in temp_period.cuts.iter() {
                 // Cut the assigned track
                 let track = &mut layer_period.signals[cut.track & nsig];
@@ -1256,10 +1204,10 @@ pub mod conv {
                     cut.dist as usize + layer.spec.cutsize / 2,
                 )?;
             }
-            let via_layer = &self.stack.vias[layer.index];
             // Handle Net Assignments
             // Start with those for which we're the lower of the two layers.
             // These will also be where we add vias
+            let via_layer = &self.stack.vias[layer.index];
             for assn_id in temp_period.bot_assns.iter() {
                 let assn = temp_period
                     .cell
@@ -1326,7 +1274,7 @@ pub mod conv {
         /// FIXME: also include the pins!
         pub fn convert_abstract(&self, abs: &abstrakt::Abstract) -> Result<raw::Cell, LayoutError> {
             // Create our [Outline]s boundary
-            let outline = self.convert_outline(&abs.outline)?;
+            let outline = self.convert_outline(abs)?;
             // And return a new [raw::Cell]
             Ok(raw::Cell {
                 name: abs.name.clone(),
@@ -1336,18 +1284,23 @@ pub mod conv {
             })
         }
         /// Convert to a [raw::Element] polygon
-        pub fn convert_outline(&self, outline: &Outline) -> Result<raw::Element, LayoutError> {
+        pub fn convert_outline(&self, cell: &impl HasOutline) -> LayoutResult<raw::Element> {
             // Doing so requires our [Stack] specify a `boundary_layer`. If not, fail.
             let layer = (self.stack.boundary_layer)
                 .as_ref()
                 .ok_or(LayoutError::msg(
                     "Cannot Convert Abstract to Raw without Boundary Layer",
                 ))?;
+            let outline: &Outline = cell.outline();
+
             // Create an array of Outline-Points
             let pts = outline.points();
+
             // Scale them to our pitches
-            let pitch = self.stack.pitches();
-            let pts = pts.iter().map(|p| p.scale(&pitch)).collect();
+            let pts = pts
+                .iter()
+                .map(|p| p.scale(&self.stack.prim.pitch))
+                .collect();
             // Create the [raw::Element]
             Ok(raw::Element {
                 net: None,
@@ -1400,6 +1353,123 @@ pub mod conv {
                 .collect();
             Ok(elems)
         }
+        /// Create a [TempCellLayer] for the intersection of `temp_cell` and `layer`
+        fn temp_cell_layer<'a>(
+            &self,
+            temp_cell: &'a TempCell,
+            layer: &'a validate::ValidMetalLayer,
+        ) -> TempCellLayer<'a> {
+            // Sort out which of the cell's [Instance]s come up to this layer
+            let instances: Vec<&TempInstance> = temp_cell
+                .instances
+                .iter()
+                .filter(|i| i.def.top_layer() >= layer.index)
+                .collect();
+
+            // Sort out which direction we're working across
+            let cell = temp_cell.cell;
+            // FIXME: needs to be re-unit-ed
+            let span: DbUnits<usize> = match layer.spec.dir {
+                Dir::Horiz => DbUnits(cell.outline.x[0].0 * self.stack.prim.pitch.x as usize),
+                Dir::Vert => DbUnits(cell.outline.y[0].0 * self.stack.prim.pitch.y as usize),
+            };
+            let outline_dim: DbUnits<usize> = match layer.spec.dir {
+                Dir::Horiz => DbUnits(cell.outline.y[0].0 * self.stack.prim.pitch.y as usize),
+                Dir::Vert => DbUnits(cell.outline.x[0].0 * self.stack.prim.pitch.x as usize),
+            };
+
+            // FIXME: we probably want to detect bad Outline dimensions sooner than this
+            if outline_dim.0 % layer.pitch != 0 {
+                panic!("HOWD WE GET THIS BAD LAYER?!?!");
+            }
+            let nperiods = outline_dim.0 / layer.pitch;
+            let pitch = layer.pitch as isize;
+
+            TempCellLayer {
+                layer,
+                cell: temp_cell,
+                instances,
+                nperiods,
+                pitch,
+                span,
+            }
+        }
+        /// Create the [TempPeriod] at the intersection of `temp_layer` and `periodnum`
+        fn temp_cell_layer_period<'a>(
+            &self,
+            temp_layer: &'a TempCellLayer,
+            periodnum: isize,
+        ) -> TempPeriod<'a> {
+            let layer = temp_layer.layer;
+            let cell = temp_layer.cell;
+
+            // For each row, decide which instances intersect
+            // Convert these into blockage-areas for the tracks
+            let blockages = temp_layer
+                .instances
+                .iter()
+                .filter(|i| {
+                    let prim_pitches = self.stack.primitive_pitches(temp_layer.layer.index);
+                    let min = i.inst.p0.coord(layer.spec.dir.other()) / prim_pitches.0 as isize;
+                    let span = i.def.outline().max(layer.spec.dir.other()).0 / prim_pitches.0;
+                    min <= periodnum && min + span as isize > periodnum
+                })
+                .map(|i| {
+                    let start = i.inst.p0.coord(layer.spec.dir) as usize;
+                    let span = i.def.outline().max(layer.spec.dir);
+                    (PrimPitches(start), PrimPitches(start + span.0))
+                })
+                .collect();
+
+            // Grab indices of the relevant tracks for this period
+            let nsig = temp_layer.layer.period.signals.len();
+            let relevant_track_nums = (periodnum * nsig as isize, (periodnum + 1) * nsig as isize);
+            // Filter cuts down to those in this period
+            let cuts: Vec<&validate::ValidTrackLoc> = cell.cuts[temp_layer.layer.index]
+                .iter()
+                .filter(|cut| {
+                    cut.track >= relevant_track_nums.0 as usize
+                        && cut.track < relevant_track_nums.1 as usize
+                })
+                .collect();
+            // Filter assignments down to those in this period
+            let top_assns = cell.top_assns[temp_layer.layer.index]
+                .iter()
+                .filter(|id| {
+                    let assn = cell
+                        .assignments
+                        .get(**id)
+                        .ok_or(LayoutError::Export)
+                        .unwrap();
+                    assn.top.track >= relevant_track_nums.0 as usize
+                        && assn.top.track < relevant_track_nums.1 as usize
+                })
+                .copied()
+                .collect();
+            let bot_assns = cell.bot_assns[temp_layer.layer.index]
+                .iter()
+                .filter(|id| {
+                    let assn = cell
+                        .assignments
+                        .get(**id)
+                        .ok_or(LayoutError::Export)
+                        .unwrap();
+                    assn.bot.track >= relevant_track_nums.0 as usize
+                        && assn.bot.track < relevant_track_nums.1 as usize
+                })
+                .copied()
+                .collect();
+
+            TempPeriod {
+                periodnum,
+                cell,
+                layer: temp_layer,
+                blockages,
+                cuts,
+                top_assns,
+                bot_assns,
+            }
+        }
         // /// Create a raw-cell covering a single unit of `layer`
         // pub fn convert_layer_unit(&self, layer: &Layer) -> LayoutResult<raw::Cell> {
         //     let pitch = match layer.spec.dir {
@@ -1444,8 +1514,6 @@ pub mod conv {
 ///
 pub mod abstrakt {
     use super::*;
-    // FIXME: also need a raw::Abstract, for more-arbitrary-shaped abstract layouts
-
     /// Abstract-Layout
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Abstract {
@@ -1585,7 +1653,7 @@ pub enum CellRef {
     Name(String),
 }
 /// Trait for accessing three-dimensional [Outline] data from several views of Layouts
-trait HasOutline: Debug {
+pub trait HasOutline: Debug {
     /// Retrieve a reference to the x-y [Outline]
     fn outline(&self) -> &Outline;
     /// Retrieve the top z-axis layer
@@ -1607,10 +1675,6 @@ impl HasOutline for abstrakt::Abstract {
         self.top_layer
     }
 }
-/// Placeholder for Elements to be implemented
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Tbd;
-
 pub mod validate {
     use super::*;
     /// Helper-function for asserting all sorts of boolean conditions, returning [LayoutResult] and enabling the question-mark operator.
@@ -1625,13 +1689,11 @@ pub mod validate {
     pub(crate) struct ValidStack {
         /// Measurement units
         pub units: Unit,
-        /// Primitive cell horizontal unit-pitch, denominated in `units`
-        pub xpitch: usize,
-        /// Primitive cell vertical unit-pitch, denominated in `units`
-        pub ypitch: usize,
         /// Layer used for cell outlines/ boundaries
         pub boundary_layer: Option<raw::DataTypeMap>,
 
+        /// Primitive layer
+        pub prim: PrimitiveLayer,
         /// Set of via layers
         pub vias: Vec<ViaLayer>,
         /// Metal Layers
@@ -1641,8 +1703,17 @@ pub mod validate {
     }
     impl ValidStack {
         /// Retrieve a [Point] two-tuple of our x/y pitches
-        pub(crate) fn pitches(&self) -> Point {
-            Point::new(self.xpitch as isize, self.ypitch as isize)
+        pub(crate) fn pitches(&self) -> &Point {
+            &self.prim.pitch
+        }
+        /// Retrieve the number of primitive-sized pitches in a period of layer number `layer`
+        pub(crate) fn primitive_pitches(&self, layer: usize) -> PrimPitches<usize> {
+            let layer = &self.metals[layer];
+            let prim_pitch = self.prim.pitch.coord(layer.spec.dir.other()) as usize;
+            if layer.pitch % prim_pitch != 0 {
+                panic!("INVALID LAYER PITCH!!!");
+            }
+            return PrimPitches(layer.pitch / prim_pitch);
         }
     }
     #[derive(Debug)]
@@ -1651,25 +1722,26 @@ pub mod validate {
         pub(crate) fn validate(stack: Stack) -> LayoutResult<ValidStack> {
             let Stack {
                 units,
-                xpitch,
-                ypitch,
                 boundary_layer,
                 vias,
                 layers,
+                prim,
+                ..
             } = stack;
+            // Validate the primitive layer
+            assert(prim.pitch.x > 0)?;
+            assert(prim.pitch.y > 0)?;
+
             // Validate each metal layer
             let metals = layers
                 .into_iter()
                 .enumerate()
-                .map(|(num, layer)| ValidMetalLayer::validate(layer, num))
+                .map(|(num, layer)| ValidMetalLayer::validate(layer, num, &prim))
                 .collect::<Result<Vec<_>, _>>()?;
             // Calculate pitches as the least-common multiple of same-direction layers below each layer
             let mut pitches = vec![0; metals.len()];
             for (num, metal) in metals.iter().enumerate() {
-                let mut pitch = match metal.spec.dir {
-                    Dir::Horiz => stack.xpitch,
-                    Dir::Vert => stack.ypitch,
-                };
+                let mut pitch = prim.pitch.coord(metal.spec.dir.other()) as usize;
                 for nn in 0..num + 1 {
                     if metals[nn].spec.dir == metal.spec.dir {
                         pitch = num_integer::lcm(pitch, metals[nn].pitch);
@@ -1681,12 +1753,11 @@ pub mod validate {
             // Stack checks out! Return its derived data
             Ok(ValidStack {
                 units,
-                xpitch,
-                ypitch,
                 boundary_layer,
                 vias,
                 pitches,
                 metals,
+                prim,
             })
         }
     }
@@ -1705,13 +1776,24 @@ pub mod validate {
     }
     impl ValidMetalLayer {
         /// Perform validation on a [Layer], return a corresponding [ValidMetalLayer]
-        pub(crate) fn validate(layer: Layer, index: usize) -> LayoutResult<ValidMetalLayer> {
+        pub(crate) fn validate(
+            layer: Layer,
+            index: usize,
+            prim: &PrimitiveLayer,
+        ) -> LayoutResult<ValidMetalLayer> {
             // Check for non-zero widths of all entries
             for entry in layer.entries().iter() {
                 assert(entry.width > 0)?;
             }
             let pitch = layer.pitch();
             assert(pitch > 0)?;
+            // Check for fit on the primitive grid, if the layer is in primitives
+            match layer.prim {
+                PrimitiveMode::Partial | PrimitiveMode::Owned => {
+                    assert(pitch % prim.pitch.coord(layer.dir.other()) as usize == 0)?;
+                }
+                PrimitiveMode::None => (),
+            }
             // Given this, convert to a [LayerPeriod]
             let period = layer.to_layer_period(0);
             Ok(ValidMetalLayer {
@@ -1783,6 +1865,25 @@ pub mod validate {
         }
     }
 }
+/// Indication of whether a layer flips in its periodic axis with every period,
+/// as most standard-cell-style logic gates do.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum FlipMode {
+    EveryOther,
+    None,
+}
+/// Indication of whether a layer is owned by, partially included in, or external to the primitive blocks
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PrimitiveMode {
+    Owned,
+    Partial,
+    None,
+}
+/// Description of the primitive-level cells in a [Stack]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PrimitiveLayer {
+    pub pitch: Point,
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1791,14 +1892,15 @@ mod tests {
     fn stack() -> Stack {
         Stack {
             units: Unit::Nano,
-            xpitch: 7110,
-            ypitch: 7110,
             boundary_layer: Some(raw::DataTypeMap {
                 layernum: 236,
                 drawing: Some(0),
                 text: None,
                 other: HashMap::new(),
             }),
+            prim: PrimitiveLayer {
+                pitch: Point::new(460, 3310),
+            },
             layers: vec![
                 Layer {
                     name: "met1".into(),
@@ -1807,40 +1909,40 @@ mod tests {
                         TrackSpec::pat(vec![TrackEntry::gap(230), TrackEntry::sig(140)], 7),
                         TrackSpec::gap(230),
                         TrackSpec::rail(490),
-                        TrackSpec::pat(vec![TrackEntry::gap(230), TrackEntry::sig(140)], 7),
-                        TrackSpec::gap(230),
-                        TrackSpec::rail(490),
                     ],
                     dir: Dir::Horiz,
                     offset: -245,
                     cutsize: 250,
+                    overlap: 490,
                     raw: Some(raw::DataTypeMap {
                         layernum: 68,
                         drawing: Some(20),
                         text: Some(5),
                         other: HashMap::new(),
                     }),
+                    flip: FlipMode::EveryOther,
+                    prim: PrimitiveMode::Partial,
                 },
                 Layer {
                     name: "met2".into(),
                     entries: vec![
-                        TrackSpec::rail(490),
-                        TrackSpec::pat(vec![TrackEntry::gap(230), TrackEntry::sig(140)], 7),
-                        TrackSpec::gap(230),
-                        TrackSpec::rail(490),
-                        TrackSpec::pat(vec![TrackEntry::gap(230), TrackEntry::sig(140)], 7),
-                        TrackSpec::gap(230),
-                        TrackSpec::rail(490),
+                        TrackSpec::rail(510),
+                        TrackSpec::pat(vec![TrackEntry::gap(410), TrackEntry::sig(50)], 8),
+                        TrackSpec::gap(410),
+                        TrackSpec::rail(510),
                     ],
                     dir: Dir::Vert,
                     cutsize: 250,
-                    offset: -245,
+                    offset: -255,
+                    overlap: 510,
                     raw: Some(raw::DataTypeMap {
                         layernum: 69,
                         drawing: Some(20),
                         text: Some(5),
                         other: HashMap::new(),
                     }),
+                    flip: FlipMode::EveryOther,
+                    prim: PrimitiveMode::None,
                 },
                 Layer {
                     name: "met3".into(),
@@ -1849,40 +1951,40 @@ mod tests {
                         TrackSpec::pat(vec![TrackEntry::gap(230), TrackEntry::sig(140)], 7),
                         TrackSpec::gap(230),
                         TrackSpec::rail(490),
-                        TrackSpec::pat(vec![TrackEntry::gap(230), TrackEntry::sig(140)], 7),
-                        TrackSpec::gap(230),
-                        TrackSpec::rail(490),
                     ],
                     dir: Dir::Horiz,
-                    cutsize: 250,
                     offset: -245,
+                    cutsize: 250,
+                    overlap: 490,
                     raw: Some(raw::DataTypeMap {
                         layernum: 70,
                         drawing: Some(20),
                         text: Some(5),
                         other: HashMap::new(),
                     }),
+                    flip: FlipMode::EveryOther,
+                    prim: PrimitiveMode::Partial,
                 },
                 Layer {
                     name: "met4".into(),
                     entries: vec![
-                        TrackSpec::rail(490),
-                        TrackSpec::pat(vec![TrackEntry::gap(230), TrackEntry::sig(140)], 7),
-                        TrackSpec::gap(230),
-                        TrackSpec::rail(490),
-                        TrackSpec::pat(vec![TrackEntry::gap(230), TrackEntry::sig(140)], 7),
-                        TrackSpec::gap(230),
-                        TrackSpec::rail(490),
+                        TrackSpec::rail(510),
+                        TrackSpec::pat(vec![TrackEntry::gap(410), TrackEntry::sig(50)], 8),
+                        TrackSpec::gap(410),
+                        TrackSpec::rail(510),
                     ],
                     dir: Dir::Vert,
                     cutsize: 250,
-                    offset: -245,
+                    offset: -255,
+                    overlap: 510,
                     raw: Some(raw::DataTypeMap {
                         layernum: 71,
                         drawing: Some(20),
                         text: Some(5),
                         other: HashMap::new(),
                     }),
+                    flip: FlipMode::EveryOther,
+                    prim: PrimitiveMode::None,
                 },
             ],
             vias: vec![
@@ -1946,7 +2048,7 @@ mod tests {
         Cell {
             name: "HereGoes".into(),
             top_layer: 3,
-            outline: Outline::rect(5, 5)?,
+            outline: Outline::rect(50, 5)?,
             instances: Vec::new(),
             assignments: vec![Assign {
                 net: "clk".into(),
@@ -1963,13 +2065,13 @@ mod tests {
     }
     /// Create a library
     #[test]
-    fn create_lib() -> Result<(), LayoutError> {
-        let mut lib = Library::new("HereGoesLib");
+    fn create_lib1() -> Result<(), LayoutError> {
+        let mut lib = Library::new("lib1");
 
         lib.cells.insert(Cell {
             name: "HereGoes".into(),
             top_layer: 2,
-            outline: Outline::rect(1, 1)?,
+            outline: Outline::rect(50, 50)?,
             instances: Vec::new(),
             assignments: vec![Assign {
                 net: "clk".into(),
@@ -2024,12 +2126,13 @@ mod tests {
     /// Create a cell with instances
     #[test]
     fn create_lib2() -> Result<(), LayoutError> {
-        let mut lib = Library::new("InstLib");
+        let mut lib = Library::new("lib2");
 
         let c2 = lib.cells.insert(Cell {
             name: "IsInst".into(),
             top_layer: 2,
-            outline: Outline::rect(1, 1)?,
+            outline: Outline::rect(100, 10)?,
+
             instances: vec![],
             assignments: vec![],
             cuts: Vec::new(),
@@ -2037,13 +2140,13 @@ mod tests {
 
         lib.cells.insert(Cell {
             name: "HasInst".into(),
-            top_layer: 4,
-            outline: Outline::rect(5, 11)?,
+            top_layer: 3,
+            outline: Outline::rect(200, 20)?,
             instances: vec![Instance {
                 inst_name: "inst1".into(),
                 cell_name: "IsInst".into(),
                 cell: CellRef::Cell(c2),
-                p0: Point::new(1, 2),
+                p0: Point::new(20, 2),
                 reflect: false,
                 angle: None,
             }],
@@ -2121,19 +2224,19 @@ mod tests {
     /// Create a cell with abstract instances
     #[test]
     fn create_lib3() -> Result<(), LayoutError> {
-        let mut lib = Library::new("AbstractsLib");
+        let mut lib = Library::new("lib3");
 
         let c2 = lib.abstracts.insert(abstrakt::Abstract {
             name: "IsAbstrakt".into(),
-            top_layer: 2,
-            outline: Outline::rect(1, 1)?,
+            top_layer: 0,
+            outline: Outline::rect(100, 10)?,
             ports: Vec::new(),
         });
 
         lib.cells.insert(Cell {
             name: "HasAbstrakts".into(),
             top_layer: 3,
-            outline: Outline::rect(5, 5)?,
+            outline: Outline::rect(500, 50)?,
             instances: vec![
                 Instance {
                     inst_name: "inst1".into(),
@@ -2147,7 +2250,7 @@ mod tests {
                     inst_name: "inst2".into(),
                     cell_name: "IsAbstrakt".into(),
                     cell: CellRef::Abstract(c2),
-                    p0: Point::new(2, 2),
+                    p0: Point::new(200, 20),
                     reflect: false,
                     angle: None,
                 },
@@ -2155,20 +2258,22 @@ mod tests {
                     inst_name: "inst4".into(),
                     cell_name: "IsAbstrakt".into(),
                     cell: CellRef::Abstract(c2),
-                    p0: Point::new(4, 4),
+                    p0: Point::new(400, 40),
                     reflect: false,
                     angle: None,
                 },
             ],
-            assignments: vec![Assign {
-                net: "clk".into(),
-                at: TrackIntersection {
-                    layer: 1,
-                    track: 22,
-                    at: 22,
-                    relz: RelZ::Above,
-                },
-            }],
+            assignments: vec![
+            //     Assign {
+            //     net: "clk".into(),
+            //     at: TrackIntersection {
+            //         layer: 1,
+            //         track: 22,
+            //         at: 22,
+            //         relz: RelZ::Above,
+            //     },
+            // }
+            ],
             cuts: Vec::new(),
         });
         exports(lib)
