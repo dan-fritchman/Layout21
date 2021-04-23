@@ -7,6 +7,9 @@ use num_traits::Num;
 use serde::{Deserialize, Serialize};
 use slotmap::{new_key_type, SlotMap};
 
+/// # "Raw" Layout Module
+pub mod raw;
+
 // Create key-types for each internal type stored in [SlotMap]s
 new_key_type! {
     /// Keys for [Cell] entries
@@ -16,7 +19,7 @@ new_key_type! {
     /// Keys for [CellView] entries
     pub struct CellViewKey;
 }
-
+/// LayoutError-Specific Result Type
 pub type LayoutResult<T> = Result<T, LayoutError>;
 
 /// Distance Units Enumeration
@@ -111,9 +114,21 @@ impl TrackEntry {
 pub enum TrackType {
     Gap,
     Signal,
-    Rail,
+    Rail(RailKind),
 }
-
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum RailKind {
+    Pwr,
+    Gnd,
+}
+impl RailKind {
+    fn to_string(&self) -> String {
+        match self {
+            Self::Pwr => "VDD".into(),
+            Self::Gnd => "VSS".into(),
+        }
+    }
+}
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum TrackSpec {
     Entry(TrackEntry),
@@ -132,10 +147,22 @@ impl TrackSpec {
             ttype: TrackType::Signal,
         })
     }
-    pub fn rail(width: usize) -> Self {
+    pub fn rail(width: usize, rk: RailKind) -> Self {
         Self::Entry(TrackEntry {
             width,
-            ttype: TrackType::Rail,
+            ttype: TrackType::Rail(rk),
+        })
+    }
+    pub fn pwr(width: usize) -> Self {
+        Self::Entry(TrackEntry {
+            width,
+            ttype: TrackType::Rail(RailKind::Pwr),
+        })
+    }
+    pub fn gnd(width: usize) -> Self {
+        Self::Entry(TrackEntry {
+            width,
+            ttype: TrackType::Rail(RailKind::Gnd),
         })
     }
     pub fn pat(e: impl Into<Vec<TrackEntry>>, nrep: usize) -> Self {
@@ -201,14 +228,22 @@ pub struct Layer {
 }
 impl Layer {
     /// Convert this [Layer]'s track-info into a [LayerPeriod]
-    fn to_layer_period(&self, stop: usize) -> LayerPeriod {
-        let mut cursor = self.offset;
+    fn to_layer_period(&self, index: usize, stop: usize) -> LayerPeriod {
         let mut period = LayerPeriod::default();
-        for e in self.entries().iter() {
+        period.index = index;
+        let mut cursor = self.offset + (self.pitch() * index) as isize;
+        let entries = self.entries();
+        let iterator: Box<dyn Iterator<Item = _>> =
+            if self.flip == FlipMode::EveryOther && index % 2 == 1 {
+                Box::new(entries.iter().rev())
+            } else {
+                Box::new(entries.iter())
+            };
+        for e in iterator {
             let d = e.width;
             match e.ttype {
                 TrackType::Gap => (),
-                TrackType::Rail => {
+                TrackType::Rail(railkind) => {
                     period.rails.push(Track {
                         ttype: e.ttype,
                         index: period.rails.len(),
@@ -216,7 +251,7 @@ impl Layer {
                         start: cursor,
                         width: d,
                         segments: vec![TrackSegment {
-                            net: Some("POWER_OR_GROUND_HERE_BRO".to_string()), // FIXME!
+                            net: Some(railkind.to_string()), // FIXME!
                             start: 0,
                             stop,
                         }],
@@ -436,6 +471,7 @@ impl Track {
 /// and includes a vector of track-segments for cutting and assigning nets.
 #[derive(Debug, Clone, Default)]
 pub struct LayerPeriod {
+    pub index: usize,
     pub signals: Vec<Track>,
     pub rails: Vec<Track>,
 }
@@ -655,331 +691,6 @@ impl Point {
     }
 }
 
-/// # "Raw" Layout Module
-pub mod raw {
-    use super::*;
-    use gds21;
-
-    // // FIXME: need something like raw::Abstract, representing arbitrary-shaped abstract layouts
-    // #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-    // pub struct Abstract;
-
-    /// Raw Abstract-Layout
-    /// Contains geometric [Element]s generally representing pins and blockages
-    /// Does not contain instances, arrays, or layout-implementation details
-    #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-    pub struct Abstract {
-        /// Cell Name
-        pub name: String,
-        /// Primitive Elements
-        pub elems: Vec<Element>,
-    }
-
-    /// # Raw Layout Library  
-    /// A collection of cell-definitions and sub-library definitions
-    #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-    pub struct Library {
-        /// Library Name
-        pub name: String,
-        /// Distance Units
-        pub units: Unit,
-        /// Sub-Library Definitions
-        pub libs: Vec<Library>,
-        /// Cell Definitions
-        pub cells: Vec<Cell>,
-    }
-    impl Library {
-        /// Create a new and empty Library
-        pub fn new(name: impl Into<String>, units: Unit) -> Self {
-            Self {
-                name: name.into(),
-                units,
-                ..Default::default()
-            }
-        }
-        /// Convert to a GDSII [gds21::GdsLibrary]
-        pub fn to_gds(self) -> Result<gds21::GdsLibrary, LayoutError> {
-            GdsConverter::convert(self)
-        }
-    }
-    /// Raw-Layout Cell Definition
-    #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-    pub struct Cell {
-        /// Cell Name
-        pub name: String,
-        /// Cell Instances
-        pub insts: Vec<Instance>,
-        /// Instance Arrays
-        pub arrays: Vec<InstArray>,
-        /// Primitive Elements
-        pub elems: Vec<Element>,
-    }
-    /// # Array of Instances
-    ///
-    /// Two-dimensional array of identical [Instance]s of the same [Cell].
-    #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-    pub struct InstArray {
-        pub inst_name: String,
-        pub cell_name: String,
-        pub rows: usize,
-        pub cols: usize,
-        pub xpitch: usize,
-        pub ypitch: usize,
-        pub p0: Point,
-        pub reflect: bool,
-        pub angle: Option<f64>,
-    }
-    /// # Layer Specification
-    /// As in seemingly every layout system, this uses two numbers to identify each layer.
-    #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-    pub struct LayerSpec(i16, i16);
-    impl LayerSpec {
-        pub fn new(n1: i16, n2: i16) -> Self {
-            Self(n1, n2)
-        }
-    }
-    /// # Per-Layer Datatype Specification
-    /// Includes the datatypes used for each category of element on layer `layernum`
-    #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-    pub struct DataTypeMap {
-        /// Layer Number
-        pub layernum: i16,
-        /// Drawing (Geometry) DataType Value
-        pub drawing: Option<i16>,
-        /// Text DataType Value
-        pub text: Option<i16>,
-        /// Any Other DataType Values
-        pub other: HashMap<String, i16>,
-    }
-    /// # Primitive Geometric Element
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct Element {
-        /// Net Name
-        pub net: Option<String>,
-        /// Layer
-        pub layer: DataTypeMap,
-        /// Shape
-        pub inner: Shape,
-    }
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub enum Shape {
-        Rect { p0: Point, p1: Point },
-        Poly { pts: Vec<Point> },
-    }
-    impl Shape {
-        /// Retrieve our "origin", or first [Point]
-        pub fn point0(&self) -> &Point {
-            match *self {
-                Shape::Rect { ref p0, p1: _ } => p0,
-                Shape::Poly { ref pts } => &pts[0],
-            }
-        }
-        /// Calculate our center-point
-        pub fn center(&self) -> Point {
-            match *self {
-                Shape::Rect { ref p0, ref p1 } => Point::new((p0.x + p1.x) / 2, (p0.y + p1.y) / 2),
-                Shape::Poly { pts: _ } => {
-                    unimplemented!("Shape::Poly::center");
-                }
-            }
-        }
-        /// Indicate whether this shape is (more or less) horizontal or vertical
-        pub fn orientation(&self) -> Dir {
-            match *self {
-                Shape::Rect { ref p0, ref p1 } => {
-                    if (p1.x - p0.x).abs() < (p1.y - p0.y).abs() {
-                        return Dir::Vert;
-                    }
-                    Dir::Horiz
-                }
-                Shape::Poly { pts: _ } => {
-                    unimplemented!("Shape::Poly::orientation");
-                }
-            }
-        }
-        /// Shift coordinates by the (x,y) values specified in `pt`
-        pub fn shift(&mut self, pt: &Point) {
-            match *self {
-                Shape::Rect {
-                    ref mut p0,
-                    ref mut p1,
-                } => {
-                    p0.x += pt.x;
-                    p0.y += pt.y;
-                    p1.x += pt.x;
-                    p1.y += pt.y;
-                }
-                Shape::Poly { ref mut pts } => {
-                    for p in pts.iter_mut() {
-                        p.x += pt.x;
-                        p.y += pt.y;
-                    }
-                }
-            }
-        }
-    }
-    /// # Gds21 Converter
-    ///
-    /// The sole valid top-level entity for [gds21] conversion is always a [Library].
-    ///
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct GdsConverter {
-        pub lib: Library,
-    }
-    impl GdsConverter {
-        pub fn convert(lib: Library) -> LayoutResult<gds21::GdsLibrary> {
-            Self { lib }.convert_all()
-        }
-        fn convert_all(self) -> LayoutResult<gds21::GdsLibrary> {
-            if self.lib.libs.len() > 0 {
-                return Err(LayoutError::msg("No nested libraries to GDS (yet)"));
-            }
-            // Create a new Gds Library
-            let mut lib = gds21::GdsLibrary::new(&self.lib.name);
-            // Set its distance units
-            lib.units = match self.lib.units {
-                Unit::Nano => gds21::GdsUnits::new(1e-3, 1e-9),
-                Unit::Micro => gds21::GdsUnits::new(1e-3, 1e-6),
-            };
-            // And convert each of our `cells` into its `structs`
-            lib.structs = self
-                .lib
-                .cells
-                .iter()
-                .map(|c| self.convert_cell(c))
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(lib)
-        }
-        /// Convert a [Cell] to a [gds21::GdsStruct] cell-definition
-        fn convert_cell(&self, cell: &Cell) -> LayoutResult<gds21::GdsStruct> {
-            let mut elems = Vec::new();
-            for inst in cell.insts.iter() {
-                elems.push(self.convert_instance(inst).into());
-            }
-            for arr in cell.arrays.iter() {
-                elems.push(self.convert_array(arr).into());
-            }
-            for elem in cell.elems.iter() {
-                for gdselem in self.convert_element(elem)?.into_iter() {
-                    elems.push(gdselem);
-                }
-            }
-            let mut s = gds21::GdsStruct::new(&cell.name);
-            s.elems = elems;
-            Ok(s)
-        }
-        /// Convert an [Instance] to a GDS instance, AKA [gds21::GdsStructRef]
-        fn convert_instance(&self, inst: &Instance) -> gds21::GdsStructRef {
-            gds21::GdsStructRef {
-                name: inst.cell_name.clone(),
-                xy: vec![inst.p0.x as i32, inst.p0.y as i32],
-                strans: None, //FIXME!
-                elflags: None,
-                plex: None,
-            }
-        }
-        /// Convert an [Element] into one or more [gds21::GdsElement]
-        ///
-        /// Our [Element]s often correspond to more than one GDSII element,
-        /// notably in the case in which a polygon is annotated with a net-name.
-        /// Here, the net-name is an attribute of the polygon [Element].
-        /// In GDSII, text is "free floating" as a separate element.
-        ///
-        /// GDS shapes are flattened vectors of (x,y) coordinates,
-        /// and include an explicit repetition of their origin for closure.
-        /// So an N-sided polygon is described by a 2*(N+1)-entry vector.
-        ///
-        pub fn convert_element(&self, elem: &Element) -> LayoutResult<Vec<gds21::GdsElement>> {
-            let datatype = elem
-                .layer
-                .drawing
-                .ok_or(LayoutError::msg("Drawing Layer Not Defined"))?;
-            let xy = match &elem.inner {
-                Shape::Rect { p0, p1 } => {
-                    let x0 = p0.x as i32;
-                    let y0 = p0.y as i32;
-                    let x1 = p1.x as i32;
-                    let y1 = p1.y as i32;
-                    vec![x0, y0, x1, y0, x1, y1, x0, y1, x0, y0]
-                }
-                Shape::Poly { pts } => {
-                    // Flatten our points-vec, converting to 32-bit along the way
-                    let mut xy = Vec::new();
-                    for p in pts.iter() {
-                        xy.push(p.x as i32);
-                        xy.push(p.y as i32);
-                    }
-                    // Add the origin a second time, to "close" the polygon
-                    xy.push(pts[0].x as i32);
-                    xy.push(pts[0].y as i32);
-                    xy
-                }
-            };
-            // Initialize our vector of elements with the shape
-            let mut gds_elems = vec![gds21::GdsBoundary {
-                layer: elem.layer.layernum,
-                datatype,
-                xy,
-                ..Default::default()
-            }
-            .into()];
-            // If there's an assigned net, create a corresponding text-element
-            if let Some(name) = &elem.net {
-                let texttype = elem
-                    .layer
-                    .text
-                    .ok_or(LayoutError::msg("Text Layer Not Defined"))?;
-
-                // Text is placed in the shape's (at least rough) center
-                let loc = elem.inner.center();
-                // Rotate that text 90 degrees for mostly-vertical shapes
-                let strans = match elem.inner.orientation() {
-                    Dir::Horiz => None,
-                    Dir::Vert => Some(gds21::GdsStrans {
-                        angle: Some(90.0),
-                        ..Default::default()
-                    }),
-                };
-                gds_elems.push(
-                    gds21::GdsTextElem {
-                        string: name.into(),
-                        layer: elem.layer.layernum,
-                        texttype,
-                        xy: vec![loc.x as i32, loc.y as i32],
-                        strans,
-                        ..Default::default()
-                    }
-                    .into(),
-                )
-            }
-            Ok(gds_elems)
-        }
-        /// Convert an [InstArray] to GDS-format [gds21::GdsArrayRef]
-        ///
-        /// GDS requires three "points" to define an array,
-        /// Essentially at its origin and opposite edges
-        pub fn convert_array(&self, arr: &InstArray) -> gds21::GdsArrayRef {
-            let x0 = arr.p0.x as i32;
-            let y0 = arr.p0.y as i32;
-            let x1 = x0 + (arr.xpitch * arr.cols + 1) as i32;
-            let y1 = y0 + (arr.ypitch * arr.rows + 1) as i32;
-            gds21::GdsArrayRef {
-                name: arr.cell_name.clone(),
-                xy: vec![x0, y0, x1, y0, x0, y1],
-                rows: arr.rows as i16,
-                cols: arr.cols as i16,
-                strans: None, //FIXME!
-                elflags: None,
-                plex: None,
-            }
-        }
-    }
-    impl From<gds21::GdsError> for LayoutError {
-        fn from(_e: gds21::GdsError) -> Self {
-            LayoutError::Tbd
-        }
-    }
-}
 /// Raw-Layout Conversion Module
 pub mod conv {
     use super::*;
@@ -1184,9 +895,11 @@ pub mod conv {
             let layer = temp_period.layer.layer; // FIXME! Can't love this name.
 
             // Create the layer-period object we'll manipulate most of the way
-            let mut layer_period = temp_period.layer.layer.period.clone();
-            layer_period.stop(temp_period.layer.span.0)?;
-            layer_period.offset(temp_period.periodnum * temp_period.layer.pitch)?;
+            let mut layer_period = temp_period
+                .layer
+                .layer
+                .spec
+                .to_layer_period(temp_period.periodnum as usize, temp_period.layer.span.0);
             // Insert blockages on each track
             for (n1, n2) in temp_period.blockages.iter() {
                 let prim_pitch = self.stack.prim.pitch.coord(layer.spec.dir);
@@ -1269,7 +982,6 @@ pub mod conv {
             }
             Ok(elems)
         }
-
         /// Convert to a [raw::Cell], just including an Outline
         /// FIXME: also include the pins!
         pub fn convert_abstract(&self, abs: &abstrakt::Abstract) -> Result<raw::Cell, LayoutError> {
@@ -1794,8 +1506,9 @@ pub mod validate {
                 }
                 PrimitiveMode::None => (),
             }
-            // Given this, convert to a [LayerPeriod]
-            let period = layer.to_layer_period(0);
+            // Convert to a prototype [LayerPeriod]
+            // This is frequently used for calculating track locations
+            let period = layer.to_layer_period(0, 0);
             Ok(ValidMetalLayer {
                 spec: layer,
                 index,
@@ -1814,9 +1527,9 @@ pub mod validate {
     /// Location on a [Track], including the db-unit cross-dimension
     #[derive(Debug, Clone)]
     pub(crate) struct ValidTrackLoc {
-        pub(crate) layer: usize,
-        pub(crate) track: usize,
-        pub(crate) dist: isize,
+        pub layer: usize,
+        pub track: usize,
+        pub dist: isize,
     }
     impl ValidTrackLoc {
         /// Validate a [TrackIntersection], and convert the cross-dimension into db-units
@@ -1842,9 +1555,9 @@ pub mod validate {
     /// including the invariant that `top` is one layer above `bot`.
     #[derive(Debug, Clone)]
     pub(crate) struct ValidAssign {
-        pub(crate) net: String,
-        pub(crate) top: ValidTrackLoc,
-        pub(crate) bot: ValidTrackLoc,
+        pub net: String,
+        pub top: ValidTrackLoc,
+        pub bot: ValidTrackLoc,
     }
     impl ValidAssign {
         /// Validate a [TrackIntersection], and convert into top/bottom coordinates
@@ -1884,428 +1597,6 @@ pub enum PrimitiveMode {
 pub struct PrimitiveLayer {
     pub pitch: Point,
 }
+/// Unit Tests Module
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Create a [Stack] used by a number of tests
-    fn stack() -> Stack {
-        Stack {
-            units: Unit::Nano,
-            boundary_layer: Some(raw::DataTypeMap {
-                layernum: 236,
-                drawing: Some(0),
-                text: None,
-                other: HashMap::new(),
-            }),
-            prim: PrimitiveLayer {
-                pitch: Point::new(460, 3310),
-            },
-            layers: vec![
-                Layer {
-                    name: "met1".into(),
-                    entries: vec![
-                        TrackSpec::rail(490),
-                        TrackSpec::pat(vec![TrackEntry::gap(230), TrackEntry::sig(140)], 7),
-                        TrackSpec::gap(230),
-                        TrackSpec::rail(490),
-                    ],
-                    dir: Dir::Horiz,
-                    offset: -245,
-                    cutsize: 250,
-                    overlap: 490,
-                    raw: Some(raw::DataTypeMap {
-                        layernum: 68,
-                        drawing: Some(20),
-                        text: Some(5),
-                        other: HashMap::new(),
-                    }),
-                    flip: FlipMode::EveryOther,
-                    prim: PrimitiveMode::Partial,
-                },
-                Layer {
-                    name: "met2".into(),
-                    entries: vec![
-                        TrackSpec::rail(510),
-                        TrackSpec::pat(vec![TrackEntry::gap(410), TrackEntry::sig(50)], 8),
-                        TrackSpec::gap(410),
-                        TrackSpec::rail(510),
-                    ],
-                    dir: Dir::Vert,
-                    cutsize: 250,
-                    offset: -255,
-                    overlap: 510,
-                    raw: Some(raw::DataTypeMap {
-                        layernum: 69,
-                        drawing: Some(20),
-                        text: Some(5),
-                        other: HashMap::new(),
-                    }),
-                    flip: FlipMode::EveryOther,
-                    prim: PrimitiveMode::None,
-                },
-                Layer {
-                    name: "met3".into(),
-                    entries: vec![
-                        TrackSpec::rail(490),
-                        TrackSpec::pat(vec![TrackEntry::gap(230), TrackEntry::sig(140)], 7),
-                        TrackSpec::gap(230),
-                        TrackSpec::rail(490),
-                    ],
-                    dir: Dir::Horiz,
-                    offset: -245,
-                    cutsize: 250,
-                    overlap: 490,
-                    raw: Some(raw::DataTypeMap {
-                        layernum: 70,
-                        drawing: Some(20),
-                        text: Some(5),
-                        other: HashMap::new(),
-                    }),
-                    flip: FlipMode::EveryOther,
-                    prim: PrimitiveMode::Partial,
-                },
-                Layer {
-                    name: "met4".into(),
-                    entries: vec![
-                        TrackSpec::rail(510),
-                        TrackSpec::pat(vec![TrackEntry::gap(410), TrackEntry::sig(50)], 8),
-                        TrackSpec::gap(410),
-                        TrackSpec::rail(510),
-                    ],
-                    dir: Dir::Vert,
-                    cutsize: 250,
-                    offset: -255,
-                    overlap: 510,
-                    raw: Some(raw::DataTypeMap {
-                        layernum: 71,
-                        drawing: Some(20),
-                        text: Some(5),
-                        other: HashMap::new(),
-                    }),
-                    flip: FlipMode::EveryOther,
-                    prim: PrimitiveMode::None,
-                },
-            ],
-            vias: vec![
-                ViaLayer {
-                    name: "mcon".into(),
-                    between: (0, 1),
-                    size: Point::new(240, 240),
-                    raw: Some(raw::DataTypeMap {
-                        layernum: 67,
-                        drawing: Some(44),
-                        text: None,
-                        other: HashMap::new(),
-                    }),
-                },
-                ViaLayer {
-                    name: "via1".into(),
-                    between: (1, 2),
-                    size: Point::new(240, 240),
-                    raw: Some(raw::DataTypeMap {
-                        layernum: 68,
-                        drawing: Some(44),
-                        text: None,
-                        other: HashMap::new(),
-                    }),
-                },
-                ViaLayer {
-                    name: "via2".into(),
-                    between: (2, 3),
-                    size: Point::new(240, 240),
-                    raw: Some(raw::DataTypeMap {
-                        layernum: 69,
-                        drawing: Some(44),
-                        text: None,
-                        other: HashMap::new(),
-                    }),
-                },
-                ViaLayer {
-                    name: "via3".into(),
-                    between: (3, 4),
-                    size: Point::new(240, 240),
-                    raw: Some(raw::DataTypeMap {
-                        layernum: 70,
-                        drawing: Some(44),
-                        text: None,
-                        other: HashMap::new(),
-                    }),
-                },
-            ],
-        }
-    }
-    /// Run the test-stack through validation
-    #[test]
-    fn validate_stack() -> LayoutResult<()> {
-        let s = stack();
-        validate::StackValidator::validate(s)?;
-        Ok(())
-    }
-    /// Create a cell
-    #[test]
-    fn create_cell() -> Result<(), LayoutError> {
-        Cell {
-            name: "HereGoes".into(),
-            top_layer: 3,
-            outline: Outline::rect(50, 5)?,
-            instances: Vec::new(),
-            assignments: vec![Assign {
-                net: "clk".into(),
-                at: TrackIntersection {
-                    layer: 1,
-                    track: 0,
-                    at: 1,
-                    relz: RelZ::Above,
-                },
-            }],
-            cuts: Vec::new(),
-        };
-        Ok(())
-    }
-    /// Create a library
-    #[test]
-    fn create_lib1() -> Result<(), LayoutError> {
-        let mut lib = Library::new("lib1");
-
-        lib.cells.insert(Cell {
-            name: "HereGoes".into(),
-            top_layer: 2,
-            outline: Outline::rect(50, 50)?,
-            instances: Vec::new(),
-            assignments: vec![Assign {
-                net: "clk".into(),
-                at: TrackIntersection {
-                    layer: 1,
-                    track: 4,
-                    at: 2,
-                    relz: RelZ::Below,
-                },
-            }],
-            cuts: vec![
-                TrackIntersection {
-                    layer: 0,
-                    track: 1,
-                    at: 1,
-                    relz: RelZ::Above,
-                },
-                TrackIntersection {
-                    layer: 0,
-                    track: 1,
-                    at: 3,
-                    relz: RelZ::Above,
-                },
-                TrackIntersection {
-                    layer: 0,
-                    track: 1,
-                    at: 5,
-                    relz: RelZ::Above,
-                },
-                TrackIntersection {
-                    layer: 1,
-                    track: 1,
-                    at: 1,
-                    relz: RelZ::Below,
-                },
-                TrackIntersection {
-                    layer: 1,
-                    track: 1,
-                    at: 3,
-                    relz: RelZ::Below,
-                },
-                TrackIntersection {
-                    layer: 1,
-                    track: 1,
-                    at: 5,
-                    relz: RelZ::Below,
-                },
-            ],
-        });
-        exports(lib)
-    }
-    /// Create a cell with instances
-    #[test]
-    fn create_lib2() -> Result<(), LayoutError> {
-        let mut lib = Library::new("lib2");
-
-        let c2 = lib.cells.insert(Cell {
-            name: "IsInst".into(),
-            top_layer: 2,
-            outline: Outline::rect(100, 10)?,
-
-            instances: vec![],
-            assignments: vec![],
-            cuts: Vec::new(),
-        });
-
-        lib.cells.insert(Cell {
-            name: "HasInst".into(),
-            top_layer: 3,
-            outline: Outline::rect(200, 20)?,
-            instances: vec![Instance {
-                inst_name: "inst1".into(),
-                cell_name: "IsInst".into(),
-                cell: CellRef::Cell(c2),
-                p0: Point::new(20, 2),
-                reflect: false,
-                angle: None,
-            }],
-            assignments: vec![Assign {
-                net: "clk".into(),
-                at: TrackIntersection {
-                    layer: 1,
-                    track: 1,
-                    at: 1,
-                    relz: RelZ::Above,
-                },
-            }],
-            cuts: Vec::new(),
-        });
-        exports(lib)
-    }
-
-    /// Create an abstract layout, with its variety of supported port types
-    #[test]
-    fn create_abstract() -> Result<(), LayoutError> {
-        let outline = Outline::rect(11, 11)?;
-        let ports = vec![
-            abstrakt::Port {
-                name: "edge_bot".into(),
-                kind: abstrakt::PortKind::Edge {
-                    layer: 2,
-                    track: 2,
-                    side: abstrakt::Side::Bottom,
-                },
-            },
-            abstrakt::Port {
-                name: "edge_top".into(),
-                kind: abstrakt::PortKind::Edge {
-                    layer: 2,
-                    track: 4,
-                    side: abstrakt::Side::Top,
-                },
-            },
-            abstrakt::Port {
-                name: "edge_left".into(),
-                kind: abstrakt::PortKind::Edge {
-                    layer: 1,
-                    track: 1,
-                    side: abstrakt::Side::Left,
-                },
-            },
-            abstrakt::Port {
-                name: "edge_right".into(),
-                kind: abstrakt::PortKind::Edge {
-                    layer: 1,
-                    track: 5,
-                    side: abstrakt::Side::Right,
-                },
-            },
-            abstrakt::Port {
-                name: "zfull".into(),
-                kind: abstrakt::PortKind::Zfull { track: 3 },
-            },
-            // abstrakt::Port {
-            //     name: "zlocs".into(),
-            //     kind: abstrakt::PortKind::Zlocs {
-            //         locs: vec![Assign {}],
-            //     },
-            // },
-        ];
-        abstrakt::Abstract {
-            name: "abstrack".into(),
-            outline,
-            top_layer: 3,
-            ports,
-        };
-        Ok(())
-    }
-
-    /// Create a cell with abstract instances
-    #[test]
-    fn create_lib3() -> Result<(), LayoutError> {
-        let mut lib = Library::new("lib3");
-
-        let c2 = lib.abstracts.insert(abstrakt::Abstract {
-            name: "IsAbstrakt".into(),
-            top_layer: 0,
-            outline: Outline::rect(100, 10)?,
-            ports: Vec::new(),
-        });
-
-        lib.cells.insert(Cell {
-            name: "HasAbstrakts".into(),
-            top_layer: 3,
-            outline: Outline::rect(500, 50)?,
-            instances: vec![
-                Instance {
-                    inst_name: "inst1".into(),
-                    cell_name: "IsAbstrakt".into(),
-                    cell: CellRef::Abstract(c2),
-                    p0: Point::new(0, 0),
-                    reflect: false,
-                    angle: None,
-                },
-                Instance {
-                    inst_name: "inst2".into(),
-                    cell_name: "IsAbstrakt".into(),
-                    cell: CellRef::Abstract(c2),
-                    p0: Point::new(200, 20),
-                    reflect: false,
-                    angle: None,
-                },
-                Instance {
-                    inst_name: "inst4".into(),
-                    cell_name: "IsAbstrakt".into(),
-                    cell: CellRef::Abstract(c2),
-                    p0: Point::new(400, 40),
-                    reflect: false,
-                    angle: None,
-                },
-            ],
-            assignments: vec![
-            //     Assign {
-            //     net: "clk".into(),
-            //     at: TrackIntersection {
-            //         layer: 1,
-            //         track: 22,
-            //         at: 22,
-            //         relz: RelZ::Above,
-            //     },
-            // }
-            ],
-            cuts: Vec::new(),
-        });
-        exports(lib)
-    }
-    /// Export [Library] `lib` in several formats
-    fn exports(lib: Library) -> LayoutResult<()> {
-        save_yaml(&lib, &resource(&format!("{}.yaml", &lib.name)))?;
-        let raw = conv::RawConverter::convert(lib, stack())?;
-        save_yaml(&raw, &resource(&format!("{}.raw.yaml", &raw.name)))?;
-        let gds = raw.to_gds()?;
-        save_yaml(&gds, &resource(&format!("{}.gds.yaml", &gds.name)))?;
-        gds.save(&resource(&format!("{}.gds", &gds.name)))?;
-        Ok(())
-    }
-    #[allow(unused_imports)]
-    use std::io::prelude::*;
-    #[test]
-    fn stack_to_yaml() -> LayoutResult<()> {
-        save_yaml(&stack(), &resource("stack.yaml"))
-    }
-    /// Grab the full path of resource-file `fname`
-    fn resource(fname: &str) -> String {
-        format!("{}/resources/{}", env!("CARGO_MANIFEST_DIR"), fname)
-    }
-    /// Save any [Serialize]-able type to yaml-format file `fname`
-    fn save_yaml(data: &impl Serialize, fname: &str) -> LayoutResult<()> {
-        use std::fs::File;
-        use std::io::BufWriter;
-        let mut file = BufWriter::new(File::create(fname).unwrap());
-        let yaml = serde_yaml::to_string(data).unwrap();
-        file.write_all(yaml.as_bytes()).unwrap();
-        file.flush().unwrap();
-        Ok(())
-    }
-}
+mod tests;
