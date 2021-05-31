@@ -2,8 +2,8 @@
 //! # Gds21 Integrated Circuit Layout Parser & Writer
 //!
 //! GDSII is the IC industry's de facto standard for storing and sharing layout data.
-//! Gds21 is a library for reading and creating GDSII data, similar to and largely inspired by libraries such as [gdstk](https://github.com/heitzmann/gdstk) and its predecessor [gdspy](https://github.com/heitzmann/gdspy). 
-//! Gds21 differs in being designed primarily as an interface layer to GDSII for the larger [Layout21](https://github.com/dan-fritchman/Layout21) library. 
+//! Gds21 is a library for reading and creating GDSII data, similar to and largely inspired by libraries such as [gdstk](https://github.com/heitzmann/gdstk) and its predecessor [gdspy](https://github.com/heitzmann/gdspy).
+//! Gds21 differs in being designed primarily as an interface layer to GDSII for the larger [Layout21](https://github.com/dan-fritchman/Layout21) library.
 //! Reading and generating GDSII-format data are primary goals;
 //! offering ease-of-use functionality for more elaborate manipulations of GDS data is not.
 //! (Although these manipulations can be performed on Gds21's data structures).
@@ -771,6 +771,21 @@ pub struct GdsProperty {
     /// Attribute Value
     pub value: String,
 }
+impl GdsProperty {
+    /// Parse from record-iterator `it`
+    /// Numeric attribute `attr` is collected beforehand,
+    /// as its record is the indication to parse an (attr, value) pair.
+    fn parse(it: &mut GdsReaderIter, attr: i16) -> Result<Self, GdsError> {
+        // `PropAttr` records must *immediately* be followed by `PropValue`,
+        // or parsing/ decoding fails.
+        let value = if let Some(GdsRecord::PropValue(v)) = it.next()? {
+            v
+        } else {
+            return Err(GdsError::Decode);
+        };
+        Ok(Self { attr, value })
+    }
+}
 ///
 /// # Gds Path Element
 ///
@@ -809,11 +824,15 @@ pub struct GdsPath {
     #[serde(default)]
     #[builder(default, setter(strip_option))]
     pub plex: Option<GdsPlex>,
+    #[serde(default)]
+    #[builder(default, setter(strip_option))]
+    pub properties: Vec<GdsProperty>,
 }
 impl GdsPath {
     /// Parse from record-iterator `it`
     fn parse(it: &mut GdsReaderIter) -> Result<GdsPath, GdsError> {
         let mut b = GdsPathBuilder::default();
+        let mut props: Vec<GdsProperty> = Vec::new();
 
         while let Some(r) = it.next()? {
             if let GdsRecord::EndElement = r {
@@ -829,13 +848,15 @@ impl GdsPath {
                 GdsRecord::EndExtn(d) => b.end_extn(d),
                 GdsRecord::Plex(d) => b.plex(GdsPlex(d)),
                 GdsRecord::ElemFlags(d0, d1) => b.elflags(GdsElemFlags(d0, d1)),
-                GdsRecord::PropAttr(_) | GdsRecord::PropValue(_) => {
-                    return Err(GdsError::Unsupported(Some(r), Some(GdsContext::Path)))
+                GdsRecord::PropAttr(attr) => {
+                    props.push(GdsProperty::parse(it, attr)?);
+                    &mut b
                 }
                 // Invalid
                 _ => return Err(GdsError::RecordContext(r, GdsContext::Path)),
             };
         }
+        b.properties(props);
         Ok(b.build()?)
     }
 }
@@ -864,6 +885,10 @@ impl ToRecords for GdsPath {
         }
         if let Some(ref e) = self.plex {
             records.push(GdsRecord::Plex(e.0));
+        }
+        for prop in self.properties.iter() {
+            records.push(GdsRecord::PropAttr(prop.attr));
+            records.push(GdsRecord::PropValue(prop.value.clone()));
         }
         records.push(GdsRecord::EndElement);
         records
@@ -901,11 +926,15 @@ pub struct GdsBoundary {
     #[serde(default)]
     #[builder(default, setter(strip_option))]
     pub plex: Option<GdsPlex>,
+    #[serde(default)]
+    #[builder(default, setter(strip_option))]
+    pub properties: Vec<GdsProperty>,
 }
 impl GdsBoundary {
     /// Parse from record-iterator `it`
     fn parse(it: &mut GdsReaderIter) -> Result<GdsBoundary, GdsError> {
         let mut b = GdsBoundaryBuilder::default();
+        let mut props: Vec<GdsProperty> = Vec::new();
 
         while let Some(r) = it.next()? {
             if let GdsRecord::EndElement = r {
@@ -917,13 +946,15 @@ impl GdsBoundary {
                 GdsRecord::Xy(d) => b.xy(d),
                 GdsRecord::Plex(d) => b.plex(GdsPlex(d)),
                 GdsRecord::ElemFlags(d0, d1) => b.elflags(GdsElemFlags(d0, d1)),
-                GdsRecord::PropAttr(_) | GdsRecord::PropValue(_) => {
-                    return Err(GdsError::Unsupported(Some(r), Some(GdsContext::Boundary)))
+                GdsRecord::PropAttr(attr) => {
+                    props.push(GdsProperty::parse(it, attr)?);
+                    &mut b
                 }
                 // Invalid
                 _ => return Err(GdsError::RecordContext(r, GdsContext::Boundary)),
             };
         }
+        b.properties(props);
         Ok(b.build()?)
     }
 }
@@ -940,6 +971,10 @@ impl ToRecords for GdsBoundary {
         }
         if let Some(ref e) = self.plex {
             records.push(GdsRecord::Plex(e.0));
+        }
+        for prop in self.properties.iter() {
+            records.push(GdsRecord::PropAttr(prop.attr));
+            records.push(GdsRecord::PropValue(prop.value.clone()));
         }
         records.push(GdsRecord::EndElement);
         records
@@ -978,10 +1013,14 @@ pub struct GdsStructRef {
     #[serde(default)]
     #[builder(default, setter(strip_option))]
     pub plex: Option<GdsPlex>,
+    #[serde(default)]
+    #[builder(default, setter(strip_option))]
+    pub properties: Vec<GdsProperty>,
 }
 impl GdsStructRef {
     fn parse(it: &mut GdsReaderIter) -> Result<GdsStructRef, GdsError> {
         let mut b = GdsStructRefBuilder::default();
+        let mut props: Vec<GdsProperty> = Vec::new();
 
         while let Some(r) = it.next()? {
             if let GdsRecord::EndElement = r {
@@ -993,15 +1032,16 @@ impl GdsStructRef {
                 GdsRecord::Plex(d) => b.plex(GdsPlex(d)),
                 GdsRecord::ElemFlags(d0, d1) => b.elflags(GdsElemFlags(d0, d1)),
                 GdsRecord::Strans(d0, d1) => b.strans(GdsStrans::parse(it, d0, d1)?),
-                GdsRecord::PropAttr(_) | GdsRecord::PropValue(_) => {
-                    return Err(GdsError::Unsupported(Some(r), Some(GdsContext::StructRef)))
+                GdsRecord::PropAttr(attr) => {
+                    props.push(GdsProperty::parse(it, attr)?);
+                    &mut b
                 }
                 // Invalid
                 _ => return Err(GdsError::RecordContext(r, GdsContext::StructRef)),
             };
         }
-        let b = b.build()?;
-        Ok(b)
+        b.properties(props);
+        Ok(b.build()?)
     }
 }
 impl ToRecords for GdsStructRef {
@@ -1020,6 +1060,10 @@ impl ToRecords for GdsStructRef {
         }
         if let Some(ref e) = self.plex {
             records.push(GdsRecord::Plex(e.0));
+        }
+        for prop in self.properties.iter() {
+            records.push(GdsRecord::PropAttr(prop.attr));
+            records.push(GdsRecord::PropValue(prop.value.clone()));
         }
         records.push(GdsRecord::EndElement);
         records
@@ -1058,10 +1102,14 @@ pub struct GdsArrayRef {
     #[serde(default)]
     #[builder(default, setter(strip_option))]
     pub plex: Option<GdsPlex>,
+    #[serde(default)]
+    #[builder(default, setter(strip_option))]
+    pub properties: Vec<GdsProperty>,
 }
 impl GdsArrayRef {
     fn parse(it: &mut GdsReaderIter) -> Result<GdsArrayRef, GdsError> {
         let mut b = GdsArrayRefBuilder::default();
+        let mut props: Vec<GdsProperty> = Vec::new();
 
         while let Some(r) = it.next()? {
             if let GdsRecord::EndElement = r {
@@ -1077,15 +1125,16 @@ impl GdsArrayRef {
                 GdsRecord::Plex(d) => b.plex(GdsPlex(d)),
                 GdsRecord::ElemFlags(d0, d1) => b.elflags(GdsElemFlags(d0, d1)),
                 GdsRecord::Strans(d0, d1) => b.strans(GdsStrans::parse(it, d0, d1)?),
-                GdsRecord::PropAttr(_) | GdsRecord::PropValue(_) => {
-                    return Err(GdsError::Unsupported(Some(r), Some(GdsContext::ArrayRef)))
+                GdsRecord::PropAttr(attr) => {
+                    props.push(GdsProperty::parse(it, attr)?);
+                    &mut b
                 }
                 // Invalid
                 _ => return Err(GdsError::RecordContext(r, GdsContext::ArrayRef)),
             };
         }
-        let b = b.build()?;
-        Ok(b)
+        b.properties(props);
+        Ok(b.build()?)
     }
 }
 impl ToRecords for GdsArrayRef {
@@ -1108,6 +1157,10 @@ impl ToRecords for GdsArrayRef {
         }
         if let Some(ref e) = self.plex {
             records.push(GdsRecord::Plex(e.0));
+        }
+        for prop in self.properties.iter() {
+            records.push(GdsRecord::PropAttr(prop.attr));
+            records.push(GdsRecord::PropValue(prop.value.clone()));
         }
         records.push(GdsRecord::EndElement);
         records
@@ -1154,12 +1207,16 @@ pub struct GdsTextElem {
     #[serde(default)]
     #[builder(default, setter(strip_option))]
     pub plex: Option<GdsPlex>,
+    #[serde(default)]
+    #[builder(default, setter(strip_option))]
+    pub properties: Vec<GdsProperty>,
 }
 impl GdsTextElem {
     /// Parse a [GdsTextElem] from an iterator of [GdsRecord]s.
     /// Assumes the initial `Text` record has already been parsed.
     fn parse(it: &mut GdsReaderIter) -> Result<GdsTextElem, GdsError> {
         let mut b = GdsTextElemBuilder::default();
+        let mut props: Vec<GdsProperty> = Vec::new();
 
         while let Some(r) = it.next()? {
             if let GdsRecord::EndElement = r {
@@ -1176,13 +1233,15 @@ impl GdsTextElem {
                 GdsRecord::Plex(d) => b.plex(GdsPlex(d)),
                 GdsRecord::ElemFlags(d0, d1) => b.elflags(GdsElemFlags(d0, d1)),
                 GdsRecord::Strans(d0, d1) => b.strans(GdsStrans::parse(it, d0, d1)?),
-                GdsRecord::PropAttr(_) | GdsRecord::PropValue(_) => {
-                    return Err(GdsError::Unsupported(Some(r), Some(GdsContext::Boundary)))
+                GdsRecord::PropAttr(attr) => {
+                    props.push(GdsProperty::parse(it, attr)?);
+                    &mut b
                 }
                 // Invalid
                 _ => return Err(GdsError::RecordContext(r, GdsContext::Text)),
             };
         }
+        b.properties(props);
         Ok(b.build()?)
     }
 }
@@ -1214,6 +1273,10 @@ impl ToRecords for GdsTextElem {
         if let Some(ref e) = self.plex {
             records.push(GdsRecord::Plex(e.0));
         }
+        for prop in self.properties.iter() {
+            records.push(GdsRecord::PropAttr(prop.attr));
+            records.push(GdsRecord::PropValue(prop.value.clone()));
+        }
         records.push(GdsRecord::EndElement);
         records
     }
@@ -1244,10 +1307,14 @@ pub struct GdsNode {
     #[serde(default)]
     #[builder(default, setter(strip_option))]
     pub plex: Option<GdsPlex>,
+    #[serde(default)]
+    #[builder(default, setter(strip_option))]
+    pub properties: Vec<GdsProperty>,
 }
 impl GdsNode {
     fn parse(it: &mut GdsReaderIter) -> Result<GdsNode, GdsError> {
         let mut b = GdsNodeBuilder::default();
+        let mut props: Vec<GdsProperty> = Vec::new();
 
         while let Some(r) = it.next()? {
             if let GdsRecord::EndElement = r {
@@ -1259,13 +1326,15 @@ impl GdsNode {
                 GdsRecord::Xy(d) => b.xy(d),
                 GdsRecord::Plex(d) => b.plex(GdsPlex(d)),
                 GdsRecord::ElemFlags(d0, d1) => b.elflags(GdsElemFlags(d0, d1)),
-                GdsRecord::PropAttr(_) | GdsRecord::PropValue(_) => {
-                    return Err(GdsError::Unsupported(Some(r), Some(GdsContext::Node)))
+                GdsRecord::PropAttr(attr) => {
+                    props.push(GdsProperty::parse(it, attr)?);
+                    &mut b
                 }
                 // Invalid
                 _ => return Err(GdsError::RecordContext(r, GdsContext::Node)),
             };
         }
+        b.properties(props);
         Ok(b.build()?)
     }
 }
@@ -1282,6 +1351,10 @@ impl ToRecords for GdsNode {
         }
         if let Some(ref e) = self.plex {
             records.push(GdsRecord::Plex(e.0));
+        }
+        for prop in self.properties.iter() {
+            records.push(GdsRecord::PropAttr(prop.attr));
+            records.push(GdsRecord::PropValue(prop.value.clone()));
         }
         records.push(GdsRecord::EndElement);
         records
@@ -1313,10 +1386,14 @@ pub struct GdsBox {
     #[serde(default)]
     #[builder(default, setter(strip_option))]
     pub plex: Option<GdsPlex>,
+    #[serde(default)]
+    #[builder(default, setter(strip_option))]
+    pub properties: Vec<GdsProperty>,
 }
 impl GdsBox {
     fn parse(it: &mut GdsReaderIter) -> Result<GdsBox, GdsError> {
         let mut b = GdsBoxBuilder::default();
+        let mut props: Vec<GdsProperty> = Vec::new();
 
         while let Some(r) = it.next()? {
             if let GdsRecord::EndElement = r {
@@ -1328,13 +1405,15 @@ impl GdsBox {
                 GdsRecord::Xy(d) => b.xy(d),
                 GdsRecord::Plex(d) => b.plex(GdsPlex(d)),
                 GdsRecord::ElemFlags(d0, d1) => b.elflags(GdsElemFlags(d0, d1)),
-                GdsRecord::PropAttr(_) | GdsRecord::PropValue(_) => {
-                    return Err(GdsError::Unsupported(Some(r), Some(GdsContext::Box)))
+                GdsRecord::PropAttr(attr) => {
+                    props.push(GdsProperty::parse(it, attr)?);
+                    &mut b
                 }
                 // Invalid
                 _ => return Err(GdsError::RecordContext(r, GdsContext::Box)),
             };
         }
+        b.properties(props);
         Ok(b.build()?)
     }
 }
@@ -1352,6 +1431,10 @@ impl ToRecords for GdsBox {
         if let Some(ref e) = self.plex {
             records.push(GdsRecord::Plex(e.0));
         }
+        for prop in self.properties.iter() {
+            records.push(GdsRecord::PropAttr(prop.attr));
+            records.push(GdsRecord::PropValue(prop.value.clone()));
+        }
         records.push(GdsRecord::EndElement);
         records
     }
@@ -1359,10 +1442,14 @@ impl ToRecords for GdsBox {
 ///
 /// # Gds Element Enumeration  
 ///
+/// Primary union of geometric elements, instances, and arrays which comprise a GDSII struct (cell).
+///
 /// Spec BNF:
 /// ```text
 /// {<boundary> | <path> | <SREF> | <AREF> | <text> | <node> | <box>} {<property>}* ENDEL
 /// ```
+///
+/// Note the `properties` vectors are pushed down to each enum variant.
 ///
 #[enum_dispatch]
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
@@ -1480,7 +1567,7 @@ impl GdsStruct {
         strukt.dates(GdsDateTimes::parse(dates)?);
         // Parse [GdsElement] records until hitting a [GdsRecord::EndStruct]
         let mut elems = Vec::<GdsElement>::new();
-        while let Some(r) = it.next()? { 
+        while let Some(r) = it.next()? {
             match r {
                 GdsRecord::EndStruct => break, // End-of-struct
                 GdsRecord::StructName(d) => {
@@ -1832,6 +1919,16 @@ mod tests {
         Ok(())
     }
     #[test]
+    fn it_has_gds_properties() -> Result<(), GdsError> {
+        // Read a sample
+        let lib = GdsLibrary::load(&resource("has_properties.gds"))?;
+        // Check it against golden data
+        check(&lib, &resource("has_properties.json"));
+        // And check it round-trips to file
+        roundtrip(&lib)?;
+        Ok(())
+    }
+    #[test]
     fn it_instantiates() -> Result<(), GdsError> {
         // Read a sample, add a cell which instantiates it
         let fname = format!("{}/resources/sample1.gds", env!("CARGO_MANIFEST_DIR"));
@@ -1846,6 +1943,7 @@ mod tests {
                 strans: None,
                 elflags: None,
                 plex: None,
+                properties: Vec::new(),
             })],
         };
         lib.structs.push(s);
@@ -1872,6 +1970,7 @@ mod tests {
                 strans: None,
                 elflags: None,
                 plex: None,
+                properties: Vec::new(),
             })],
         };
         lib.structs.push(s);

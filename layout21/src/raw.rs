@@ -221,8 +221,7 @@ impl GdsConverter {
             name: inst.cell_name.clone(),
             xy: vec![inst.p0.x as i32, inst.p0.y as i32],
             strans: None, //FIXME!
-            elflags: None,
-            plex: None,
+            ..Default::default()
         }
     }
     /// Convert an [Element] into one or more [gds21::GdsElement]
@@ -316,8 +315,7 @@ impl GdsConverter {
             rows: arr.rows as i16,
             cols: arr.cols as i16,
             strans: None, //FIXME!
-            elflags: None,
-            plex: None,
+            ..Default::default()
         }
     }
 }
