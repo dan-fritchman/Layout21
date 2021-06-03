@@ -39,7 +39,7 @@
                     "kind": "lib"
                 }
             },
-            "args": ["create_lib"],
+            "args": [],
             "cwd": "${workspaceFolder}"
         },
         {

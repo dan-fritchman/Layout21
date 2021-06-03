@@ -182,7 +182,7 @@ impl GdsRecordType {
 /// and converting one-entry arrays into scalars.
 /// Invalid record-types are not included.
 ///
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum GdsRecord {
     Header { version: i16 },
     BgnLib { dates: Vec<i16> },
@@ -686,6 +686,7 @@ impl GdsStrans {
     }
 }
 impl ToRecords for GdsStrans {
+    /// Convert to a Vector of [GdsRecord], ordered as dictated by the GDSII spec BNF.
     fn to_records(&self) -> Vec<GdsRecord> {
         let mut records = vec![GdsRecord::Strans(
             (self.reflected as u8) << 7,
@@ -861,18 +862,22 @@ impl GdsPath {
     }
 }
 impl ToRecords for GdsPath {
+    /// Convert to a Vector of [GdsRecord], ordered as dictated by the GDSII spec BNF.
     fn to_records(&self) -> Vec<GdsRecord> {
-        let mut records = vec![
-            GdsRecord::Path,
-            GdsRecord::Layer(self.layer),
-            GdsRecord::DataType(self.datatype),
-            GdsRecord::Xy(self.xy.clone()),
-        ];
-        if let Some(ref e) = self.width {
-            records.push(GdsRecord::Width(*e));
+        let mut records = vec![GdsRecord::Path];
+        if let Some(ref e) = self.elflags {
+            records.push(GdsRecord::ElemFlags(e.0, e.1));
         }
+        if let Some(ref e) = self.plex {
+            records.push(GdsRecord::Plex(e.0));
+        }
+        records.push(GdsRecord::Layer(self.layer));
+        records.push(GdsRecord::DataType(self.datatype));
         if let Some(ref e) = self.path_type {
             records.push(GdsRecord::PathType(*e));
+        }
+        if let Some(ref e) = self.width {
+            records.push(GdsRecord::Width(*e));
         }
         if let Some(ref e) = self.begin_extn {
             records.push(GdsRecord::BeginExtn(*e));
@@ -880,12 +885,7 @@ impl ToRecords for GdsPath {
         if let Some(ref e) = self.end_extn {
             records.push(GdsRecord::EndExtn(*e));
         }
-        if let Some(ref e) = self.elflags {
-            records.push(GdsRecord::ElemFlags(e.0, e.1));
-        }
-        if let Some(ref e) = self.plex {
-            records.push(GdsRecord::Plex(e.0));
-        }
+        records.push(GdsRecord::Xy(self.xy.clone()));
         for prop in self.properties.iter() {
             records.push(GdsRecord::PropAttr(prop.attr));
             records.push(GdsRecord::PropValue(prop.value.clone()));
@@ -959,19 +959,18 @@ impl GdsBoundary {
     }
 }
 impl ToRecords for GdsBoundary {
+    /// Convert to a Vector of [GdsRecord], ordered as dictated by the GDSII spec BNF.
     fn to_records(&self) -> Vec<GdsRecord> {
-        let mut records = vec![
-            GdsRecord::Boundary,
-            GdsRecord::Layer(self.layer),
-            GdsRecord::DataType(self.datatype),
-            GdsRecord::Xy(self.xy.clone()),
-        ];
+        let mut records = vec![GdsRecord::Boundary];
         if let Some(ref e) = self.elflags {
             records.push(GdsRecord::ElemFlags(e.0, e.1));
         }
         if let Some(ref e) = self.plex {
             records.push(GdsRecord::Plex(e.0));
         }
+        records.push(GdsRecord::Layer(self.layer));
+        records.push(GdsRecord::DataType(self.datatype));
+        records.push(GdsRecord::Xy(self.xy.clone()));
         for prop in self.properties.iter() {
             records.push(GdsRecord::PropAttr(prop.attr));
             records.push(GdsRecord::PropValue(prop.value.clone()));
@@ -1045,22 +1044,21 @@ impl GdsStructRef {
     }
 }
 impl ToRecords for GdsStructRef {
+    /// Convert to a Vector of [GdsRecord], ordered as dictated by the GDSII spec BNF.
     fn to_records(&self) -> Vec<GdsRecord> {
-        let mut records = vec![
-            GdsRecord::StructRef,
-            GdsRecord::StructRefName(self.name.clone()),
-            GdsRecord::Xy(self.xy.clone()),
-        ];
-        if let Some(ref e) = self.strans {
-            let rs = e.to_records();
-            records.extend(rs);
-        }
+        let mut records = vec![GdsRecord::StructRef];
         if let Some(ref e) = self.elflags {
             records.push(GdsRecord::ElemFlags(e.0, e.1));
         }
         if let Some(ref e) = self.plex {
             records.push(GdsRecord::Plex(e.0));
         }
+        records.push(GdsRecord::StructRefName(self.name.clone()));
+        if let Some(ref e) = self.strans {
+            let rs = e.to_records();
+            records.extend(rs);
+        }
+        records.push(GdsRecord::Xy(self.xy.clone()));
         for prop in self.properties.iter() {
             records.push(GdsRecord::PropAttr(prop.attr));
             records.push(GdsRecord::PropValue(prop.value.clone()));
@@ -1138,26 +1136,25 @@ impl GdsArrayRef {
     }
 }
 impl ToRecords for GdsArrayRef {
+    /// Convert to a Vector of [GdsRecord], ordered as dictated by the GDSII spec BNF.
     fn to_records(&self) -> Vec<GdsRecord> {
-        let mut records = vec![
-            GdsRecord::ArrayRef,
-            GdsRecord::StructRefName(self.name.clone()),
-            GdsRecord::Xy(self.xy.clone()),
-            GdsRecord::ColRow {
-                cols: self.cols,
-                rows: self.rows,
-            },
-        ];
-        if let Some(ref e) = self.strans {
-            let rs = e.to_records();
-            records.extend(rs);
-        }
+        let mut records = vec![GdsRecord::ArrayRef];
         if let Some(ref e) = self.elflags {
             records.push(GdsRecord::ElemFlags(e.0, e.1));
         }
         if let Some(ref e) = self.plex {
             records.push(GdsRecord::Plex(e.0));
         }
+        records.push(GdsRecord::StructRefName(self.name.clone()));
+        if let Some(ref e) = self.strans {
+            let rs = e.to_records();
+            records.extend(rs);
+        }
+        records.push(GdsRecord::ColRow {
+            cols: self.cols,
+            rows: self.rows,
+        });
+        records.push(GdsRecord::Xy(self.xy.clone()));
         for prop in self.properties.iter() {
             records.push(GdsRecord::PropAttr(prop.attr));
             records.push(GdsRecord::PropValue(prop.value.clone()));
@@ -1246,14 +1243,17 @@ impl GdsTextElem {
     }
 }
 impl ToRecords for GdsTextElem {
+    /// Convert to a Vector of [GdsRecord], ordered as dictated by the GDSII spec BNF.
     fn to_records(&self) -> Vec<GdsRecord> {
-        let mut records = vec![
-            GdsRecord::Text,
-            GdsRecord::Layer(self.layer),
-            GdsRecord::TextType(self.texttype),
-            GdsRecord::String(self.string.clone()),
-            GdsRecord::Xy(self.xy.clone()),
-        ];
+        let mut records = vec![GdsRecord::Text];
+        if let Some(ref e) = self.elflags {
+            records.push(GdsRecord::ElemFlags(e.0, e.1));
+        }
+        if let Some(ref e) = self.plex {
+            records.push(GdsRecord::Plex(e.0));
+        }
+        records.push(GdsRecord::Layer(self.layer));
+        records.push(GdsRecord::TextType(self.texttype));
         if let Some(ref e) = self.presentation {
             records.push(GdsRecord::Presentation(e.0, e.1));
         }
@@ -1267,12 +1267,8 @@ impl ToRecords for GdsTextElem {
             let rs = e.to_records();
             records.extend(rs);
         }
-        if let Some(ref e) = self.elflags {
-            records.push(GdsRecord::ElemFlags(e.0, e.1));
-        }
-        if let Some(ref e) = self.plex {
-            records.push(GdsRecord::Plex(e.0));
-        }
+        records.push(GdsRecord::Xy(self.xy.clone()));
+        records.push(GdsRecord::String(self.string.clone()));
         for prop in self.properties.iter() {
             records.push(GdsRecord::PropAttr(prop.attr));
             records.push(GdsRecord::PropValue(prop.value.clone()));
@@ -1339,19 +1335,18 @@ impl GdsNode {
     }
 }
 impl ToRecords for GdsNode {
+    /// Convert to a Vector of [GdsRecord], ordered as dictated by the GDSII spec BNF.
     fn to_records(&self) -> Vec<GdsRecord> {
-        let mut records = vec![
-            GdsRecord::Node,
-            GdsRecord::Layer(self.layer),
-            GdsRecord::Nodetype(self.nodetype),
-            GdsRecord::Xy(self.xy.clone()),
-        ];
+        let mut records = vec![GdsRecord::Node];
         if let Some(ref e) = self.elflags {
             records.push(GdsRecord::ElemFlags(e.0, e.1));
         }
         if let Some(ref e) = self.plex {
             records.push(GdsRecord::Plex(e.0));
         }
+        records.push(GdsRecord::Layer(self.layer));
+        records.push(GdsRecord::Nodetype(self.nodetype));
+        records.push(GdsRecord::Xy(self.xy.clone()));
         for prop in self.properties.iter() {
             records.push(GdsRecord::PropAttr(prop.attr));
             records.push(GdsRecord::PropValue(prop.value.clone()));
@@ -1418,19 +1413,18 @@ impl GdsBox {
     }
 }
 impl ToRecords for GdsBox {
+    /// Convert to a Vector of [GdsRecord], ordered as dictated by the GDSII spec BNF.
     fn to_records(&self) -> Vec<GdsRecord> {
-        let mut records = vec![
-            GdsRecord::Box,
-            GdsRecord::Layer(self.layer),
-            GdsRecord::BoxType(self.boxtype),
-            GdsRecord::Xy(self.xy.clone()),
-        ];
+        let mut records = vec![GdsRecord::Box];
         if let Some(ref e) = self.elflags {
             records.push(GdsRecord::ElemFlags(e.0, e.1));
         }
         if let Some(ref e) = self.plex {
             records.push(GdsRecord::Plex(e.0));
         }
+        records.push(GdsRecord::Layer(self.layer));
+        records.push(GdsRecord::BoxType(self.boxtype));
+        records.push(GdsRecord::Xy(self.xy.clone()));
         for prop in self.properties.iter() {
             records.push(GdsRecord::PropAttr(prop.attr));
             records.push(GdsRecord::PropValue(prop.value.clone()));
@@ -1467,6 +1461,7 @@ pub enum GdsElement {
 /// Dispatched from the [GdsElement] enum by the `enum_dispatch` macros.
 #[enum_dispatch(GdsElement)]
 pub trait ToRecords {
+    /// Convert to a Vector of [GdsRecord], ordered as dictated by the GDSII spec BNF.
     fn to_records(&self) -> Vec<GdsRecord>;
 }
 /// # Gds Modification Dates & Times
@@ -1787,6 +1782,8 @@ struct GdsReaderIter {
     rdr: BufReader<File>,
     /// Next record, stored for peeking
     nxt: Option<GdsRecord>,
+    /// Number of records read
+    numread: usize,
 }
 impl GdsReaderIter {
     /// Create a new GdsReader iterator for the file at path `fname`
@@ -1797,7 +1794,8 @@ impl GdsReaderIter {
     fn new(mut rdr: BufReader<File>) -> Result<GdsReaderIter, GdsError> {
         // Read our first record
         let nxt = Some(GdsRecord::decode(&mut rdr)?);
-        Ok(GdsReaderIter { rdr, nxt })
+        let numread = 0;
+        Ok(GdsReaderIter { rdr, nxt, numread })
     }
     /// Advance our iterator and return the next element
     fn next(&mut self) -> Result<Option<GdsRecord>, GdsError> {
@@ -1807,11 +1805,42 @@ impl GdsReaderIter {
         // Decode a new Record and swap it with our `nxt`
         let mut rv = Some(GdsRecord::decode(&mut self.rdr)?);
         mem::swap(&mut rv, &mut self.nxt);
+        self.numread += 1;
+        // if self.numread > 34180 {
+        //     println!("somewhere around here we guess");
+        // }
         Ok(rv)
     }
     /// Peek at our next record, without advancing
     fn peek(&self) -> &Option<GdsRecord> {
         &self.nxt
+    }
+    /// JSON-Serialize and write (all) contents of the Iterator to `writer`
+    fn write(&mut self, writer: &mut impl Write) -> Result<(), GdsError> {
+        while let Some(r) = self.next()? {
+            let entry: (usize, GdsRecord) = (self.numread, r);
+            let s = serde_json::to_string(&entry).unwrap();
+            write!(writer, "\t")?;
+            writer.write_all(s.as_bytes()).unwrap();
+            write!(writer, ",\n")?;
+        }
+        Ok(())
+    }
+    /// Open a GDS file `gds` and write all GdsRecords to JSON file `json`
+    fn dump(gds: &str, json: &str) -> Result<(), GdsError> {
+        // This streams one record at a time, rather than loading all into memory.
+
+        // Create a ReaderIter from `gds`
+        let mut myself = Self::open(gds)?;
+        // Create the JSON file
+        let mut w = BufWriter::new(File::create(json)?);
+        // Write it as a JSON list/sequence; add the opening bracket
+        write!(w, "[\n")?;
+        // Write all the records
+        myself.write(&mut w)?;
+        // And close the list
+        write!(w, "]\n")?;
+        Ok(())
     }
 }
 /// # Gds Layer Spec
@@ -1908,6 +1937,11 @@ mod tests {
         let fname = format!("{}/resources/sample1.gds", env!("CARGO_MANIFEST_DIR"));
         let lib = GdsLibrary::load(&fname)?;
         check(&lib, &resource("sample1.json"));
+        Ok(())
+    }
+    #[test]
+    fn it_dumps_records() -> Result<(), GdsError> {
+        GdsReaderIter::dump(&resource("sample1.gds"), &resource("sample1.records.json"))?;
         Ok(())
     }
     #[test]
