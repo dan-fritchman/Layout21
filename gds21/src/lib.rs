@@ -63,6 +63,7 @@
 //! ```
 //!
 
+use std::convert::TryFrom;
 use std::fmt;
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
@@ -245,9 +246,9 @@ impl GdsRecord {
                 return Err(GdsError::Decode); // Unexpected end-of-file without `EndLib`
             }
             Err(_) => return Err(GdsError::Decode), // Some other kinda error; raise it.
-            Ok(num) if num < 4 => return Err(GdsError::RecordLen(num)), // Invalid (too short) length; throw Error.
-            Ok(num) if num % 2 != 0 => return Err(GdsError::RecordLen(num)), // Invalid (odd) length; throw Error.
-            Ok(num) => num,                                                  // The normal case
+            Ok(num) if num < 4 => return Err(GdsError::RecordLen(num as usize)), // Invalid (too short) length; throw Error.
+            Ok(num) if num % 2 != 0 => return Err(GdsError::RecordLen(num as usize)), // Invalid (odd) length; throw Error.
+            Ok(num) => num, // The normal case
         };
         let len = len - 4; // Strip out the four header-bytes
                            // Read and decode its RecordType
@@ -420,9 +421,12 @@ impl GdsRecord {
             GdsRecord::SrfName(s) => (GdsRecordType::SrfName, Str, gds_strlen(s)),
             GdsRecord::LibSecur(_) => (GdsRecordType::LibSecur, I16, 2),
         };
-
-        // Send those header-bytes to the writer
-        writer.write_u16::<BigEndian>(len as u16 + 4)?; // Include the four header bytes in total-length
+        // Send those header-bytes to the writer.
+        // Include the four header bytes in total-length.
+        match u16::try_from(len + 4) {
+            Ok(val) => writer.write_u16::<BigEndian>(val)?,
+            Err(_) => return Err(GdsError::RecordLen(len)),
+        };
         writer.write_u8(rtype as u8)?;
         writer.write_u8(dtype as u8)?;
 
@@ -1885,37 +1889,44 @@ pub enum GdsError {
     /// Record in an invalid context
     RecordContext(GdsRecord, GdsContext),
     /// Invalid record length
-    RecordLen(u16),
+    RecordLen(usize),
     /// Invalid data type
     InvalidDataType(u8),
     /// Invalid record type
     InvalidRecordType(u8),
     /// Unsupported feature, in the decoded context
     Unsupported(Option<GdsRecord>, Option<GdsContext>),
+    /// File opening, reading, and writing
+    FileIO(String),
     /// Other decoding errors
     Decode,
     /// Other encoding errors
     Encode,
+    /// Other errors
+    Other(String),
 }
 impl std::fmt::Display for GdsError {
+    /// Display a [GdsError].
+    /// This functionally delegates to the (derived) [std::fmt::Debug] implementation.
+    /// Maybe more info that wanted in some cases. Certainly enough.
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "GdsError") // FIXME: detail here
+        write!(f, "{:?}", self)
     }
 }
 impl std::error::Error for GdsError {}
 impl From<std::io::Error> for GdsError {
-    fn from(_e: std::io::Error) -> Self {
-        GdsError::Decode
+    fn from(e: std::io::Error) -> Self {
+        GdsError::FileIO(format!("{:?}", e))
     }
 }
 impl From<std::str::Utf8Error> for GdsError {
-    fn from(_e: std::str::Utf8Error) -> Self {
-        GdsError::Decode
+    fn from(e: std::str::Utf8Error) -> Self {
+        GdsError::Other(format!("{:?}", e))
     }
 }
 impl From<String> for GdsError {
-    fn from(_e: String) -> Self {
-        GdsError::Decode
+    fn from(e: String) -> Self {
+        GdsError::Other(e)
     }
 }
 
@@ -2014,6 +2025,29 @@ mod tests {
         roundtrip(&lib)?;
         Ok(())
     }
+    #[test]
+    /// Test too-long record length generates an Error
+    fn record_too_long() -> Result<(), GdsError> {
+        let mut lib = GdsLibrary::new("mylib");
+        let mut newcell = GdsStruct::new("mycell");
+        let xy = vec![0; 20_000];
+        newcell.elems.push(
+            GdsBoundary {
+                xy,
+                ..GdsBoundary::default()
+            }
+            .into(),
+        );
+        lib.structs.push(newcell);
+        // This should generate [GdsError::RecordLen]
+        match roundtrip(&lib) {
+            Err(GdsError::RecordLen(_)) => Ok(()),
+            Ok(_) | Err(_) => Err(GdsError::Other(
+                "should generate a [GdsError::RecordLen] error".into(),
+            )),
+        }
+    }
+
     /// Compare `lib` to "golden" data loaded from JSON at path `golden`.
     fn check(lib: &GdsLibrary, fname: &str) {
         // Uncomment this bit to over-write the golden data
