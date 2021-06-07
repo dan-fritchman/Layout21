@@ -97,7 +97,7 @@ impl<'src> LefLexer<'src> {
         tok
     }
     /// Accept a character if it meets predicate-function `f`
-    fn accept(&mut self, f: fn(char) -> bool) -> bool {
+    fn accept(&mut self, f: impl Fn(char) -> bool) -> bool {
         match self.peek_char() {
             Some(ref ch) if f(*ch) => {
                 self.next_char();

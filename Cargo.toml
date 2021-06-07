@@ -1,8 +1,9 @@
 [workspace]
 
 members = [
-	"gds21",
-	"layout21",
-	"layout21macros",
-	"layout21protos",
+  "gds21",
+  "lef21",
+  "layout21",
+  "layout21macros",
+  "layout21protos",
 ]
