@@ -147,17 +147,6 @@ impl<'src> LefLexer<'src> {
     fn accept_char(&mut self, c: char) -> bool {
         self.accept(|a| a == c)
     }
-    /// Lex all of input `src`, collecting into a vector of tokens.
-    /// Primarily used for debug and test;
-    /// parsing instead uses the one-at-a-time token-iterator.
-    fn lex_all(src: &'src str) -> LefResult<Vec<Token>> {
-        let mut lex = LefLexer::new(src)?;
-        let mut toks = Vec::new();
-        while let Some(t) = lex.next_token()? {
-            toks.push(t);
-        }
-        Ok(toks)
-    }
     /// Lexer start state. Grab the next [Token]
     fn lex_one(&mut self) -> LefResult<Option<Token>> {
         while self.peek_char().is_some() {
@@ -181,10 +170,7 @@ impl<'src> LefLexer<'src> {
                 return self.lex_name();
             } else {
                 // Some other, invalid character. Fail.
-                return Err(LefError::Lex {
-                    line: self.line,
-                    pos: self.pos,
-                });
+                return self.err();
             }
         }
         // All done! End of input. Return `None`.
@@ -223,7 +209,7 @@ impl<'src> LefLexer<'src> {
     fn lex_comment(&mut self) -> LefResult<Option<Token>> {
         // First slash has been read. Error if we don't get the second.
         if !self.accept_char('/') {
-            return Err(LefError::Tbd);
+            return self.err();
         }
         // Accept everything until a newline
         while self.accept(|c| c != '\n') {
@@ -241,13 +227,9 @@ impl<'src> LefLexer<'src> {
         let tok = self.emit(TokenType::Name);
         Ok(Some(tok))
     }
-    /// Ignore active characters by bumping our start-index to the current index.
-    fn ignore(&mut self) {
-        self.start = self.pos;
-    }
-    /// Return a [LefError::Lex] for our current position
+    /// Error-Generation Helper 
+    /// Collect our current position and content into a [LefError::Lex]
     fn err<T>(&self) -> LefResult<T> {
-        dbg!(5);
         Err(LefError::Lex {
             line: self.line,
             pos: self.pos,
@@ -285,7 +267,7 @@ struct Token {
 }
 impl Token {
     /// Return a sub-string of input-string `src` over our locations
-    fn substr<'me, 'src>(&self, src: &'src str) -> &'src str {
+    fn substr<'me, 'src>(&'me self, src: &'src str) -> &'src str {
         &src[self.loc.start..self.loc.stop]
     }
 }
@@ -304,20 +286,25 @@ enum TokenType {
 /// Lef Error Enumeration
 #[derive(Debug)]
 pub enum LefError {
-    /// Errors parsing numeric [LefDecimal] values
-    ParseNum(rust_decimal::Error),
-    Io(std::io::Error),
-    Str(String),
+    /// Lexer Errors
     Lex {
         line: usize,
         pos: usize,
     },
+    /// Parser Errors
     Parse {
         string: String,
         line: usize,
         pos: usize,
     },
+    /// Errors parsing numeric [LefDecimal] values
+    ParseNum(rust_decimal::Error),
+    /// File I/O Errors
+    Io(std::io::Error),
+    /// Other wrapped errors, generally from other crates
     Other(Box<dyn std::error::Error>),
+    /// Other string-typed errors, generally from other crates
+    Str(String),
     Tbd,
 }
 impl From<std::io::Error> for LefError {
@@ -397,7 +384,6 @@ impl<'src> LefParser<'src> {
         &self.lex.next_tok
     }
     /// Boolean indication of whether our next Token is of [TokenType] `ttype`.
-    /// Advances and returns
     fn matches(&mut self, ttype: TokenType) -> bool {
         match self.lex.peek_token() {
             Some(t) if t.ttype == ttype => true,
@@ -413,27 +399,33 @@ impl<'src> LefParser<'src> {
             _ => self.err(),
         }
     }
-    /// Assert that the next [Token] is a [TokenType::Name],
-    /// and that its string value matches `name`.
-    /// This is often used for pseudo-keywords,
-    /// such as the "BY" in lines such as "SIZE x BY y".
-    fn expect_name(&mut self, name: &str) -> LefResult<Token> {
-        let tok = self.expect(TokenType::Name)?;
-        let txt = self.txt(&tok);
-        if txt == name {
-            Ok(tok)
-        } else {
-            self.err()
-        }
+    /// Assert the expectation that the next [Token] is of [TokenType] `ttype`.
+    /// Returns the [Token] if so. Returns an [Err] if not.
+    #[inline(always)]
+    fn expect_and_get_str(&mut self, ttype: TokenType) -> LefResult<&str> {
+        let tok = self.expect(ttype)?;
+        Ok(self.txt(&tok))
     }
     /// Assert the next [Token] is of type [TokenType::Name],
     /// and return its string value.
     #[inline(always)]
     fn get_name(&mut self) -> LefResult<&str> {
-        let tok = self.expect(TokenType::Name)?;
-        Ok(self.txt(&tok))
+        self.expect_and_get_str(TokenType::Name)
+    }
+    /// Assert that the next [Token] is a [TokenType::Name],
+    /// and that its string value matches `name`.
+    /// This is often used for pseudo-keywords,
+    /// such as the "BY" in lines such as "SIZE x BY y".
+    fn expect_name(&mut self, name: &str) -> LefResult<()> {
+        let txt = self.get_name()?;
+        if txt == name {
+            Ok(())
+        } else {
+            self.err()
+        }
     }
     /// Retrieve the text-content of lexer [Token] `tok`
+    #[inline(always)]
     fn txt(&self, tok: &Token) -> &str {
         tok.substr(self.src)
     }
@@ -553,7 +545,7 @@ impl<'src> LefParser<'src> {
 
     /// Parse a MACRO::PIN::PORT definition into a [LefPort]
     fn parse_macro_port(&mut self) -> LefResult<LefPort> {
-        let mut class = None;
+        let class = None;
         let mut layers = Vec::new();
         // Note this peeks rather than takes the next token
         // FIXME: this should also assert each entry is of TokenType::Name
@@ -606,9 +598,9 @@ impl<'src> LefParser<'src> {
     /// Parse a [LefGeometry] statement
     /// Each can be a shape or iteration thereof
     fn parse_geometry(&mut self) -> LefResult<LefGeometry> {
-        let mut layer = LefLayerGeometriesBuilder::default();
-        let t = self.expect(TokenType::Name)?;
-        match self.txt(&t) {
+        // let mut layer = LefLayerGeometriesBuilder::default();
+        // let t = self.expect(TokenType::Name)?;
+        match self.get_name()? {
             "RECT" => {
                 if self.matches(TokenType::Name) {
                     unimplemented!();
@@ -685,67 +677,44 @@ impl<'src> LefParser<'src> {
     fn parse_number(&mut self) -> LefResult<LefDecimal> {
         let tok = self.expect(TokenType::Number)?;
         let txt = self.txt(&tok);
-        // if txt.contains(".") {
-        //     // Decimal-valued
-        //     let parts: Vec<&str> = txt.split(".").collect();
-        //     if parts.len() != 2 {
-        //         return self.err();
-        //     }
-        //     let integ: isize = parts[0].parse()?;
-        //     let frac: usize = parts[1].parse()?;
-        //     return Ok(LefDecimal { integ, frac });
-        // }
-        // // Integer-valued
-        // let integ: isize = txt.parse()?;
-        // Ok(LefDecimal { integ, frac: 0 })
-
         Ok(LefDecimal::from_str(txt)?)
     }
-    /// Parse the LefLibrary::BUSBITCHARS key,
-    /// from a two-character string literal
+    /// Parse the LefLibrary::BUSBITCHARS key from a two-character string literal
     fn parse_bus_bit_chars(&mut self) -> LefResult<(char, char)> {
-        let tok = self.expect(TokenType::StringLiteral)?;
-        let txt = self.txt(&tok);
-        if txt.len() != 4 {
+        let txt = self.expect_and_get_str(TokenType::StringLiteral)?;
+        let chars = txt.chars().collect::<Vec<char>>();
+        if chars.len() != 4 {
             return self.err();
         }
-        let mut chars = txt.chars();
-        chars.next(); // Bump opening paren
-        let open = chars.next().ok_or(LefError::Tbd)?;
-        let close = chars.next().ok_or(LefError::Tbd)?;
-        chars.next(); // Bump closing paren
+        let chars = (chars[1], chars[2]);
         self.expect(TokenType::SemiColon)?;
         self.expect(TokenType::NewLine)?;
-        Ok((open, close))
+        return Ok(chars);
     }
-    /// Parse the LefLibrary::DIVIDERCHAR key,
-    /// from a single-character string literal
+    /// Parse the LefLibrary::DIVIDERCHAR key from a single-character string literal
     fn parse_divider_char(&mut self) -> LefResult<char> {
-        let tok = self.expect(TokenType::StringLiteral)?;
-        let txt = self.txt(&tok);
-        if txt.len() != 3 {
+        let txt = self.expect_and_get_str(TokenType::StringLiteral)?;
+        let chars = txt.chars().collect::<Vec<char>>();
+        if chars.len() != 3 {
             return self.err();
         }
-        let mut chars = txt.chars();
-        chars.next(); // Bump opening paren
-        let c = chars.next().ok_or(LefError::Tbd)?;
-        chars.next(); // Bump closing paren
         self.expect(TokenType::SemiColon)?;
         self.expect(TokenType::NewLine)?;
-        Ok(c)
+        Ok(chars[1])
     }
     /// Parse an identifier name, e.g. a macro, pin, or layer name.
     fn parse_ident(&mut self) -> LefResult<String> {
-        let tok = self.expect(TokenType::Name)?;
-        let txt = self.txt(&tok);
+        let txt = self.expect_and_get_str(TokenType::Name)?;
         Ok(String::from(txt))
     }
+    /// Error-Generation Helper 
+    /// Collect our current position and content into a [LefError::Parse]
     fn err<T>(&self) -> LefResult<T> {
-        dbg!(5);
         let string = match self.lex.next_tok {
-            Some(t) => self.txt(&t).to_string(),
-            None => "EOF".to_string(),
-        };
+            Some(t) => self.txt(&t),
+            None => "EOF",
+        }
+        .to_string();
         Err(LefError::Parse {
             string,
             line: self.lex.line,
@@ -1079,12 +1048,12 @@ mod tests {
     #[test]
     fn it_lexes() -> TestResult {
         let src = "STUFF 101 ; \n // commentary \n";
-        let toks = LefLexer::new(src)?;
-        let tokstrs = toks.map(|t| t.substr(src)).collect::<Vec<&str>>();
-        assert_eq!(tokstrs, vec!["STUFF", "101", ";", "\n",]);
+        let lex = LefLexer::new(src)?;
+        let toks_vec: Vec<Token> = lex.collect(); // Collect up all tokens
+        let tok_strs: Vec<&str> = toks_vec.iter().map(|t| t.substr(src)).collect();
+        assert_eq!(tok_strs, vec!["STUFF", "101", ";", "\n",]);
         Ok(())
     }
-
     #[test]
     fn it_parses() -> TestResult {
         let src = r#"
@@ -1118,11 +1087,12 @@ mod tests {
         check_yaml(&geoms, &resource("geoms1.yaml"));
         Ok(())
     }
+    /// Helper function: Assert that `data` equals the content in YAML file `fname`
     fn check_yaml<T: Eq + std::fmt::Debug + serde::de::DeserializeOwned>(data: &T, fname: &str) {
         let golden: T = load_yaml(fname);
         assert_eq!(*data, golden);
     }
-    /// Grab the full path of resource-file `fname`
+    /// Helper function: Grab the full path of resource-file `fname`
     fn resource(fname: &str) -> String {
         format!("{}/resources/{}", env!("CARGO_MANIFEST_DIR"), fname)
     }
