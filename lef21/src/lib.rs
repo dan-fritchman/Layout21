@@ -2,24 +2,21 @@
 //! # Lef21 Library Exchange Format (LEF) Parser & Writer
 //!
 
-use std::fmt;
-use std::fs::File;
-use std::io::{BufReader, BufWriter};
-use std::io::{Read, Write};
-use std::marker::PhantomData;
-use std::mem;
-use std::str;
-use std::str::Chars;
-
+// Standard Lib Imports
 #[allow(unused_imports)]
 use std::io::prelude::*;
+use std::io::{BufReader, BufWriter, Read, Write};
+use std::str::Chars;
 
+// Crates.io Imports
+#[allow(unused_imports)]
+use rust_decimal::prelude::*;
 use serde::{Deserialize, Serialize};
-
 #[macro_use]
 extern crate derive_builder;
 
-// struct Source<'s>(&'s str);
+// Internal Type Alias
+type LefDecimal = rust_decimal::Decimal;
 
 /// # Lef Lexer / Tokenizer
 ///
@@ -30,8 +27,6 @@ extern crate derive_builder;
 /// each call to `lex_one`.
 ///
 struct LefLexer<'src> {
-    /// Source string
-    src: &'src str,
     /// Source-string character iterator
     chars: Chars<'src>,
     /// Peekable next character
@@ -45,16 +40,9 @@ struct LefLexer<'src> {
     /// Active line number
     line: usize,
     /// Boolean indication of "beginning of line",
-    /// i.e. whether any semantic content has been
-    /// encountered on the current line
+    /// i.e. whether any semantic content has been encountered on the current line.
     at_bol: bool,
 }
-/// [LefLexer] Implementation
-/// Note that while [LefLexer] *data* is generic over the source-string lifetime `'src`,
-/// many implementation methods must include the "self lifetime",
-/// or the lifetime of the lexer, `'lex`.
-/// Typically we expect that the source-string ('src) *can* outlive `self` ('lex),
-/// as can many of the generated [FatToken] objects which include references to `'src`.
 impl<'src> LefLexer<'src> {
     fn new(src: &'src str) -> LefResult<Self> {
         // Create our character-iterator
@@ -63,7 +51,6 @@ impl<'src> LefLexer<'src> {
         let next_char = chars.next();
         // Create the Lexer
         let mut lex = Self {
-            src,
             chars,
             next_char,
             next_tok: None,
@@ -83,7 +70,7 @@ impl<'src> LefLexer<'src> {
         }
         self.pos += 1;
         let mut rv = self.chars.next();
-        mem::swap(&mut rv, &mut self.next_char);
+        std::mem::swap(&mut rv, &mut self.next_char);
         rv
     }
     /// Peek at our next character, without advancing.
@@ -97,7 +84,7 @@ impl<'src> LefLexer<'src> {
             return Ok(None);
         }
         let mut tok = self.advance()?;
-        mem::swap(&mut tok, &mut self.next_tok);
+        std::mem::swap(&mut tok, &mut self.next_tok);
         Ok(tok)
     }
     /// Get an immutable reference to our next [Token], without advancing
@@ -107,6 +94,7 @@ impl<'src> LefLexer<'src> {
     /// Pull our next [Token], removing ignored items such as commentary and whitespace.
     /// FIXME: it's not yet completely clear whether whitespace for indentation is semantically relevant.
     /// This implementation ignores all WS, presuming it is not.
+    /// FIXME: better name here!
     fn advance(&mut self) -> LefResult<Option<Token>> {
         use TokenType::*;
         loop {
@@ -133,6 +121,8 @@ impl<'src> LefLexer<'src> {
         }
     }
     /// Emit a [Token] of [TokenType] `ttype`
+    /// Uses the current Lexer location as its span,
+    /// and updates the Lexer start-position upon creation.
     fn emit(&mut self, ttype: TokenType) -> Token {
         let loc = SourceLocation {
             start: self.start,
@@ -314,7 +304,8 @@ enum TokenType {
 /// Lef Error Enumeration
 #[derive(Debug)]
 pub enum LefError {
-    ParseInt(std::num::ParseIntError),
+    /// Errors parsing numeric [LefDecimal] values
+    ParseNum(rust_decimal::Error),
     Io(std::io::Error),
     Str(String),
     Lex {
@@ -326,6 +317,7 @@ pub enum LefError {
         line: usize,
         pos: usize,
     },
+    Other(Box<dyn std::error::Error>),
     Tbd,
 }
 impl From<std::io::Error> for LefError {
@@ -334,10 +326,26 @@ impl From<std::io::Error> for LefError {
         Self::Io(e)
     }
 }
-impl From<std::num::ParseIntError> for LefError {
+impl From<rust_decimal::Error> for LefError {
     /// Convert integer-parsing errors by wrapping them
-    fn from(e: std::num::ParseIntError) -> Self {
-        Self::ParseInt(e)
+    fn from(e: rust_decimal::Error) -> Self {
+        Self::ParseNum(e)
+    }
+}
+// More external error types, all wrapped as [LefError::Other]
+impl From<serde_json::Error> for LefError {
+    fn from(e: serde_json::Error) -> Self {
+        Self::Other(Box::new(e))
+    }
+}
+impl From<serde_yaml::Error> for LefError {
+    fn from(e: serde_yaml::Error) -> Self {
+        Self::Other(Box::new(e))
+    }
+}
+impl From<toml::ser::Error> for LefError {
+    fn from(e: toml::ser::Error) -> Self {
+        Self::Other(Box::new(e))
     }
 }
 impl From<String> for LefError {
@@ -346,34 +354,47 @@ impl From<String> for LefError {
         Self::Str(e)
     }
 }
-type LefResult<T> = Result<T, LefError>;
-/// Lef Number
-/// All are decimal format, with signed integer-part
-/// and unsigned fractional part
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-struct LefDecimal {
-    /// Integer Part
-    integ: isize,
-    /// Fractional Part
-    frac: usize,
-}
+/// Lef21 Library-Wide Result Type
+pub type LefResult<T> = Result<T, LefError>;
+// /// Lef Number
+// /// All are decimal format, with signed integer-part
+// /// and unsigned fractional part
+// #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+// pub struct LefDecimal {
+//     /// Integer Part
+//     pub integ: isize,
+//     /// Fractional Part
+//     pub frac: usize,
+// }
+/// Lef Parser
+/// Transforms input string of lifetime 'src into a [LefLibrary]
 struct LefParser<'src> {
+    /// Source string
+    src: &'src str,
     /// Lexer
     lex: LefLexer<'src>,
-    /// Parsed Library
-    lib: LefLibrary,
 }
 impl<'src> LefParser<'src> {
     /// Construct a [LefParser] of input-text `src`
     fn new(src: &'src str) -> LefResult<Self> {
-        Ok(Self {
-            lex: LefLexer::new(src)?,
-            lib: LefLibrary::default(),
-        })
+        let lex = LefLexer::new(src)?;
+        Ok(Self { src, lex })
     }
     #[inline(always)]
     fn next_token(&mut self) -> LefResult<Option<Token>> {
         self.lex.next_token()
+    }
+    /// Advance by a [Token] without returning it.
+    /// Usually called after matching on "peeked" results.
+    #[inline(always)]
+    fn advance(&mut self) -> LefResult<()> {
+        // Advance the lexer, pass along any errors it generates. And otherwise return Ok.
+        self.lex.next_token()?;
+        Ok(())
+    }
+    #[inline(always)]
+    fn peek_token(&self) -> &Option<Token> {
+        &self.lex.next_tok
     }
     /// Boolean indication of whether our next Token is of [TokenType] `ttype`.
     /// Advances and returns
@@ -386,7 +407,8 @@ impl<'src> LefParser<'src> {
     /// Assert the expectation that the next [Token] is of [TokenType] `ttype`.
     /// Returns the [Token] if so. Returns an [Err] if not.
     fn expect(&mut self, ttype: TokenType) -> LefResult<Token> {
-        match self.next_token()? {
+        let tok = self.next_token()?;
+        match tok {
             Some(t) if t.ttype == ttype => return Ok(t),
             _ => self.err(),
         }
@@ -397,7 +419,7 @@ impl<'src> LefParser<'src> {
     /// such as the "BY" in lines such as "SIZE x BY y".
     fn expect_name(&mut self, name: &str) -> LefResult<Token> {
         let tok = self.expect(TokenType::Name)?;
-        let txt = self.txt(tok);
+        let txt = self.txt(&tok);
         if txt == name {
             Ok(tok)
         } else {
@@ -409,18 +431,18 @@ impl<'src> LefParser<'src> {
     #[inline(always)]
     fn get_name(&mut self) -> LefResult<&str> {
         let tok = self.expect(TokenType::Name)?;
-        Ok(self.txt(tok))
+        Ok(self.txt(&tok))
     }
     /// Retrieve the text-content of lexer [Token] `tok`
-    fn txt(&self, tok: Token) -> &str {
-        tok.substr(self.lex.src)
+    fn txt(&self, tok: &Token) -> &str {
+        tok.substr(self.src)
     }
     /// Parse a [LefLibrary]
     fn parse_lib(&mut self) -> LefResult<LefLibrary> {
         let mut lib = LefLibraryBuilder::default();
         let mut macros = Vec::new();
         while let Some(t) = self.next_token()? {
-            let txt = self.txt(t);
+            let txt = self.txt(&t);
             match txt {
                 "MACRO" => {
                     macros.push(self.parse_macro()?);
@@ -439,6 +461,11 @@ impl<'src> LefParser<'src> {
                 "NAMESCASESENSITIVE" => unimplemented!(),
                 "UNITS" => unimplemented!(),
                 "BEGINEXT" => unimplemented!(),
+                "END" => {
+                    // End of MACRO definitions. Expect "END LIBRARY".
+                    self.expect_name("LIBRARY")?;
+                    break;
+                }
                 _ => return self.err(),
             }
         }
@@ -453,19 +480,22 @@ impl<'src> LefParser<'src> {
         mac.name(name.clone());
         self.expect(TokenType::NewLine)?;
         // Start parsing attributes, pins, and obstructions
-        let pins = Vec::new();
-        let obs = Vec::new();
+        let mut pins = Vec::new();
+        let mut obs = Vec::new();
         while let Some(t) = self.next_token()? {
-            let txt = self.txt(t);
-            match txt {
+            match self.txt(&t) {
                 "CLASS" => {
                     mac.class(self.parse_macro_class()?);
                 }
                 "FOREIGN" => unimplemented!(),
                 "ORIGIN" => unimplemented!(),
                 "SIZE" => unimplemented!(),
-                "PIN" => unimplemented!(),
-                "OBS" => unimplemented!(),
+                "PIN" => {
+                    pins.push(self.parse_macro_pin()?);
+                }
+                "OBS" => {
+                    obs.push(self.parse_layer_geometries()?);
+                }
                 "END" => break,         // End of Macro
                 _ => return self.err(), // Everything else is an error
             }
@@ -477,6 +507,135 @@ impl<'src> LefParser<'src> {
         mac.pins(pins);
         mac.obs(obs);
         Ok(mac.build()?)
+    }
+    /// Parse a MACRO::PIN definition into a [LefPin]
+    fn parse_macro_pin(&mut self) -> LefResult<LefPin> {
+        let mut pin = LefPinBuilder::default();
+        // Parse the pin-name
+        let name = self.parse_ident()?;
+        pin.name(name.clone());
+        self.expect(TokenType::NewLine)?;
+        let mut ports = Vec::new();
+        while let Some(t) = self.next_token()? {
+            match self.txt(&t) {
+                "PORT" => {
+                    ports.push(self.parse_macro_port()?);
+                }
+                "DIRECTION" => unimplemented!(),
+                "TAPERRULE" => unimplemented!(),
+                "USE" => unimplemented!(),
+                "NETEXPR" => unimplemented!(),
+                "SUPPLYSENSITIVITY" => unimplemented!(),
+                "GROUNDSENSITIVITY" => unimplemented!(),
+                "SHAPE" => unimplemented!(),
+                "MUSTJOIN" => unimplemented!(),
+                "PROPERTY" => unimplemented!(),
+                "ANTENNAPARTIALMETALAREA" => unimplemented!(),
+                "ANTENNAPARTIALMETALSIDEAREA" => unimplemented!(),
+                "ANTENNAPARTIALCUTAREA" => unimplemented!(),
+                "ANTENNAPARTIALDIFFAREA" => unimplemented!(),
+                "ANTENNAMODEL" => unimplemented!(),
+                "ANTENNAGATEAREA" => unimplemented!(),
+                "ANTENNAMAXAREACAR" => unimplemented!(),
+                "ANTENNAMAXSIDEAREACAR" => unimplemented!(),
+                "ANTENNAMAXCUTCAR" => unimplemented!(),
+                "END" => break, // End of Pin
+                _ => return self.err(),
+            }
+        }
+        // Get the pin-closing "END <name>"
+        self.expect_name(&name)?;
+        self.expect(TokenType::NewLine)?;
+        // Set our port-objects, build and return the Pin
+        pin.ports(ports);
+        Ok(pin.build()?)
+    }
+
+    /// Parse a MACRO::PIN::PORT definition into a [LefPort]
+    fn parse_macro_port(&mut self) -> LefResult<LefPort> {
+        let mut class = None;
+        let mut layers = Vec::new();
+        // Note this peeks rather than takes the next token
+        // FIXME: this should also assert each entry is of TokenType::Name
+        while let Some(t) = self.peek_token() {
+            match self.txt(&t) {
+                "CLASS" => unimplemented!(),
+                "LAYER" => {
+                    layers.push(self.parse_layer_geometries()?);
+                }
+                "END" => {
+                    // End of Port
+                    self.advance()?; // Eat the END Token
+                    break;
+                }
+                _ => return self.err(),
+            }
+        }
+        Ok(LefPort { layers, class })
+    }
+    /// Parse a set of geometries on a single layer, as commonly specified per-[LefPort]
+    fn parse_layer_geometries(&mut self) -> LefResult<LefLayerGeometries> {
+        let mut layer = LefLayerGeometriesBuilder::default();
+        // Check for the opening "LAYER" keyword
+        self.expect_name("LAYER")?;
+        // Parse the layer-name
+        let layer_name = self.parse_ident()?;
+        layer.layer_name(layer_name);
+        self.expect(TokenType::SemiColon)?;
+        self.expect(TokenType::NewLine)?;
+        // LayerGeometries don't have an END card, so this needs to peek at the next token,
+        // and exit when another LAYER or END (of a higher-level thing) turn up.
+        let mut geoms = Vec::new();
+        while let Some(t) = self.peek_token() {
+            match self.txt(&t) {
+                "EXCEPTPGNET" => unimplemented!(),
+                "SPACING" => unimplemented!(),
+                "DESIGNRULEWIDTH" => unimplemented!(),
+                "WIDTH" => unimplemented!(),
+                "VIA" => unimplemented!(),
+                "PATH" | "POLYGON" | "RECT" => {
+                    geoms.push(self.parse_geometry()?);
+                }
+                "LAYER" | "END" => break, // End of geometries. (Really start/end of something else.)
+                _ => return self.err(),
+            }
+        }
+        layer.geometries(geoms);
+        Ok(layer.build()?)
+    }
+    /// Parse a [LefGeometry] statement
+    /// Each can be a shape or iteration thereof
+    fn parse_geometry(&mut self) -> LefResult<LefGeometry> {
+        let mut layer = LefLayerGeometriesBuilder::default();
+        let t = self.expect(TokenType::Name)?;
+        match self.txt(&t) {
+            "RECT" => {
+                if self.matches(TokenType::Name) {
+                    unimplemented!();
+                    // // Parse an optional MASK field
+                    // self.expect_name("MASK")?;
+                    // let mask_num = self.parse_ident()?;
+                }
+                // if self.matches(TokenType::Name) {
+                //     unimplemented!();
+                //     // Parse the ITERATE options
+                //     self.expect_name("ITERATE")?;
+                //     let mask_num = self.parse_ident()?;
+                // }
+                // Parse the two points
+                let p1 = self.parse_point()?;
+                let p2 = self.parse_point()?;
+                self.expect(TokenType::SemiColon)?;
+                self.expect(TokenType::NewLine)?;
+                // And return the Rect
+                Ok(LefGeometry::Shape(LefShape::Rect(p1, p2)))
+            }
+            "PATH" | "POLYGON" => unimplemented!(),
+            _ => return self.err(),
+        }
+    }
+    fn parse_point(&mut self) -> LefResult<LefPoint> {
+        Ok(LefPoint(self.parse_number()?, self.parse_number()?))
     }
     /// Parse the MACRO::CLASS enumerations
     fn parse_macro_class(&mut self) -> LefResult<LefMacroClass> {
@@ -525,26 +684,28 @@ impl<'src> LefParser<'src> {
     /// Parse the next token into a [LefDecimal] number
     fn parse_number(&mut self) -> LefResult<LefDecimal> {
         let tok = self.expect(TokenType::Number)?;
-        let txt = self.txt(tok);
-        if txt.contains(".") {
-            // Decimal-valued
-            let parts: Vec<&str> = txt.split(".").collect();
-            if parts.len() != 2 {
-                return self.err();
-            }
-            let integ: isize = parts[0].parse()?;
-            let frac: usize = parts[1].parse()?;
-            return Ok(LefDecimal { integ, frac });
-        }
-        // Integer-valued
-        let integ: isize = txt.parse()?;
-        Ok(LefDecimal { integ, frac: 0 })
+        let txt = self.txt(&tok);
+        // if txt.contains(".") {
+        //     // Decimal-valued
+        //     let parts: Vec<&str> = txt.split(".").collect();
+        //     if parts.len() != 2 {
+        //         return self.err();
+        //     }
+        //     let integ: isize = parts[0].parse()?;
+        //     let frac: usize = parts[1].parse()?;
+        //     return Ok(LefDecimal { integ, frac });
+        // }
+        // // Integer-valued
+        // let integ: isize = txt.parse()?;
+        // Ok(LefDecimal { integ, frac: 0 })
+
+        Ok(LefDecimal::from_str(txt)?)
     }
     /// Parse the LefLibrary::BUSBITCHARS key,
     /// from a two-character string literal
     fn parse_bus_bit_chars(&mut self) -> LefResult<(char, char)> {
         let tok = self.expect(TokenType::StringLiteral)?;
-        let txt = self.txt(tok);
+        let txt = self.txt(&tok);
         if txt.len() != 4 {
             return self.err();
         }
@@ -561,7 +722,7 @@ impl<'src> LefParser<'src> {
     /// from a single-character string literal
     fn parse_divider_char(&mut self) -> LefResult<char> {
         let tok = self.expect(TokenType::StringLiteral)?;
-        let txt = self.txt(tok);
+        let txt = self.txt(&tok);
         if txt.len() != 3 {
             return self.err();
         }
@@ -576,13 +737,13 @@ impl<'src> LefParser<'src> {
     /// Parse an identifier name, e.g. a macro, pin, or layer name.
     fn parse_ident(&mut self) -> LefResult<String> {
         let tok = self.expect(TokenType::Name)?;
-        let txt = self.txt(tok);
+        let txt = self.txt(&tok);
         Ok(String::from(txt))
     }
     fn err<T>(&self) -> LefResult<T> {
         dbg!(5);
         let string = match self.lex.next_tok {
-            Some(t) => self.txt(t).to_string(),
+            Some(t) => self.txt(&t).to_string(),
             None => "EOF".to_string(),
         };
         Err(LefError::Parse {
@@ -592,83 +753,85 @@ impl<'src> LefParser<'src> {
         })
     }
 }
-#[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
+/// Lef Library
+/// Primary store of macro/cell definitions
+#[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[builder(setter(into), private)]
-struct LefLibrary {
+pub struct LefLibrary {
+    // Required
     /// Lef Spec Version
-    version: LefDecimal,
+    pub version: LefDecimal,
     /// Macro Definitions
-    macros: Vec<LefMacro>,
+    pub macros: Vec<LefMacro>,
+
+    // Optional
     /// Bus-Bit Separator Characters
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
-    bus_bit_chars: Option<(char, char)>,
+    pub bus_bit_chars: Option<(char, char)>,
     /// Divider Character
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
-    divider_char: Option<char>,
-    #[serde(default)]
+    pub divider_char: Option<char>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
-    via: Tbd,
-    #[serde(default)]
+    pub via: Option<Tbd>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
-    site: Tbd,
+    pub site: Option<Tbd>,
 }
-#[derive(Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
+/// Lef Macro Definition
+#[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[builder(setter(into), private)]
-struct LefMacro {
+pub struct LefMacro {
+    // Required
     /// Macro Name
-    name: String,
-    /// Macro Class
-    #[serde(default)]
-    #[builder(default, setter(strip_option))]
-    class: Option<LefMacroClass>,
-
-    /// Foreign (GDSII) Cell
-    #[serde(default)]
-    #[builder(default, setter(strip_option))]
-    foreign: Option<LefForeign>,
-
-    /// X-Y Origin
-    #[serde(default)]
-    #[builder(default, setter(strip_option))]
-    origin: Option<(LefDecimal, LefDecimal)>,
-
-    /// Electrically-Equivalent Cell
-    #[serde(default)]
-    #[builder(default, setter(strip_option))]
-    eeq: Option<Tbd>,
-
-    /// Outline Size
-    #[serde(default)]
-    #[builder(default, setter(strip_option))]
-    size: Option<(LefDecimal, LefDecimal)>,
-    /// Rotational & Translation Symmetries
-    #[serde(default)]
-    #[builder(default, setter(strip_option))]
-    symmetry: Tbd,
-
-    /// Site Name
-    #[serde(default)]
-    #[builder(default, setter(strip_option))]
-    site: Tbd,
-    /// Density Objects
-    #[serde(default)]
-    #[builder(default, setter(strip_option))]
-    density: Option<Tbd>,
-
-    /// Properties
-    #[serde(default)]
-    #[builder(default, setter(strip_option))]
-    properties: Option<Tbd>,
+    pub name: String,
     /// Pin List
-    pins: Vec<LefPin>,
-
+    pub pins: Vec<LefPin>,
     /// Obstructions
-    obs: Vec<Tbd>,
+    pub obs: Vec<LefLayerGeometries>,
+
+    // Optional
+    /// Macro Class
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
+    pub class: Option<LefMacroClass>,
+    /// Foreign (GDSII) Cell
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
+    pub foreign: Option<LefForeign>,
+    /// X-Y Origin
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
+    pub origin: Option<LefPoint>,
+    /// Electrically-Equivalent Cell
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
+    pub eeq: Option<Tbd>,
+    /// Outline Size
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
+    pub size: Option<LefPoint>,
+    /// Rotational & Translation Symmetries
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
+    pub symmetry: Option<Tbd>,
+    /// Site Name
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
+    pub site: Option<Tbd>,
+    /// Density Objects
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
+    pub density: Option<Tbd>,
+    /// Properties
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
+    pub properties: Option<Tbd>,
 }
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-enum LefMacroClass {
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub enum LefMacroClass {
     Cover { bump: bool },
     Ring,
     Block { tp: Option<LefBlockClassType> },
@@ -676,13 +839,13 @@ enum LefMacroClass {
     Core { tp: Option<LefCoreClassType> },
     EndCap { tp: LefEndCapClassType },
 }
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-enum LefBlockClassType {
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub enum LefBlockClassType {
     BlackBox,
     Soft,
 }
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-enum LefCoreClassType {
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub enum LefCoreClassType {
     FeedThru,
     TieHigh,
     TieLow,
@@ -690,8 +853,8 @@ enum LefCoreClassType {
     AntennaCell,
     WellTap,
 }
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-enum LefPadClassType {
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub enum LefPadClassType {
     Input,
     Output,
     Inout,
@@ -699,8 +862,8 @@ enum LefPadClassType {
     Spacer,
     AreaIo,
 }
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-enum LefEndCapClassType {
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub enum LefEndCapClassType {
     Pre,
     Post,
     TopLeft,
@@ -709,176 +872,205 @@ enum LefEndCapClassType {
     BottomRight,
 }
 
-#[derive(Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Builder, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[builder(setter(into), private)]
-struct LefForeign {
+pub struct LefForeign {
     /// Foreign Cell Name
-    cell_name: String,
+    pub cell_name: String,
     /// Location
-    pt: Option<(LefDecimal, LefDecimal)>,
+    pub pt: Option<LefPoint>,
     /// Orientation
-    orient: Tbd,
+    pub orient: Option<Tbd>,
 }
-#[derive(Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Builder, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[builder(setter(into), private)]
-struct LefPin {
-    // Required Fields 
-
+pub struct LefPin {
+    // Required Fields
     /// Pin Name
-    name: String,
-    /// Port Geometries 
-    ports: Vec<LefPort>,
+    pub name: String,
+    /// Port Geometries
+    pub ports: Vec<LefPort>,
 
-    // Optional Fields 
-
+    // Optional Fields
     /// Properties
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
-    properties: Option<Tbd>,
-    
+    pub properties: Option<Tbd>,
     /// Direction
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
-    direction: Option<LefPinDirection>,
-    
-    /// Usage / Role 
-    #[serde(default)]
+    pub direction: Option<LefPinDirection>,
+
+    /// Usage / Role
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
-    r#use: Option<LefPinUse>,
+    pub r#use: Option<LefPinUse>,
 
     /// Taper Rule
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
-    taper_rule: Option<Tbd>,
-    
+    pub taper_rule: Option<Tbd>,
     /// Net Expression
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
-    net_expr: Option<Tbd>,
-    
+    pub net_expr: Option<Tbd>,
     /// Supply Sensitivity
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
-    supply_sensitivity: Option<Tbd>,
-    
+    pub supply_sensitivity: Option<Tbd>,
     /// Ground Sensitivity
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
-    ground_sensitivity: Option<Tbd>,
+    pub ground_sensitivity: Option<Tbd>,
     /// Shape
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
-    shape: Option<Tbd>,
+    pub shape: Option<Tbd>,
     /// Must-Join
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
-    must_join: Option<Tbd>,
+    pub must_join: Option<Tbd>,
 
-    /// Antenna 
-    #[serde(default)]
+    /// Antenna
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
-    antenna_partial_metal_area: Option<Tbd>,
-    #[serde(default)]
+    pub antenna_partial_metal_area: Option<Tbd>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
-    antenna_partial_metal_side_area: Option<Tbd>,
-    #[serde(default)]
+    pub antenna_partial_metal_side_area: Option<Tbd>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
-    antenna_partial_cut_area: Option<Tbd>,
-    #[serde(default)]
+    pub antenna_partial_cut_area: Option<Tbd>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
-    antenna_diff_area: Option<Tbd>,
-    #[serde(default)]
+    pub antenna_diff_area: Option<Tbd>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
-    antenna_model: Option<Tbd>,
-    #[serde(default)]
+    pub antenna_model: Option<Tbd>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
-    antenna_gate_area: Option<Tbd>,
-    #[serde(default)]
+    pub antenna_gate_area: Option<Tbd>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
-    antenna_max_area_char: Option<Tbd>,
-    #[serde(default)]
+    pub antenna_max_area_char: Option<Tbd>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
-    antenna_side_area_char: Option<Tbd>,
-    #[serde(default)]
+    pub antenna_side_area_char: Option<Tbd>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
-    antenna_max_cut_char: Option<Tbd>,
+    pub antenna_max_cut_char: Option<Tbd>,
 }
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-enum LefPinDirection {
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub enum LefPinDirection {
     Input,
     Output { tristate: bool },
     Inout,
     FeedThru,
 }
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-enum LefPinUse {
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub enum LefPinUse {
     Signal,
     Analog,
     Power,
     Ground,
     Clock,
 }
-#[derive(Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
-struct LefPort {
+#[derive(Clone, Builder, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct LefPort {
     /// Layers & Geometries
-    layers: Vec<LefPortLayerGeometries>,
+    pub layers: Vec<LefLayerGeometries>,
     /// Port-Class
-    class: Option<Tbd>,
+    pub class: Option<Tbd>,
 }
-#[derive(Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
-struct LefPortLayerGeometries {
+#[derive(Clone, Builder, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct LefLayerGeometries {
+    // Required
     /// Layer Name
-    layer: String,
-    
-    #[serde(default)]
-    #[builder(default, setter(strip_option))]
-    except_pg_net: Option<bool>,
-    #[serde(default)]
-    #[builder(default, setter(strip_option))]
-    spacing: Option<Tbd>,// FIXME: merge with `design_rule_width`
-    #[serde(default)]
-    #[builder(default, setter(strip_option))]
-    design_rule_width: Option<Tbd>, // FIXME: merge with `spacing`
-    #[serde(default)]
-    #[builder(default, setter(strip_option))]
-    width: Option<Tbd>, 
+    pub layer_name: String,
+    /// Geometries,
+    pub geometries: Vec<LefGeometry>,
 
-    /// Geometries, 
-    geometries: Vec<LefGeometry>
+    // Optional
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
+    pub except_pg_net: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
+    pub spacing: Option<Tbd>, // FIXME: merge with `design_rule_width`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
+    pub design_rule_width: Option<Tbd>, // FIXME: merge with `spacing`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
+    pub width: Option<Tbd>,
 }
-/// Lef Geometric Objects - 
+/// Lef Geometric Objects -
 /// Rectangles, Polygons, Paths, and Iterators thereof
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-enum LefGeometry {
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub enum LefGeometry {
+    /// Single Shape
     Shape(LefShape),
-    Iterate{shape: LefShape, pattern: Tbd},
+    /// Repeated Iteration/ Array of Shapes
+    Iterate { shape: LefShape, pattern: Tbd },
 }
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-enum LefShape {
+/// Lef Shapes
+/// Individual Geometric Primitives
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub enum LefShape {
     Rect(LefPoint, LefPoint),
     Polygon(Vec<LefPoint>),
     Path(Vec<LefPoint>),
 }
 /// X-Y Point
-#[derive(Clone, Default, Debug, Deserialize, Serialize, PartialEq)]
-struct LefPoint(LefDecimal, LefDecimal);
-/// Placeholder Struct for Fields to be completed 
-#[derive(Clone, Default, Debug, Deserialize, Serialize, PartialEq)]
-struct Tbd;
+#[derive(Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct LefPoint(LefDecimal, LefDecimal);
+/// Placeholder Struct for Fields to be completed
+#[derive(Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct Tbd;
 
-// pub fn parse_file(fname: &str) -> LefResult<()> {
-//     let mut file = File::open(fname)?;
-//     let mut src = String::new();
-//     file.read_to_string(&mut src)?;
-//     let res = LefParse::parse(&src)?;
-//     Ok(())
-// }
-fn parse_str(src: &str) -> LefResult<LefLibrary> {
+/// Parse LEF content from file `fname`
+pub fn parse_file(fname: &str) -> LefResult<LefLibrary> {
+    let mut file = std::fs::File::open(fname)?;
+    let mut src = String::new();
+    file.read_to_string(&mut src)?;
+    parse_str(&src)
+}
+/// Parse LEF content `src` from string
+pub fn parse_str(src: &str) -> LefResult<LefLibrary> {
     let mut parser = LefParser::new(src)?;
     let lib = parser.parse_lib()?;
     Ok(lib)
 }
-
+/// Enumerated, Supported Serialization Formats
+pub enum SerializationFormat {
+    Json,
+    Yaml,
+    Toml,
+    Lef,
+}
+impl SerializationFormat {
+    fn to_string(&self, data: &impl Serialize) -> LefResult<String> {
+        match *self {
+            Self::Json => Ok(serde_json::to_string(data)?),
+            Self::Yaml => Ok(serde_yaml::to_string(data)?),
+            Self::Toml => Ok(toml::to_string(data)?),
+            Self::Lef => unimplemented!(),
+        }
+    }
+}
+/// Save to file `fname` with serialization-format `fmt`
+pub fn save(data: &impl Serialize, fname: &str, fmt: SerializationFormat) -> LefResult<()> {
+    let mut file = BufWriter::new(std::fs::File::create(fname)?);
+    let s = fmt.to_string(data)?;
+    file.write_all(s.as_bytes())?;
+    file.flush()?;
+    Ok(())
+}
+/// Load from YAML file at path `fname`
+pub fn load_yaml<T: serde::de::DeserializeOwned>(fname: &str) -> T {
+    let file = std::fs::File::open(&fname).unwrap();
+    serde_yaml::from_reader(BufReader::new(file)).unwrap()
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -900,9 +1092,38 @@ mod tests {
             BUSBITCHARS "xy" ; 
             MACRO some_name 
             END some_name
+            END LIBRARY
         "#;
         let lib = parse_str(src)?;
         dbg!(lib);
         Ok(())
+    }
+    #[test]
+    fn it_parses_layer_geoms1() -> TestResult {
+        let src = r#"
+        LAYER some_layers_name ;
+            RECT 1.065000 1.075000 1.705000 1.325000 ;
+            RECT 1.495000 0.615000 3.335000 0.785000 ;
+            RECT 1.495000 0.785000 1.705000 1.075000 ;
+            RECT 1.495000 1.325000 1.705000 1.495000 ;
+            RECT 1.495000 1.495000 1.785000 2.465000 ;
+            RECT 2.180000 0.255000 2.420000 0.615000 ;
+            RECT 3.070000 1.915000 4.515000 2.085000 ;
+            RECT 3.070000 2.085000 3.400000 2.465000 ;
+            RECT 3.090000 0.255000 3.335000 0.615000 ;
+            RECT 4.090000 2.085000 4.515000 2.465000 ;
+        "#;
+        let mut parser = LefParser::new(src)?;
+        let geoms = parser.parse_layer_geometries()?;
+        check_yaml(&geoms, &resource("geoms1.yaml"));
+        Ok(())
+    }
+    fn check_yaml<T: Eq + std::fmt::Debug + serde::de::DeserializeOwned>(data: &T, fname: &str) {
+        let golden: T = load_yaml(fname);
+        assert_eq!(*data, golden);
+    }
+    /// Grab the full path of resource-file `fname`
+    fn resource(fname: &str) -> String {
+        format!("{}/resources/{}", env!("CARGO_MANIFEST_DIR"), fname)
     }
 }
