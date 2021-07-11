@@ -24,7 +24,7 @@ type LefDecimal = rust_decimal::Decimal;
 /// consisting of source-locations and type-annotations.
 ///
 /// Operates in an iterator-style mode, producing a [Token] with
-/// each call to `lex_one`.
+/// each call to `next_token`.
 ///
 struct LefLexer<'src> {
     /// Source-string character iterator
@@ -227,7 +227,7 @@ impl<'src> LefLexer<'src> {
         let tok = self.emit(TokenType::Name);
         Ok(Some(tok))
     }
-    /// Error-Generation Helper 
+    /// Error-Generation Helper
     /// Collect our current position and content into a [LefError::Lex]
     fn err<T>(&self) -> LefResult<T> {
         Err(LefError::Lex {
@@ -305,7 +305,6 @@ pub enum LefError {
     Other(Box<dyn std::error::Error>),
     /// Other string-typed errors, generally from other crates
     Str(String),
-    Tbd,
 }
 impl From<std::io::Error> for LefError {
     /// Convert common IO & file errors by wrapping them
@@ -343,16 +342,6 @@ impl From<String> for LefError {
 }
 /// Lef21 Library-Wide Result Type
 pub type LefResult<T> = Result<T, LefError>;
-// /// Lef Number
-// /// All are decimal format, with signed integer-part
-// /// and unsigned fractional part
-// #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-// pub struct LefDecimal {
-//     /// Integer Part
-//     pub integ: isize,
-//     /// Fractional Part
-//     pub frac: usize,
-// }
 /// Lef Parser
 /// Transforms input string of lifetime 'src into a [LefLibrary]
 struct LefParser<'src> {
@@ -385,7 +374,7 @@ impl<'src> LefParser<'src> {
     }
     /// Boolean indication of whether our next Token is of [TokenType] `ttype`.
     fn matches(&mut self, ttype: TokenType) -> bool {
-        match self.lex.peek_token() {
+        match self.peek_token() {
             Some(t) if t.ttype == ttype => true,
             _ => false,
         }
@@ -433,9 +422,8 @@ impl<'src> LefParser<'src> {
     fn parse_lib(&mut self) -> LefResult<LefLibrary> {
         let mut lib = LefLibraryBuilder::default();
         let mut macros = Vec::new();
-        while let Some(t) = self.next_token()? {
-            let txt = self.txt(&t);
-            match txt {
+        loop {
+            match self.expect_and_get_str(TokenType::Name)? {
                 "MACRO" => {
                     macros.push(self.parse_macro()?);
                 }
@@ -474,8 +462,8 @@ impl<'src> LefParser<'src> {
         // Start parsing attributes, pins, and obstructions
         let mut pins = Vec::new();
         let mut obs = Vec::new();
-        while let Some(t) = self.next_token()? {
-            match self.txt(&t) {
+        loop {
+            match self.expect_and_get_str(TokenType::Name)? {
                 "CLASS" => {
                     mac.class(self.parse_macro_class()?);
                 }
@@ -508,8 +496,8 @@ impl<'src> LefParser<'src> {
         pin.name(name.clone());
         self.expect(TokenType::NewLine)?;
         let mut ports = Vec::new();
-        while let Some(t) = self.next_token()? {
-            match self.txt(&t) {
+        loop {
+            match self.expect_and_get_str(TokenType::Name)? {
                 "PORT" => {
                     ports.push(self.parse_macro_port()?);
                 }
@@ -545,18 +533,22 @@ impl<'src> LefParser<'src> {
 
     /// Parse a MACRO::PIN::PORT definition into a [LefPort]
     fn parse_macro_port(&mut self) -> LefResult<LefPort> {
-        let class = None;
+        let class: Option<Tbd> = None; // FIXME: will be [LefPortClass] or similar
         let mut layers = Vec::new();
-        // Note this peeks rather than takes the next token
-        // FIXME: this should also assert each entry is of TokenType::Name
+        // Parse attributes and geometries
+        // Note this peeks rather than taking the next token,
+        // largely to accommodate the closing-delimeter-free "LAYER" / [LefLayerGeometries] definitions.
+        // Other keys generally advance by a Token *after* matching.
         while let Some(t) = self.peek_token() {
+            if t.ttype != TokenType::Name {
+                return self.err();
+            }
             match self.txt(&t) {
                 "CLASS" => unimplemented!(),
                 "LAYER" => {
                     layers.push(self.parse_layer_geometries()?);
                 }
                 "END" => {
-                    // End of Port
                     self.advance()?; // Eat the END Token
                     break;
                 }
@@ -575,10 +567,16 @@ impl<'src> LefParser<'src> {
         layer.layer_name(layer_name);
         self.expect(TokenType::SemiColon)?;
         self.expect(TokenType::NewLine)?;
+        let mut geoms = Vec::new();
         // LayerGeometries don't have an END card, so this needs to peek at the next token,
         // and exit when another LAYER or END (of a higher-level thing) turn up.
-        let mut geoms = Vec::new();
+        // Note that on end-of-file, i.e. `peek_token` returning `None`,
+        // this will exit and return a valid [LefLayerGeometries].
+        // (Objects above it in the tree may error instead.)
         while let Some(t) = self.peek_token() {
+            if t.ttype != TokenType::Name {
+                return self.err();
+            }
             match self.txt(&t) {
                 "EXCEPTPGNET" => unimplemented!(),
                 "SPACING" => unimplemented!(),
@@ -686,10 +684,9 @@ impl<'src> LefParser<'src> {
         if chars.len() != 4 {
             return self.err();
         }
-        let chars = (chars[1], chars[2]);
         self.expect(TokenType::SemiColon)?;
         self.expect(TokenType::NewLine)?;
-        return Ok(chars);
+        return Ok((chars[1], chars[2]));
     }
     /// Parse the LefLibrary::DIVIDERCHAR key from a single-character string literal
     fn parse_divider_char(&mut self) -> LefResult<char> {
@@ -707,7 +704,7 @@ impl<'src> LefParser<'src> {
         let txt = self.expect_and_get_str(TokenType::Name)?;
         Ok(String::from(txt))
     }
-    /// Error-Generation Helper 
+    /// Error-Generation Helper
     /// Collect our current position and content into a [LefError::Parse]
     fn err<T>(&self) -> LefResult<T> {
         let string = match self.lex.next_tok {
