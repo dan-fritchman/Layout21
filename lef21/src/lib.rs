@@ -846,18 +846,14 @@ impl<'src> LefParser<'src> {
     fn parse_macro_symmetries(&mut self) -> LefResult<Vec<LefSymmetry>> {
         let mut symms = Vec::new();
         loop {
-            let tok = self.next_token()?;
-            match tok {
-                None => return self.err(None),
-                Some(t) if t.ttype == TokenType::SemiColon => {
-                    // End of symmetries list
-                    self.expect(TokenType::NewLine)?;
-                    break;
-                }
-                Some(_) => {
-                    // Any other Token must be a [LefSymmetry] variant
-                    symms.push(self.parse_enum::<LefSymmetry>()?);
-                }
+            if self.matches(TokenType::SemiColon) {
+                // End of symmetries list
+                self.advance()?;
+                self.expect(TokenType::NewLine)?;
+                break;
+            } else {
+                // Any other Token must be a [LefSymmetry] variant
+                symms.push(self.parse_enum::<LefSymmetry>()?);
             }
         }
         Ok(symms)
@@ -954,7 +950,9 @@ impl<'src> LefParser<'src> {
     /// Collect our current position and content into a [LefError::Parse]
     fn err<T>(&self, tp: Option<LefParseErrorType>) -> LefResult<T> {
         // Quick start the line content; just grab, say, 100 characters
-        let line_content = self.src[self.lex.linestart..self.lex.linestart + 100].to_string();
+        let line_end = (self.lex.linestart + 100).min(self.src.len());
+        let line_content = self.src[self.lex.linestart..line_end].to_string();
+
         let token = match self.lex.next_tok {
             Some(t) => self.txt(&t),
             None => "EOF",
@@ -1369,6 +1367,33 @@ mod tests {
         check_yaml(&geoms, &resource("geoms1.yaml"));
         Ok(())
     }
+
+    #[test]
+    fn it_parses_lib2() -> TestResult {
+        let src = r#"
+        VERSION 5.4 ; 
+        UNITS
+            DATABASE MICRONS 2000 ;
+        END UNITS
+        MACRO macro_name
+            CLASS BLOCK ;
+            SIZE 999.9 BY 111.1 ;
+            SYMMETRY X Y R90 ;
+            PIN pin_name
+                DIRECTION INPUT ;
+                PORT
+                    LAYER layer_name ;
+                    RECT  88.4 0.0 88.78 1.06 ;
+                END
+            END pin_name
+        END macro_name
+        END LIBRARY
+        "#;
+        let lib = parse_str(src)?;
+        check_yaml(&lib, &resource("lib2.yaml"));
+        Ok(())
+    }
+
     /// Helper function: Assert that `data` equals the content in YAML file `fname`
     fn check_yaml<T: Eq + std::fmt::Debug + serde::de::DeserializeOwned>(data: &T, fname: &str) {
         let golden: T = load_yaml(fname);
