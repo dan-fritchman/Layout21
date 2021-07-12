@@ -281,9 +281,21 @@ pub enum TokenType {
     WhiteSpace,
     Comment,
 }
+/// Enumerated parsing contexts, largely for capturing errors
+#[derive(Debug)]
+pub enum LefParseContext {
+    Library,
+    Macro,
+    Units,
+}
 #[derive(Debug)]
 pub enum LefParseErrorType {
+    /// Invalid Key
     InvalidKey(String),
+    /// Invalid Key
+    InvalidKey2 { key: String, ctx: LefParseContext },
+    /// Unsupported (but spec-valid) Keys
+    UnsupportedKey { key: String, ctx: LefParseContext },
     InvalidToken {
         expected: TokenType,
         got: Option<TokenType>,
@@ -453,15 +465,19 @@ impl<'src> LefParser<'src> {
                     lib.divider_char(self.parse_divider_char()?);
                 }
                 "NAMESCASESENSITIVE" => {
-                    let val = self.expect_and_get_str(TokenType::Name)?;
-                    match LefOnOff::from_str(val) {
-                        Some(x) => lib.names_case_sensitive(x),
-                        None => return self.err(None),
-                    };
+                    lib.names_case_sensitive(self.parse_enum::<LefOnOff>()?);
                     self.expect(TokenType::SemiColon)?;
                     self.expect(TokenType::NewLine)?;
                 }
-                "UNITS" => unimplemented!(),
+                "NOWIREEXTENSIONATPIN" => {
+                    lib.no_wire_extension_at_pin(self.parse_enum::<LefOnOff>()?);
+                    self.expect(TokenType::SemiColon)?;
+                    self.expect(TokenType::NewLine)?;
+                }
+                "UNITS" => {
+                    self.expect(TokenType::NewLine)?;
+                    lib.units(self.parse_units()?);
+                }
                 "BEGINEXT" => unimplemented!(),
                 "END" => {
                     // End of MACRO definitions. Expect "END LIBRARY".
@@ -498,7 +514,21 @@ impl<'src> LefParser<'src> {
                     self.expect(TokenType::SemiColon)?;
                     self.expect(TokenType::NewLine)?;
                 }
-                "FOREIGN" => unimplemented!(),
+                "FOREIGN" => {
+                    let cell_name = self.parse_ident()?;
+                    let mut pt = None;
+                    if !self.matches(TokenType::SemiColon) {
+                        pt = Some(self.parse_point()?);
+                    }
+                    // FIXME: the optional `orient` field is not supported
+                    self.expect(TokenType::SemiColon)?;
+                    self.expect(TokenType::NewLine)?;
+                    mac.foreign(LefForeign {
+                        cell_name,
+                        pt,
+                        orient: None,
+                    });
+                }
                 "ORIGIN" => {
                     let origin = self.parse_point()?;
                     mac.origin(origin);
@@ -524,13 +554,8 @@ impl<'src> LefParser<'src> {
                     mac.symmetry(self.parse_macro_symmetries()?);
                 }
                 "SOURCE" => {
-                    // FIXME: only supported in some LEF versions,
-                    // sort out how to handle this fact
-                    let val = self.get_name()?;
-                    match LefDefSource::from_str(val) {
-                        Some(x) => mac.source(x),
-                        None => return self.err(None),
-                    };
+                    // FIXME: only supported in some LEF versions, sort out how to handle this fact
+                    mac.source(self.parse_enum::<LefDefSource>()?);
                     self.expect(TokenType::SemiColon)?;
                     self.expect(TokenType::NewLine)?;
                 }
@@ -568,11 +593,7 @@ impl<'src> LefParser<'src> {
                 }
                 "TAPERRULE" => unimplemented!(),
                 "USE" => {
-                    let val = self.get_name()?;
-                    match LefPinUse::from_str(val) {
-                        Some(x) => pin.r#use(x),
-                        None => return self.err(None),
-                    };
+                    pin.r#use(self.parse_enum::<LefPinUse>()?);
                     self.expect(TokenType::SemiColon)?;
                     self.expect(TokenType::NewLine)?;
                 }
@@ -580,11 +601,7 @@ impl<'src> LefParser<'src> {
                 "SUPPLYSENSITIVITY" => unimplemented!(),
                 "GROUNDSENSITIVITY" => unimplemented!(),
                 "SHAPE" => {
-                    let val = self.get_name()?;
-                    match LefPinShape::from_str(val) {
-                        Some(x) => pin.shape(x),
-                        None => return self.err(None),
-                    };
+                    pin.shape(self.parse_enum::<LefPinShape>()?);
                     self.expect(TokenType::SemiColon)?;
                     self.expect(TokenType::NewLine)?;
                 }
@@ -596,8 +613,7 @@ impl<'src> LefParser<'src> {
                 "ANTENNAPARTIALDIFFAREA" => unimplemented!(),
                 "ANTENNAMODEL" => unimplemented!(),
                 "ANTENNADIFFAREA" => {
-                    let area = self.parse_number()?;
-                    pin.antenna_diff_area(area);
+                    pin.antenna_diff_area(self.parse_number()?);
                     self.expect(TokenType::SemiColon)?;
                     self.expect(TokenType::NewLine)?;
                 }
@@ -787,6 +803,46 @@ impl<'src> LefParser<'src> {
         Ok(LefPoint(self.parse_number()?, self.parse_number()?))
     }
     /// Parse a MACRO::PIN definition into a [LefPin]
+    fn parse_units(&mut self) -> LefResult<LefUnits> {
+        let mut units = LefUnits::default();
+        loop {
+            let txt = self.get_name()?;
+            match txt {
+                "DATABASE" => {
+                    // Parse the "DATABASE MICRONS" flavor
+                    self.expect_name("MICRONS")?;
+                    let num = self.parse_number()?;
+                    self.expect(TokenType::SemiColon)?;
+                    self.expect(TokenType::NewLine)?;
+                    units.database_microns = Some(num);
+                }
+                "END" => {
+                    // End of UNITS
+                    self.expect_name("UNITS")?;
+                    self.expect(TokenType::NewLine)?;
+                    break;
+                }
+                // All the other united quantities are unsupported
+                "TIME" | "CAPACITANCE" | "RESISTANCE" | "POWER" | "CURRENT" | "VOLTAGE"
+                | "FREQUENCY" => {
+                    let txt = String::from(txt);
+                    return self.err(Some(LefParseErrorType::UnsupportedKey {
+                        key: txt,
+                        ctx: LefParseContext::Units,
+                    }));
+                }
+                _ => {
+                    let txt = String::from(txt);
+                    return self.err(Some(LefParseErrorType::InvalidKey2 {
+                        key: txt,
+                        ctx: LefParseContext::Units,
+                    }));
+                }
+            }
+        }
+        Ok(units)
+    }
+    /// Parse [LefMacro] SYMMETRY options into a vector of [LefSymmetry]
     fn parse_macro_symmetries(&mut self) -> LefResult<Vec<LefSymmetry>> {
         let mut symms = Vec::new();
         loop {
@@ -798,13 +854,9 @@ impl<'src> LefParser<'src> {
                     self.expect(TokenType::NewLine)?;
                     break;
                 }
-                Some(t) => {
+                Some(_) => {
                     // Any other Token must be a [LefSymmetry] variant
-                    let val = self.txt(&t);
-                    match LefSymmetry::from_str(val) {
-                        Some(x) => symms.push(x),
-                        None => return self.err(None),
-                    };
+                    symms.push(self.parse_enum::<LefSymmetry>()?);
                 }
             }
         }
@@ -891,6 +943,13 @@ impl<'src> LefParser<'src> {
         let txt = self.expect_and_get_str(TokenType::Name)?;
         Ok(String::from(txt))
     }
+    /// Parse an enumerated string-value of type <T>
+    fn parse_enum<T: LefEnum>(&mut self) -> LefResult<T> {
+        match T::from_str(self.get_name()?) {
+            Some(t) => Ok(t),
+            None => self.err(None),
+        }
+    }
     /// Error-Generation Helper
     /// Collect our current position and content into a [LefError::Parse]
     fn err<T>(&self, tp: Option<LefParseErrorType>) -> LefResult<T> {
@@ -927,6 +986,11 @@ pub struct LefLibrary {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub names_case_sensitive: Option<LefOnOff>,
+    /// Wire-Extension Pin Settings
+    /// FIXME: potentially only some LEF versions
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
+    pub no_wire_extension_at_pin: Option<LefOnOff>,
     /// Bus-Bit Separator Characters
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
@@ -941,6 +1005,10 @@ pub struct LefLibrary {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub site: Option<Tbd>,
+    /// Dimensional Units
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
+    pub units: Option<LefUnits>,
 }
 /// Lef Macro Definition
 #[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -1187,6 +1255,26 @@ pub enum LefShape {
 /// X-Y Point
 #[derive(Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct LefPoint(LefDecimal, LefDecimal);
+/// Measurement Unit Conversion Factors
+#[derive(Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct LefUnits {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub database_microns: Option<LefDecimal>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub time_ns: Option<LefDecimal>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capacitance_pf: Option<LefDecimal>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resistance_ohms: Option<LefDecimal>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub power_mw: Option<LefDecimal>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_ma: Option<LefDecimal>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voltage_volts: Option<LefDecimal>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frequency_mhz: Option<LefDecimal>,
+}
 /// Placeholder Struct for Fields to be completed
 #[derive(Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Tbd;
@@ -1291,15 +1379,18 @@ mod tests {
         format!("{}/resources/{}", env!("CARGO_MANIFEST_DIR"), fname)
     }
 }
-
-///
-/// Macro for creating `enum`s with paired string-values, as commonly arrive in enumerated LEF fields such as "ON" / "OFF", "CLASS", etc.
-/// All variants are fieldless, and include derived implementations of common traits notably including `serde::{Serialize,Deserialize}`.
-///
+/// Lef String-Enumeration Trait
 /// Defines two central methods:
 /// * `to_str(&self) -> &'static str` converts the enum to its Lef-String values.
 /// * `from_str(&str) -> Option<Self>` does the opposite, returning an [Option] indicator of success or failure.
-///
+trait LefEnum: std::marker::Sized {
+    fn to_str(&self) -> &'static str;
+    fn from_str(txt: &str) -> Option<Self>;
+}
+/// Macro for creating `enum`s which:
+/// * (a) Have paired string-values, as commonly arrive in enumerated LEF fields such as "ON" / "OFF", "CLASS", etc, and
+/// * (b) Automatically implement the [LefEnum] trait for conversions to and from these strings.
+/// All variants are fieldless, and include derived implementations of common traits notably including `serde::{Serialize,Deserialize}`.
 macro_rules! enumstr {
     (   $(#[$meta:meta])*
         $enum_name:ident {
@@ -1312,7 +1403,7 @@ macro_rules! enumstr {
             $( #[doc=$strval]
                 $variant ),*
         }
-        impl $enum_name {
+        impl LefEnum for $enum_name {
             /// Convert a [$enum_name] to the (static) string-keyword used in the Lef format
             #[allow(dead_code)]
             fn to_str(&self) -> &'static str {
@@ -1331,7 +1422,6 @@ macro_rules! enumstr {
         }
     }
 }
-
 enumstr!(
     /// Binary On/Off Settings, Denoted by ON and OFF
     LefOnOff {
