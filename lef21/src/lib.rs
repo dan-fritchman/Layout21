@@ -39,6 +39,8 @@ struct LefLexer<'src> {
     pos: usize,
     /// Active line number
     line: usize,
+    /// Character index at the beginning of the current line
+    linestart: usize,
     /// Boolean indication of "beginning of line",
     /// i.e. whether any semantic content has been encountered on the current line.
     at_bol: bool,
@@ -57,6 +59,7 @@ impl<'src> LefLexer<'src> {
             start: 0,
             pos: 0,
             line: 1,
+            linestart: 0,
             at_bol: true,
         };
         // Read the first token into our `next_tok` field
@@ -96,14 +99,17 @@ impl<'src> LefLexer<'src> {
     /// This implementation ignores all WS, presuming it is not.
     /// FIXME: better name here!
     fn advance(&mut self) -> LefResult<Option<Token>> {
-        use TokenType::*;
+        use TokenType::{Comment, NewLine, WhiteSpace};
         loop {
             match self.lex_one()? {
                 None => return Ok(None),
                 Some(t) => match t.ttype {
-                    WhiteSpace | Comment => continue,
+                    WhiteSpace | Comment => continue, // White-space and comments are not emitted
                     NewLine => {
-                        // Only emit NewLine if there has been non-whitespace, non-comment content on the line
+                        // Only emit NewLine if there has been non-whitespace, non-comment content on the line.
+                        // But always update our line-number and its starting position.
+                        self.line += 1;
+                        self.linestart = self.pos;
                         if self.at_bol {
                             continue;
                         } else {
@@ -121,8 +127,7 @@ impl<'src> LefLexer<'src> {
         }
     }
     /// Emit a [Token] of [TokenType] `ttype`
-    /// Uses the current Lexer location as its span,
-    /// and updates the Lexer start-position upon creation.
+    /// Uses the current Lexer location as its span, and updates the Lexer start-position upon creation.
     fn emit(&mut self, ttype: TokenType) -> Token {
         let loc = SourceLocation {
             start: self.start,
@@ -150,11 +155,8 @@ impl<'src> LefLexer<'src> {
     /// Lexer start state. Grab the next [Token]
     fn lex_one(&mut self) -> LefResult<Option<Token>> {
         while self.peek_char().is_some() {
-            if self.accept(|c| c == '\n') {
-                // Create a NewLine Token
+            if self.accept_char('\n') {
                 let tok = self.emit(TokenType::NewLine);
-                // And advance the line num
-                self.line += 1;
                 return Ok(Some(tok));
             } else if self.accept(|c| c.is_ascii_whitespace()) {
                 return self.lex_whitespace();
@@ -162,7 +164,7 @@ impl<'src> LefLexer<'src> {
                 return Ok(Some(self.emit(TokenType::SemiColon)));
             } else if self.accept(|c| c == '"') {
                 return self.lex_string_literal();
-            } else if self.accept(|c| c == '/') {
+            } else if self.accept(|c| c == '#') {
                 return self.lex_comment();
             } else if self.accept(|c| c.is_digit(10) || c == '-') {
                 return self.lex_number();
@@ -207,10 +209,6 @@ impl<'src> LefLexer<'src> {
     }
     /// Lex a comment
     fn lex_comment(&mut self) -> LefResult<Option<Token>> {
-        // First slash has been read. Error if we don't get the second.
-        if !self.accept_char('/') {
-            return self.err();
-        }
         // Accept everything until a newline
         while self.accept(|c| c != '\n') {
             continue;
@@ -274,7 +272,7 @@ impl Token {
 /// Token Types Enumeration
 /// Provides the type-tagging for initial Tokens
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-enum TokenType {
+pub enum TokenType {
     Name,
     Number,
     SemiColon,
@@ -283,18 +281,25 @@ enum TokenType {
     WhiteSpace,
     Comment,
 }
+#[derive(Debug)]
+pub enum LefParseErrorType {
+    InvalidKey(String),
+    InvalidToken {
+        expected: TokenType,
+        got: Option<TokenType>,
+    },
+}
 /// Lef Error Enumeration
 #[derive(Debug)]
 pub enum LefError {
     /// Lexer Errors
-    Lex {
-        line: usize,
-        pos: usize,
-    },
+    Lex { line: usize, pos: usize },
     /// Parser Errors
     Parse {
-        string: String,
-        line: usize,
+        tp: Option<LefParseErrorType>,
+        token: String,
+        line_content: String,
+        linenum: usize,
         pos: usize,
     },
     /// Errors parsing numeric [LefDecimal] values
@@ -384,8 +389,16 @@ impl<'src> LefParser<'src> {
     fn expect(&mut self, ttype: TokenType) -> LefResult<Token> {
         let tok = self.next_token()?;
         match tok {
-            Some(t) if t.ttype == ttype => return Ok(t),
-            _ => self.err(),
+            Some(t) if t.ttype == ttype => return Ok(t), // Good, usual case
+            // Error handling & helpers
+            Some(t) => self.err(Some(LefParseErrorType::InvalidToken {
+                expected: ttype,
+                got: Some(t.ttype),
+            })),
+            None => self.err(Some(LefParseErrorType::InvalidToken {
+                expected: ttype,
+                got: None,
+            })),
         }
     }
     /// Assert the expectation that the next [Token] is of [TokenType] `ttype`.
@@ -410,7 +423,7 @@ impl<'src> LefParser<'src> {
         if txt == name {
             Ok(())
         } else {
-            self.err()
+            self.err(None)
         }
     }
     /// Retrieve the text-content of lexer [Token] `tok`
@@ -423,7 +436,8 @@ impl<'src> LefParser<'src> {
         let mut lib = LefLibraryBuilder::default();
         let mut macros = Vec::new();
         loop {
-            match self.expect_and_get_str(TokenType::Name)? {
+            let txt = self.expect_and_get_str(TokenType::Name)?;
+            match txt {
                 "MACRO" => {
                     macros.push(self.parse_macro()?);
                 }
@@ -438,7 +452,15 @@ impl<'src> LefParser<'src> {
                 "DIVIDERCHAR" => {
                     lib.divider_char(self.parse_divider_char()?);
                 }
-                "NAMESCASESENSITIVE" => unimplemented!(),
+                "NAMESCASESENSITIVE" => {
+                    let val = self.expect_and_get_str(TokenType::Name)?;
+                    match LefOnOff::from_str(val) {
+                        Some(x) => lib.names_case_sensitive(x),
+                        None => return self.err(None),
+                    };
+                    self.expect(TokenType::SemiColon)?;
+                    self.expect(TokenType::NewLine)?;
+                }
                 "UNITS" => unimplemented!(),
                 "BEGINEXT" => unimplemented!(),
                 "END" => {
@@ -446,7 +468,10 @@ impl<'src> LefParser<'src> {
                     self.expect_name("LIBRARY")?;
                     break;
                 }
-                _ => return self.err(),
+                _ => {
+                    let txt = String::from(txt);
+                    return self.err(Some(LefParseErrorType::InvalidKey(txt)));
+                }
             }
         }
         lib.macros(macros);
@@ -461,23 +486,59 @@ impl<'src> LefParser<'src> {
         self.expect(TokenType::NewLine)?;
         // Start parsing attributes, pins, and obstructions
         let mut pins = Vec::new();
-        let mut obs = Vec::new();
         loop {
-            match self.expect_and_get_str(TokenType::Name)? {
+            let txt = self.get_name()?;
+            match txt {
                 "CLASS" => {
                     mac.class(self.parse_macro_class()?);
                 }
+                "SITE" => {
+                    let site_name = self.parse_ident()?;
+                    mac.site(site_name);
+                    self.expect(TokenType::SemiColon)?;
+                    self.expect(TokenType::NewLine)?;
+                }
                 "FOREIGN" => unimplemented!(),
-                "ORIGIN" => unimplemented!(),
-                "SIZE" => unimplemented!(),
+                "ORIGIN" => {
+                    let origin = self.parse_point()?;
+                    mac.origin(origin);
+                    self.expect(TokenType::SemiColon)?;
+                    self.expect(TokenType::NewLine)?;
+                }
+                "SIZE" => {
+                    let x = self.parse_number()?;
+                    self.expect_name("BY")?;
+                    let y = self.parse_number()?;
+                    mac.size((x, y));
+                    self.expect(TokenType::SemiColon)?;
+                    self.expect(TokenType::NewLine)?;
+                }
                 "PIN" => {
                     pins.push(self.parse_macro_pin()?);
                 }
                 "OBS" => {
-                    obs.push(self.parse_layer_geometries()?);
+                    self.expect(TokenType::NewLine)?;
+                    mac.obs(self.parse_obstructions()?);
                 }
-                "END" => break,         // End of Macro
-                _ => return self.err(), // Everything else is an error
+                "SYMMETRY" => {
+                    mac.symmetry(self.parse_macro_symmetries()?);
+                }
+                "SOURCE" => {
+                    // FIXME: only supported in some LEF versions,
+                    // sort out how to handle this fact
+                    let val = self.get_name()?;
+                    match LefDefSource::from_str(val) {
+                        Some(x) => mac.source(x),
+                        None => return self.err(None),
+                    };
+                    self.expect(TokenType::SemiColon)?;
+                    self.expect(TokenType::NewLine)?;
+                }
+                "END" => break, // End of Macro
+                _ => {
+                    let txt = String::from(txt);
+                    return self.err(Some(LefParseErrorType::InvalidKey(txt)));
+                }
             }
         }
         // Parse the END-enclosing macro-name
@@ -485,7 +546,6 @@ impl<'src> LefParser<'src> {
         self.expect(TokenType::NewLine)?;
         // Set the pins, build our struct and return it
         mac.pins(pins);
-        mac.obs(obs);
         Ok(mac.build()?)
     }
     /// Parse a MACRO::PIN definition into a [LefPin]
@@ -497,17 +557,37 @@ impl<'src> LefParser<'src> {
         self.expect(TokenType::NewLine)?;
         let mut ports = Vec::new();
         loop {
-            match self.expect_and_get_str(TokenType::Name)? {
+            let txt = self.get_name()?;
+            match txt {
                 "PORT" => {
+                    self.expect(TokenType::NewLine)?;
                     ports.push(self.parse_macro_port()?);
                 }
-                "DIRECTION" => unimplemented!(),
+                "DIRECTION" => {
+                    pin.direction(self.parse_pin_direction()?);
+                }
                 "TAPERRULE" => unimplemented!(),
-                "USE" => unimplemented!(),
+                "USE" => {
+                    let val = self.get_name()?;
+                    match LefPinUse::from_str(val) {
+                        Some(x) => pin.r#use(x),
+                        None => return self.err(None),
+                    };
+                    self.expect(TokenType::SemiColon)?;
+                    self.expect(TokenType::NewLine)?;
+                }
                 "NETEXPR" => unimplemented!(),
                 "SUPPLYSENSITIVITY" => unimplemented!(),
                 "GROUNDSENSITIVITY" => unimplemented!(),
-                "SHAPE" => unimplemented!(),
+                "SHAPE" => {
+                    let val = self.get_name()?;
+                    match LefPinShape::from_str(val) {
+                        Some(x) => pin.shape(x),
+                        None => return self.err(None),
+                    };
+                    self.expect(TokenType::SemiColon)?;
+                    self.expect(TokenType::NewLine)?;
+                }
                 "MUSTJOIN" => unimplemented!(),
                 "PROPERTY" => unimplemented!(),
                 "ANTENNAPARTIALMETALAREA" => unimplemented!(),
@@ -515,12 +595,26 @@ impl<'src> LefParser<'src> {
                 "ANTENNAPARTIALCUTAREA" => unimplemented!(),
                 "ANTENNAPARTIALDIFFAREA" => unimplemented!(),
                 "ANTENNAMODEL" => unimplemented!(),
-                "ANTENNAGATEAREA" => unimplemented!(),
+                "ANTENNADIFFAREA" => {
+                    let area = self.parse_number()?;
+                    pin.antenna_diff_area(area);
+                    self.expect(TokenType::SemiColon)?;
+                    self.expect(TokenType::NewLine)?;
+                }
+                "ANTENNAGATEAREA" => {
+                    let area = self.parse_number()?;
+                    pin.antenna_gate_area(area);
+                    self.expect(TokenType::SemiColon)?;
+                    self.expect(TokenType::NewLine)?;
+                }
                 "ANTENNAMAXAREACAR" => unimplemented!(),
                 "ANTENNAMAXSIDEAREACAR" => unimplemented!(),
                 "ANTENNAMAXCUTCAR" => unimplemented!(),
                 "END" => break, // End of Pin
-                _ => return self.err(),
+                _ => {
+                    let txt = String::from(txt);
+                    return self.err(Some(LefParseErrorType::InvalidKey(txt)));
+                }
             }
         }
         // Get the pin-closing "END <name>"
@@ -530,7 +624,27 @@ impl<'src> LefParser<'src> {
         pin.ports(ports);
         Ok(pin.build()?)
     }
-
+    /// Parse a [LefPinDirection]
+    fn parse_pin_direction(&mut self) -> LefResult<LefPinDirection> {
+        let txt = self.get_name()?;
+        let pin = match txt {
+            "INPUT" => LefPinDirection::Input,
+            "FEEDTHRU" => LefPinDirection::FeedThru,
+            "INOUT" => LefPinDirection::Inout,
+            "OUTPUT" => {
+                if self.matches(TokenType::SemiColon) {
+                    LefPinDirection::Output { tristate: false }
+                } else {
+                    self.expect_name("TRISTATE")?;
+                    LefPinDirection::Output { tristate: true }
+                }
+            }
+            _ => return self.err(None), // FIXME: some kinda InvalidValue error-type
+        };
+        self.expect(TokenType::SemiColon)?;
+        self.expect(TokenType::NewLine)?;
+        Ok(pin)
+    }
     /// Parse a MACRO::PIN::PORT definition into a [LefPort]
     fn parse_macro_port(&mut self) -> LefResult<LefPort> {
         let class: Option<Tbd> = None; // FIXME: will be [LefPortClass] or similar
@@ -541,21 +655,57 @@ impl<'src> LefParser<'src> {
         // Other keys generally advance by a Token *after* matching.
         while let Some(t) = self.peek_token() {
             if t.ttype != TokenType::Name {
-                return self.err();
+                return self.err(Some(LefParseErrorType::InvalidToken {
+                    expected: TokenType::Name,
+                    got: Some(t.ttype),
+                }));
             }
-            match self.txt(&t) {
+            let txt = self.txt(&t);
+            match txt {
                 "CLASS" => unimplemented!(),
                 "LAYER" => {
                     layers.push(self.parse_layer_geometries()?);
                 }
                 "END" => {
                     self.advance()?; // Eat the END Token
+                    self.expect(TokenType::NewLine)?;
                     break;
                 }
-                _ => return self.err(),
+                _ => {
+                    let txt = String::from(txt);
+                    return self.err(Some(LefParseErrorType::InvalidKey(txt)));
+                }
             }
         }
         Ok(LefPort { layers, class })
+    }
+    /// Parse a [LefMacro]'s obstruction definitions
+    fn parse_obstructions(&mut self) -> LefResult<Vec<LefLayerGeometries>> {
+        let mut geoms = Vec::new();
+        while let Some(t) = self.peek_token() {
+            if t.ttype != TokenType::Name {
+                return self.err(Some(LefParseErrorType::InvalidToken {
+                    expected: TokenType::Name,
+                    got: Some(t.ttype),
+                }));
+            }
+            let txt = self.txt(&t);
+            match txt {
+                "LAYER" => {
+                    geoms.push(self.parse_layer_geometries()?);
+                }
+                "END" => {
+                    self.advance()?; // Eat the END Token
+                    self.expect(TokenType::NewLine)?;
+                    break;
+                }
+                _ => {
+                    let txt = String::from(txt);
+                    return self.err(Some(LefParseErrorType::InvalidKey(txt)));
+                }
+            }
+        }
+        Ok(geoms)
     }
     /// Parse a set of geometries on a single layer, as commonly specified per-[LefPort]
     fn parse_layer_geometries(&mut self) -> LefResult<LefLayerGeometries> {
@@ -575,9 +725,10 @@ impl<'src> LefParser<'src> {
         // (Objects above it in the tree may error instead.)
         while let Some(t) = self.peek_token() {
             if t.ttype != TokenType::Name {
-                return self.err();
+                return self.err(None);
             }
-            match self.txt(&t) {
+            let txt = self.txt(&t);
+            match txt {
                 "EXCEPTPGNET" => unimplemented!(),
                 "SPACING" => unimplemented!(),
                 "DESIGNRULEWIDTH" => unimplemented!(),
@@ -587,7 +738,10 @@ impl<'src> LefParser<'src> {
                     geoms.push(self.parse_geometry()?);
                 }
                 "LAYER" | "END" => break, // End of geometries. (Really start/end of something else.)
-                _ => return self.err(),
+                _ => {
+                    let txt = String::from(txt);
+                    return self.err(Some(LefParseErrorType::InvalidKey(txt)));
+                }
             }
         }
         layer.geometries(geoms);
@@ -598,7 +752,8 @@ impl<'src> LefParser<'src> {
     fn parse_geometry(&mut self) -> LefResult<LefGeometry> {
         // let mut layer = LefLayerGeometriesBuilder::default();
         // let t = self.expect(TokenType::Name)?;
-        match self.get_name()? {
+        let txt = self.get_name()?;
+        match txt {
             "RECT" => {
                 if self.matches(TokenType::Name) {
                     unimplemented!();
@@ -621,15 +776,44 @@ impl<'src> LefParser<'src> {
                 Ok(LefGeometry::Shape(LefShape::Rect(p1, p2)))
             }
             "PATH" | "POLYGON" => unimplemented!(),
-            _ => return self.err(),
+            _ => {
+                let txt = String::from(txt);
+                return self.err(Some(LefParseErrorType::InvalidKey(txt)));
+            }
         }
     }
+    /// Parse a space-separated x,y [LefPoint] comprising two [LefDecimal]
     fn parse_point(&mut self) -> LefResult<LefPoint> {
         Ok(LefPoint(self.parse_number()?, self.parse_number()?))
     }
+    /// Parse a MACRO::PIN definition into a [LefPin]
+    fn parse_macro_symmetries(&mut self) -> LefResult<Vec<LefSymmetry>> {
+        let mut symms = Vec::new();
+        loop {
+            let tok = self.next_token()?;
+            match tok {
+                None => return self.err(None),
+                Some(t) if t.ttype == TokenType::SemiColon => {
+                    // End of symmetries list
+                    self.expect(TokenType::NewLine)?;
+                    break;
+                }
+                Some(t) => {
+                    // Any other Token must be a [LefSymmetry] variant
+                    let val = self.txt(&t);
+                    match LefSymmetry::from_str(val) {
+                        Some(x) => symms.push(x),
+                        None => return self.err(None),
+                    };
+                }
+            }
+        }
+        Ok(symms)
+    }
     /// Parse the MACRO::CLASS enumerations
     fn parse_macro_class(&mut self) -> LefResult<LefMacroClass> {
-        match self.get_name()? {
+        let txt = self.get_name()?;
+        match txt {
             "COVER" => unimplemented!(),
             "RING" => unimplemented!(),
             "BLOCK" => {
@@ -638,7 +822,7 @@ impl<'src> LefParser<'src> {
                     match self.get_name()? {
                         "BLACKBOX" => Some(LefBlockClassType::BlackBox),
                         "SOFT" => Some(LefBlockClassType::Soft),
-                        _ => return self.err(),
+                        _ => return self.err(None),
                     }
                 } else {
                     None
@@ -658,7 +842,7 @@ impl<'src> LefParser<'src> {
                         "SPACER" => Some(LefCoreClassType::Spacer),
                         "ANTENNACELL" => Some(LefCoreClassType::AntennaCell),
                         "WELLTAP" => Some(LefCoreClassType::WellTap),
-                        _ => return self.err(),
+                        _ => return self.err(None),
                     }
                 } else {
                     None
@@ -668,7 +852,10 @@ impl<'src> LefParser<'src> {
                 return Ok(LefMacroClass::Core { tp });
             }
             "ENDCAP" => unimplemented!(),
-            _ => return self.err(),
+            _ => {
+                let txt = String::from(txt);
+                return self.err(Some(LefParseErrorType::InvalidKey(txt)));
+            }
         }
     }
     /// Parse the next token into a [LefDecimal] number
@@ -682,7 +869,7 @@ impl<'src> LefParser<'src> {
         let txt = self.expect_and_get_str(TokenType::StringLiteral)?;
         let chars = txt.chars().collect::<Vec<char>>();
         if chars.len() != 4 {
-            return self.err();
+            return self.err(None);
         }
         self.expect(TokenType::SemiColon)?;
         self.expect(TokenType::NewLine)?;
@@ -693,7 +880,7 @@ impl<'src> LefParser<'src> {
         let txt = self.expect_and_get_str(TokenType::StringLiteral)?;
         let chars = txt.chars().collect::<Vec<char>>();
         if chars.len() != 3 {
-            return self.err();
+            return self.err(None);
         }
         self.expect(TokenType::SemiColon)?;
         self.expect(TokenType::NewLine)?;
@@ -706,15 +893,19 @@ impl<'src> LefParser<'src> {
     }
     /// Error-Generation Helper
     /// Collect our current position and content into a [LefError::Parse]
-    fn err<T>(&self) -> LefResult<T> {
-        let string = match self.lex.next_tok {
+    fn err<T>(&self, tp: Option<LefParseErrorType>) -> LefResult<T> {
+        // Quick start the line content; just grab, say, 100 characters
+        let line_content = self.src[self.lex.linestart..self.lex.linestart + 100].to_string();
+        let token = match self.lex.next_tok {
             Some(t) => self.txt(&t),
             None => "EOF",
         }
         .to_string();
         Err(LefError::Parse {
-            string,
-            line: self.lex.line,
+            tp,
+            line_content,
+            linenum: self.lex.line,
+            token,
             pos: self.lex.pos,
         })
     }
@@ -731,6 +922,11 @@ pub struct LefLibrary {
     pub macros: Vec<LefMacro>,
 
     // Optional
+    /// Case-Sensitive Name Setting
+    /// FIXME: potentially only some LEF versions
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
+    pub names_case_sensitive: Option<LefOnOff>,
     /// Bus-Bit Separator Characters
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
@@ -753,12 +949,15 @@ pub struct LefMacro {
     // Required
     /// Macro Name
     pub name: String,
+    // Optional
     /// Pin List
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[builder(default)]
     pub pins: Vec<LefPin>,
     /// Obstructions
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[builder(default)]
     pub obs: Vec<LefLayerGeometries>,
-
-    // Optional
     /// Macro Class
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
@@ -778,15 +977,16 @@ pub struct LefMacro {
     /// Outline Size
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
-    pub size: Option<LefPoint>,
+    pub size: Option<(LefDecimal, LefDecimal)>,
     /// Rotational & Translation Symmetries
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
-    pub symmetry: Option<Tbd>,
+    pub symmetry: Option<Vec<LefSymmetry>>,
     /// Site Name
+    /// Note the optional `sitePattern` is not supported
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
-    pub site: Option<Tbd>,
+    pub site: Option<String>,
     /// Density Objects
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
@@ -795,6 +995,11 @@ pub struct LefMacro {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub properties: Option<Tbd>,
+    /// Source
+    /// FIXME: supported in earlier versions of LEF only
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
+    pub source: Option<LefDefSource>,
 }
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum LefMacroClass {
@@ -891,7 +1096,7 @@ pub struct LefPin {
     /// Shape
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
-    pub shape: Option<Tbd>,
+    pub shape: Option<LefPinShape>,
     /// Must-Join
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
@@ -900,31 +1105,31 @@ pub struct LefPin {
     /// Antenna
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
-    pub antenna_partial_metal_area: Option<Tbd>,
+    pub antenna_partial_metal_area: Option<LefDecimal>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
-    pub antenna_partial_metal_side_area: Option<Tbd>,
+    pub antenna_partial_metal_side_area: Option<LefDecimal>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
-    pub antenna_partial_cut_area: Option<Tbd>,
+    pub antenna_partial_cut_area: Option<LefDecimal>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
-    pub antenna_diff_area: Option<Tbd>,
+    pub antenna_diff_area: Option<LefDecimal>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
-    pub antenna_model: Option<Tbd>,
+    pub antenna_model: Option<LefDecimal>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
-    pub antenna_gate_area: Option<Tbd>,
+    pub antenna_gate_area: Option<LefDecimal>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
-    pub antenna_max_area_char: Option<Tbd>,
+    pub antenna_max_area_char: Option<LefDecimal>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
-    pub antenna_side_area_char: Option<Tbd>,
+    pub antenna_side_area_char: Option<LefDecimal>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
-    pub antenna_max_cut_char: Option<Tbd>,
+    pub antenna_max_cut_char: Option<LefDecimal>,
 }
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum LefPinDirection {
@@ -932,14 +1137,6 @@ pub enum LefPinDirection {
     Output { tristate: bool },
     Inout,
     FeedThru,
-}
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-pub enum LefPinUse {
-    Signal,
-    Analog,
-    Power,
-    Ground,
-    Clock,
 }
 #[derive(Clone, Builder, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct LefPort {
@@ -1044,7 +1241,7 @@ mod tests {
 
     #[test]
     fn it_lexes() -> TestResult {
-        let src = "STUFF 101 ; \n // commentary \n";
+        let src = "STUFF 101 ; \n # commentary \n";
         let lex = LefLexer::new(src)?;
         let toks_vec: Vec<Token> = lex.collect(); // Collect up all tokens
         let tok_strs: Vec<&str> = toks_vec.iter().map(|t| t.substr(src)).collect();
@@ -1054,7 +1251,7 @@ mod tests {
     #[test]
     fn it_parses() -> TestResult {
         let src = r#"
-            VERSION 5 ; // commentary 
+            VERSION 5 ; # commentary 
             BUSBITCHARS "xy" ; 
             MACRO some_name 
             END some_name
@@ -1094,3 +1291,90 @@ mod tests {
         format!("{}/resources/{}", env!("CARGO_MANIFEST_DIR"), fname)
     }
 }
+
+///
+/// Macro for creating `enum`s with paired string-values, as commonly arrive in enumerated LEF fields such as "ON" / "OFF", "CLASS", etc.
+/// All variants are fieldless, and include derived implementations of common traits notably including `serde::{Serialize,Deserialize}`.
+///
+/// Defines two central methods:
+/// * `to_str(&self) -> &'static str` converts the enum to its Lef-String values.
+/// * `from_str(&str) -> Option<Self>` does the opposite, returning an [Option] indicator of success or failure.
+///
+macro_rules! enumstr {
+    (   $(#[$meta:meta])*
+        $enum_name:ident {
+        $( $variant:ident : $strval:literal ),* $(,)?
+    }) => {
+        $(#[$meta])*
+        #[allow(dead_code)]
+        #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+        pub enum $enum_name {
+            $( #[doc=$strval]
+                $variant ),*
+        }
+        impl $enum_name {
+            /// Convert a [$enum_name] to the (static) string-keyword used in the Lef format
+            #[allow(dead_code)]
+            fn to_str(&self) -> &'static str {
+                match self {
+                    $( Self::$variant => $strval),*,
+                }
+            }
+            /// Create a [$enum_name] from one of the string-values specified in the Lef format.
+            /// Returns `None` if input `txt` does not match one of [$enum_name]'s variants.
+            fn from_str(txt: &str) -> Option<Self> {
+                match txt {
+                    $( $strval => Some(Self::$variant)),*,
+                    _ => None,
+                }
+            }
+        }
+    }
+}
+
+enumstr!(
+    /// Binary On/Off Settings, Denoted by ON and OFF
+    LefOnOff {
+        On: "ON",
+        Off: "OFF",
+    }
+);
+enumstr!(
+    /// Specifies the source of a component
+    /// In all versions since at least 5.7 (2009), SOURCE is a DEF-only field on COMPONENT definitions.
+    /// Prior versions also include this as a field for LEF MACRO definitions.
+    LefDefSource {
+        Netlist: "NETLIST",
+        Dist: "DIST",
+        Timing: "TIMING",
+        User: "USER",
+    }
+);
+enumstr!(
+    /// Specifies which MACRO orientations are valid for placement
+    LefSymmetry {
+        X: "X",
+        Y: "Y",
+        R90: "R90"
+    }
+);
+enumstr!(
+    /// Specifies the usage-intent for a pin.
+    /// Note this is the noun form of "use", pronounced with the hard "s".
+    /// Not the verb form pronounced like the New Jersey second-person plural "yous".
+    LefPinUse {
+        Signal: "SIGNAL",
+        Analog: "ANALOG",
+        Power: "POWER",
+        Ground: "GROUND",
+        Clock: "CLOCK",
+    }
+);
+enumstr!(
+    /// Specifies a pin with special connection requirements because of its shape
+    LefPinShape {
+        Abutment: "ABUTMENT",
+        Ring: "RING",
+        FeedThru: "FEEDTHRU",
+    }
+);
