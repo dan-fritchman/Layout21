@@ -102,19 +102,7 @@ impl<'src> LefLexer<'src> {
             match self.lex_one()? {
                 None => return Ok(None),
                 Some(t) => match t.ttype {
-                    WhiteSpace | Comment => continue, // White-space and comments are not emitted
-                    NewLine => {
-                        // Only emit NewLine if there has been non-whitespace, non-comment content on the line.
-                        // But always update our line-number and its starting position.
-                        self.line += 1;
-                        self.linestart = self.pos;
-                        if self.at_bol {
-                            continue;
-                        } else {
-                            self.at_bol = true;
-                            return Ok(Some(t));
-                        }
-                    }
+                    WhiteSpace | Comment | NewLine => continue, // White-space and comments are not emitted
                     _ => {
                         // All other Tokens. Note we have seen content on the line, and return them.
                         self.at_bol = false;
@@ -150,34 +138,43 @@ impl<'src> LefLexer<'src> {
     fn accept_char(&mut self, c: char) -> bool {
         self.accept(|a| a == c)
     }
-    /// Lexer start state. Grab the next [Token]
+    /// Lex the next [Token]
     fn lex_one(&mut self) -> LefResult<Option<Token>> {
-        while self.peek_char().is_some() {
-            if self.accept_char('\n') {
-                let tok = self.emit(TokenType::NewLine);
-                return Ok(Some(tok));
-            } else if self.accept(char::is_whitespace) {
-                return self.lex_whitespace();
-            } else if self.accept_char(';') {
-                return Ok(Some(self.emit(TokenType::SemiColon)));
-            } else if self.accept_char('"') {
-                return self.lex_string_literal();
-            } else if self.accept_char('#') {
-                return self.lex_comment();
-            } else if self.accept(|c| c.is_digit(10) || c == '-') {
-                return self.lex_number();
-            } else if self.accept(char::is_alphabetic) {
-                return self.lex_name();
-            } else {
-                // Some other, invalid character. Fail.
-                return self.err();
-            }
+        if self.peek_char().is_none() {
+            return Ok(None); // All done! End of input. Return `None`.
         }
-        // All done! End of input. Return `None`.
-        Ok(None)
+        if self.accept_char('\n') {
+            return self.lex_newline();
+        }
+        if self.accept(char::is_whitespace) {
+            return self.lex_whitespace();
+        }
+        if self.accept_char(';') {
+            return Ok(Some(self.emit(TokenType::SemiColon)));
+        }
+        if self.accept_char('"') {
+            return self.lex_string_literal();
+        }
+        if self.accept_char('#') {
+            return self.lex_comment();
+        }
+        if self.accept(|c| c.is_digit(10) || c == '-') {
+            return self.lex_number();
+        }
+        if self.accept(char::is_alphabetic) {
+            return self.lex_name();
+        }
+        return self.err(); // Some other, invalid character. Fail.
     }
-    /// Lex whitespace, which at least some Lef programs interpret
-    /// as significant, particularly indentation.
+    /// Lex newlines, incrementing our line-number
+    fn lex_newline(&mut self) -> LefResult<Option<Token>> {
+        let tok = self.emit(TokenType::NewLine);
+        self.line += 1;
+        self.linestart = self.pos;
+        self.at_bol = true;
+        return Ok(Some(tok));
+    }
+    /// Lex whitespace
     fn lex_whitespace(&mut self) -> LefResult<Option<Token>> {
         while self.accept(|c| c.is_ascii_whitespace() && c != '\n') {
             continue;
@@ -277,6 +274,7 @@ pub enum TokenType {
     NewLine,
     WhiteSpace,
     Comment,
+    End,
 }
 /// Enumerated parsing contexts, largely for capturing errors
 #[derive(Debug)]
@@ -433,13 +431,12 @@ impl<'src> LefParser<'src> {
     fn get_name(&mut self) -> LefResult<&str> {
         self.expect_and_get_str(TokenType::Name)
     }
-    /// Assert that the next [Token] is a [TokenType::Name],
-    /// and that its string value matches `name`.
-    /// This is often used for pseudo-keywords,
-    /// such as the "BY" in lines such as "SIZE x BY y".
+    /// Assert that the next [Token] is a [TokenType::Name], and that its string value matches `name`.
+    /// This is often used for pseudo-keywords, such as the "BY" in lines such as "SIZE x BY y".
+    /// Note that LEF keywords are case-insensitive, comparisons are made on upper-case versions.
     fn expect_name(&mut self, name: &str) -> LefResult<()> {
-        let txt = self.get_name()?;
-        if txt == name {
+        let txt = self.get_name()?.to_ascii_uppercase();
+        if txt == name.to_ascii_uppercase() {
             Ok(())
         } else {
             self.err(None)
@@ -464,7 +461,6 @@ impl<'src> LefParser<'src> {
                 "VERSION" => {
                     lib.version(self.parse_number()?);
                     self.expect(TokenType::SemiColon)?;
-                    self.expect(TokenType::NewLine)?;
                 }
                 "BUSBITCHARS" => {
                     lib.bus_bit_chars(self.parse_bus_bit_chars()?);
@@ -475,15 +471,12 @@ impl<'src> LefParser<'src> {
                 "NAMESCASESENSITIVE" => {
                     lib.names_case_sensitive(self.parse_enum::<LefOnOff>()?);
                     self.expect(TokenType::SemiColon)?;
-                    self.expect(TokenType::NewLine)?;
                 }
                 "NOWIREEXTENSIONATPIN" => {
                     lib.no_wire_extension_at_pin(self.parse_enum::<LefOnOff>()?);
                     self.expect(TokenType::SemiColon)?;
-                    self.expect(TokenType::NewLine)?;
                 }
                 "UNITS" => {
-                    self.expect(TokenType::NewLine)?;
                     lib.units(self.parse_units()?);
                 }
                 "SITE" => {
@@ -511,7 +504,6 @@ impl<'src> LefParser<'src> {
         // Parse the macro-name
         let name = self.parse_ident()?;
         mac.name(name.clone());
-        self.expect(TokenType::NewLine)?;
         // Start parsing attributes, pins, and obstructions
         let mut pins = Vec::new();
         loop {
@@ -524,7 +516,6 @@ impl<'src> LefParser<'src> {
                     let site_name = self.parse_ident()?;
                     mac.site(site_name);
                     self.expect(TokenType::SemiColon)?;
-                    self.expect(TokenType::NewLine)?;
                 }
                 "FOREIGN" => {
                     let cell_name = self.parse_ident()?;
@@ -534,7 +525,6 @@ impl<'src> LefParser<'src> {
                     }
                     // FIXME: the optional `orient` field is not supported
                     self.expect(TokenType::SemiColon)?;
-                    self.expect(TokenType::NewLine)?;
                     mac.foreign(LefForeign {
                         cell_name,
                         pt,
@@ -545,7 +535,6 @@ impl<'src> LefParser<'src> {
                     let origin = self.parse_point()?;
                     mac.origin(origin);
                     self.expect(TokenType::SemiColon)?;
-                    self.expect(TokenType::NewLine)?;
                 }
                 "SIZE" => {
                     mac.size(self.parse_size()?);
@@ -554,7 +543,6 @@ impl<'src> LefParser<'src> {
                     pins.push(self.parse_macro_pin()?);
                 }
                 "OBS" => {
-                    self.expect(TokenType::NewLine)?;
                     mac.obs(self.parse_obstructions()?);
                 }
                 "SYMMETRY" => {
@@ -564,7 +552,6 @@ impl<'src> LefParser<'src> {
                     // FIXME: only supported in some LEF versions, sort out how to handle this fact
                     mac.source(self.parse_enum::<LefDefSource>()?);
                     self.expect(TokenType::SemiColon)?;
-                    self.expect(TokenType::NewLine)?;
                 }
                 "END" => break, // End of Macro
                 _ => {
@@ -575,7 +562,6 @@ impl<'src> LefParser<'src> {
         }
         // Parse the END-enclosing macro-name
         self.expect_name(&name)?;
-        self.expect(TokenType::NewLine)?;
         // Set the pins, build our struct and return it
         mac.pins(pins);
         Ok(mac.build()?)
@@ -586,14 +572,13 @@ impl<'src> LefParser<'src> {
         // Parse the pin-name
         let name = self.parse_ident()?;
         pin.name(name.clone());
-        self.expect(TokenType::NewLine)?;
         let mut ports = Vec::new();
+        let mut antenna_attrs = Vec::new();
         loop {
             let txt = self.get_name()?;
             match txt {
                 "END" => break, // End of Pin
                 "PORT" => {
-                    self.expect(TokenType::NewLine)?;
                     ports.push(self.parse_macro_port()?);
                 }
                 "DIRECTION" => {
@@ -602,38 +587,36 @@ impl<'src> LefParser<'src> {
                 "USE" => {
                     pin.r#use(self.parse_enum::<LefPinUse>()?);
                     self.expect(TokenType::SemiColon)?;
-                    self.expect(TokenType::NewLine)?;
                 }
                 "SHAPE" => {
                     pin.shape(self.parse_enum::<LefPinShape>()?);
                     self.expect(TokenType::SemiColon)?;
-                    self.expect(TokenType::NewLine)?;
                 }
-                "ANTENNADIFFAREA" => {
-                    pin.antenna_diff_area(self.parse_number()?);
-                    self.expect(TokenType::SemiColon)?;
-                    self.expect(TokenType::NewLine)?;
+                "ANTENNAMODEL" => {
+                    pin.antenna_model(self.parse_enum::<LefAntennaModel>()?);
                 }
-                "ANTENNAGATEAREA" => {
-                    let area = self.parse_number()?;
-                    pin.antenna_gate_area(area);
-                    self.expect(TokenType::SemiColon)?;
-                    self.expect(TokenType::NewLine)?;
-                }
-                "TAPERRULE"
-                | "NETEXPR"
-                | "SUPPLYSENSITIVITY"
-                | "GROUNDSENSITIVITY"
-                | "MUSTJOIN"
-                | "PROPERTY"
+                "ANTENNADIFFAREA"
+                | "ANTENNAGATEAREA"
                 | "ANTENNAPARTIALMETALAREA"
                 | "ANTENNAPARTIALMETALSIDEAREA"
                 | "ANTENNAPARTIALCUTAREA"
                 | "ANTENNAPARTIALDIFFAREA"
-                | "ANTENNAMODEL"
                 | "ANTENNAMAXAREACAR"
                 | "ANTENNAMAXSIDEAREACAR"
                 | "ANTENNAMAXCUTCAR" => {
+                    let key = String::from(txt);
+                    let val = self.parse_number()?;
+                    let mut layer = None;
+                    if !self.matches(TokenType::SemiColon) {
+                        self.expect_name("LAYER")?;
+                        layer = Some(self.parse_ident()?);
+                    }
+                    antenna_attrs.push(LefPinAntennaAttr { key, val, layer });
+                    self.expect(TokenType::SemiColon)?;
+                }
+
+                "TAPERRULE" | "NETEXPR" | "SUPPLYSENSITIVITY" | "GROUNDSENSITIVITY"
+                | "MUSTJOIN" | "PROPERTY" => {
                     let txt = String::from(txt);
                     return self.err(Some(LefParseErrorType::UnsupportedKey {
                         key: txt,
@@ -651,9 +634,9 @@ impl<'src> LefParser<'src> {
         }
         // Get the pin-closing "END <name>"
         self.expect_name(&name)?;
-        self.expect(TokenType::NewLine)?;
         // Set our port-objects, build and return the Pin
         pin.ports(ports);
+        pin.antenna_attrs(antenna_attrs);
         Ok(pin.build()?)
     }
     /// Parse a [LefPinDirection]
@@ -678,7 +661,6 @@ impl<'src> LefParser<'src> {
             }
         };
         self.expect(TokenType::SemiColon)?;
-        self.expect(TokenType::NewLine)?;
         Ok(pin)
     }
     /// Parse a MACRO::PIN::PORT definition into a [LefPort]
@@ -702,14 +684,12 @@ impl<'src> LefParser<'src> {
                     self.advance()?; // Eat the CLASS Token
                     class = Some(self.parse_enum::<LefPortClass>()?);
                     self.expect(TokenType::SemiColon)?;
-                    self.expect(TokenType::NewLine)?;
                 }
                 "LAYER" => {
                     layers.push(self.parse_layer_geometries()?);
                 }
                 "END" => {
                     self.advance()?; // Eat the END Token
-                    self.expect(TokenType::NewLine)?;
                     break;
                 }
                 _ => {
@@ -737,7 +717,6 @@ impl<'src> LefParser<'src> {
                 }
                 "END" => {
                     self.advance()?; // Eat the END Token
-                    self.expect(TokenType::NewLine)?;
                     break;
                 }
                 _ => {
@@ -778,7 +757,6 @@ impl<'src> LefParser<'src> {
             }
         }
         self.expect(TokenType::SemiColon)?;
-        self.expect(TokenType::NewLine)?;
         let mut geoms = Vec::new();
         let mut vias = Vec::new();
         // LayerGeometries don't have an END card, so this needs to peek at the next token,
@@ -805,14 +783,12 @@ impl<'src> LefParser<'src> {
                     let pt = self.parse_point()?;
                     let via_name = self.parse_ident()?;
                     self.expect(TokenType::SemiColon)?;
-                    self.expect(TokenType::NewLine)?;
                     vias.push(LefVia { pt, via_name });
                 }
                 "WIDTH" => {
                     self.advance()?; // Eat the WIDTH Token
                     layer.width(self.parse_number()?);
                     self.expect(TokenType::SemiColon)?;
-                    self.expect(TokenType::NewLine)?;
                 }
                 _ => {
                     let txt = String::from(txt);
@@ -851,7 +827,6 @@ impl<'src> LefParser<'src> {
                 let p1 = self.parse_point()?;
                 let p2 = self.parse_point()?;
                 self.expect(TokenType::SemiColon)?;
-                self.expect(TokenType::NewLine)?;
                 // And return the Rect
                 Ok(LefGeometry::Shape(LefShape::Rect(p1, p2)))
             }
@@ -866,7 +841,6 @@ impl<'src> LefParser<'src> {
                     if self.matches(TokenType::SemiColon) {
                         // End of points
                         self.advance()?;
-                        self.expect(TokenType::NewLine)?;
                         break;
                     } else {
                         points.push(self.parse_point()?);
@@ -903,13 +877,11 @@ impl<'src> LefParser<'src> {
                     self.expect_name("MICRONS")?;
                     let num = self.parse_number()?;
                     self.expect(TokenType::SemiColon)?;
-                    self.expect(TokenType::NewLine)?;
                     units.database_microns = Some(num);
                 }
                 "END" => {
                     // End of UNITS
                     self.expect_name("UNITS")?;
-                    self.expect(TokenType::NewLine)?;
                     break;
                 }
                 // All the other united quantities are unsupported
@@ -939,7 +911,6 @@ impl<'src> LefParser<'src> {
             if self.matches(TokenType::SemiColon) {
                 // End of symmetries list
                 self.advance()?;
-                self.expect(TokenType::NewLine)?;
                 break;
             } else {
                 // Any other Token must be a [LefSymmetry] variant
@@ -958,7 +929,6 @@ impl<'src> LefParser<'src> {
                     tp = Some(self.parse_enum::<LefBlockClassType>()?);
                 }
                 self.expect(TokenType::SemiColon)?;
-                self.expect(TokenType::NewLine)?;
                 Ok(LefMacroClass::Block { tp })
             }
             "PAD" => {
@@ -967,7 +937,6 @@ impl<'src> LefParser<'src> {
                     tp = Some(self.parse_enum::<LefPadClassType>()?);
                 }
                 self.expect(TokenType::SemiColon)?;
-                self.expect(TokenType::NewLine)?;
                 Ok(LefMacroClass::Pad { tp })
             }
             "CORE" => {
@@ -976,14 +945,12 @@ impl<'src> LefParser<'src> {
                     tp = Some(self.parse_enum::<LefCoreClassType>()?);
                 }
                 self.expect(TokenType::SemiColon)?;
-                self.expect(TokenType::NewLine)?;
                 Ok(LefMacroClass::Core { tp })
             }
             "ENDCAP" => {
                 // Note unlike all other types, an ENDCAP sub-type is *required*.
                 let tp = self.parse_enum::<LefEndCapClassType>()?;
                 self.expect(TokenType::SemiColon)?;
-                self.expect(TokenType::NewLine)?;
                 Ok(LefMacroClass::EndCap { tp })
             }
             "COVER" => {
@@ -993,12 +960,10 @@ impl<'src> LefParser<'src> {
                     bump = true;
                 }
                 self.expect(TokenType::SemiColon)?;
-                self.expect(TokenType::NewLine)?;
                 Ok(LefMacroClass::Cover { bump })
             }
             "RING" => {
                 self.expect(TokenType::SemiColon)?;
-                self.expect(TokenType::NewLine)?;
                 Ok(LefMacroClass::Ring)
             }
             _ => {
@@ -1013,19 +978,16 @@ impl<'src> LefParser<'src> {
         // Parse the site name
         let name = self.parse_ident()?;
         site.name(name.clone());
-        self.expect(TokenType::NewLine)?;
         loop {
             let txt = self.get_name()?;
             match txt {
                 "END" => {
                     self.expect_name(&name)?;
-                    self.expect(TokenType::NewLine)?;
                     break;
                 }
                 "CLASS" => {
                     site.class(self.parse_enum::<LefSiteClass>()?);
                     self.expect(TokenType::SemiColon)?;
-                    self.expect(TokenType::NewLine)?;
                 }
                 "SYMMETRY" => {
                     site.symmetry(self.parse_macro_symmetries()?);
@@ -1054,7 +1016,6 @@ impl<'src> LefParser<'src> {
         self.expect_name("BY")?;
         let y = self.parse_number()?;
         self.expect(TokenType::SemiColon)?;
-        self.expect(TokenType::NewLine)?;
         Ok((x, y))
     }
     /// Parse the next token into a [LefDecimal] number
@@ -1071,7 +1032,6 @@ impl<'src> LefParser<'src> {
             return self.err(None);
         }
         self.expect(TokenType::SemiColon)?;
-        self.expect(TokenType::NewLine)?;
         return Ok((chars[1], chars[2]));
     }
     /// Parse the LefLibrary::DIVIDERCHAR key from a single-character string literal
@@ -1082,7 +1042,6 @@ impl<'src> LefParser<'src> {
             return self.err(None);
         }
         self.expect(TokenType::SemiColon)?;
-        self.expect(TokenType::NewLine)?;
         Ok(chars[1])
     }
     /// Parse an identifier name, e.g. a macro, pin, or layer name.
@@ -1157,13 +1116,16 @@ pub struct LefLibrary {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub divider_char: Option<char>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub via: Option<Tbd>,
     /// Dimensional Units
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub units: Option<LefUnits>,
+
+    // Not (Yet) Supported
+    /// Via Definitions
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
+    pub vias: Option<Tbd>,
 }
 /// Lef Macro Definition
 #[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -1172,7 +1134,6 @@ pub struct LefMacro {
     // Required
     /// Macro Name
     pub name: String,
-    // Optional
     /// Pin List
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[builder(default)]
@@ -1181,6 +1142,7 @@ pub struct LefMacro {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[builder(default)]
     pub obs: Vec<LefLayerGeometries>,
+    // Optional
     /// Macro Class
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
@@ -1193,10 +1155,6 @@ pub struct LefMacro {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub origin: Option<LefPoint>,
-    /// Electrically-Equivalent Cell
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub eeq: Option<Tbd>,
     /// Outline Size
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
@@ -1210,6 +1168,17 @@ pub struct LefMacro {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub site: Option<String>,
+    /// Source
+    /// FIXME: supported in earlier versions of LEF only
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
+    pub source: Option<LefDefSource>,
+
+    // Not (Yet) Supported
+    /// Electrically-Equivalent Cell
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
+    pub eeq: Option<Tbd>,
     /// Density Objects
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
@@ -1218,11 +1187,6 @@ pub struct LefMacro {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub properties: Option<Tbd>,
-    /// Source
-    /// FIXME: supported in earlier versions of LEF only
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub source: Option<LefDefSource>,
 }
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum LefMacroClass {
@@ -1261,12 +1225,23 @@ pub struct LefPin {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub direction: Option<LefPinDirection>,
-
     /// Usage / Role
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub r#use: Option<LefPinUse>,
+    /// Shape
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
+    pub shape: Option<LefPinShape>,
+    /// Antenna Model
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
+    pub antenna_model: Option<LefAntennaModel>,
+    /// Antenna Attributes
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub antenna_attrs: Vec<LefPinAntennaAttr>,
 
+    // Not (Yet) Supported
     /// Taper Rule
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
@@ -1283,43 +1258,10 @@ pub struct LefPin {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub ground_sensitivity: Option<Tbd>,
-    /// Shape
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub shape: Option<LefPinShape>,
     /// Must-Join
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub must_join: Option<Tbd>,
-
-    /// Antenna
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub antenna_partial_metal_area: Option<LefDecimal>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub antenna_partial_metal_side_area: Option<LefDecimal>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub antenna_partial_cut_area: Option<LefDecimal>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub antenna_diff_area: Option<LefDecimal>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub antenna_model: Option<LefDecimal>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub antenna_gate_area: Option<LefDecimal>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub antenna_max_area_char: Option<LefDecimal>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub antenna_side_area_char: Option<LefDecimal>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub antenna_max_cut_char: Option<LefDecimal>,
 }
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum LefPinDirection {
@@ -1327,6 +1269,17 @@ pub enum LefPinDirection {
     Output { tristate: bool },
     Inout,
     FeedThru,
+}
+/// Antenna Attributes
+///
+/// Stored as key-value pairs from string-keys name "ANTENNA*" to [LefDecimal] values.
+/// Note each pair may have an optional `layer` specifier,
+/// and that each key may have multiple attributes, generally specifying different layers.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct LefPinAntennaAttr {
+    key: String,
+    val: LefDecimal,
+    layer: Option<String>,
 }
 #[derive(Clone, Builder, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct LefPort {
@@ -1342,8 +1295,10 @@ pub struct LefLayerGeometries {
     /// Layer Name
     pub layer_name: String,
     /// Geometries
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub geometries: Vec<LefGeometry>,
     /// Vias
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub vias: Vec<LefVia>,
 
     // Optional
@@ -1423,10 +1378,14 @@ pub struct LefSite {
     pub class: LefSiteClass,
     /// Size
     pub size: (LefDecimal, LefDecimal),
+
+    // Optional
     /// Rotational & Translation Symmetries
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub symmetry: Option<Vec<LefSymmetry>>,
+
+    // Not (Yet) Supported
     /// Row Patterns, re other previously defined sites
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
@@ -1489,7 +1448,7 @@ mod tests {
         let lex = LefLexer::new(src)?;
         let toks_vec: Vec<Token> = lex.collect(); // Collect up all tokens
         let tok_strs: Vec<&str> = toks_vec.iter().map(|t| t.substr(src)).collect();
-        assert_eq!(tok_strs, vec!["STUFF", "101", ";", "\n",]);
+        assert_eq!(tok_strs, vec!["STUFF", "101", ";"]);
         Ok(())
     }
     #[test]
@@ -1705,5 +1664,14 @@ enumstr!(
     LefSiteClass {
         Pad: "PAD",
         Core: "CORE",
+    }
+);
+enumstr!(
+    /// Antenna Models
+    LefAntennaModel {
+        Oxide1: "OXIDE1",
+        Oxide2: "OXIDE2",
+        Oxide3: "OXIDE3",
+        Oxide4: "OXIDE4",
     }
 );
