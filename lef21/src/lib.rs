@@ -297,10 +297,13 @@ pub enum LefParseErrorType {
     InvalidValue(String),
     /// Unsupported (but spec-valid) Value
     UnsupportedValue(String),
+    /// Invalid Token
     InvalidToken {
         expected: TokenType,
         got: Option<TokenType>,
     },
+    /// Syntax Error: missing keyword or identifier at a required location
+    RequiredWord { expected: String, got: String },
 }
 /// Lef Error Enumeration
 #[derive(Debug)]
@@ -431,15 +434,32 @@ impl<'src> LefParser<'src> {
     fn get_name(&mut self) -> LefResult<&str> {
         self.expect_and_get_str(TokenType::Name)
     }
-    /// Assert that the next [Token] is a [TokenType::Name], and that its string value matches `name`.
-    /// This is often used for pseudo-keywords, such as the "BY" in lines such as "SIZE x BY y".
-    /// Note that LEF keywords are case-insensitive, comparisons are made on upper-case versions.
-    fn expect_name(&mut self, name: &str) -> LefResult<()> {
+    /// Assert that the next [Token] is a [TokenType::Name], and that its string value matches `kw`.
+    /// Note that LEF keywords are case-insensitive. The next [Token] is converted to uppercase before comparison,
+    /// where the keyword `kw` is expected to be provided in uppercase by the caller.
+    fn expect_keyword(&mut self, kw: &str) -> LefResult<()> {
         let txt = self.get_name()?.to_ascii_uppercase();
-        if txt == name.to_ascii_uppercase() {
+        if txt == kw {
             Ok(())
         } else {
-            self.err(None)
+            return self.err(Some(LefParseErrorType::RequiredWord {
+                expected: String::from(kw),
+                got: txt,
+            }));
+        }
+    }
+    /// Assert that the next [Token] is a [TokenType::Name], and that its string value matches `ident`.
+    /// Unlike [LefParser::expect_keyword], this function matches literally, and does not convert to uppercase.
+    fn expect_ident(&mut self, ident: &str) -> LefResult<()> {
+        let txt = self.get_name()?;
+        if txt == ident {
+            Ok(())
+        } else {
+            let txt = String::from(txt);
+            return self.err(Some(LefParseErrorType::RequiredWord {
+                expected: String::from(ident),
+                got: txt,
+            }));
         }
     }
     /// Retrieve the text-content of lexer [Token] `tok`
@@ -453,8 +473,8 @@ impl<'src> LefParser<'src> {
         let mut macros = Vec::new();
         let mut sites = Vec::new();
         loop {
-            let txt = self.expect_and_get_str(TokenType::Name)?;
-            match txt {
+            let txt = self.get_name()?;
+            match txt.to_ascii_uppercase().as_str() {
                 "MACRO" => {
                     macros.push(self.parse_macro()?);
                 }
@@ -484,7 +504,7 @@ impl<'src> LefParser<'src> {
                 }
                 "END" => {
                     // End of MACRO definitions. Expect "END LIBRARY".
-                    self.expect_name("LIBRARY")?;
+                    self.expect_keyword("LIBRARY")?;
                     break;
                 }
                 "BEGINEXT" => unimplemented!(),
@@ -508,7 +528,7 @@ impl<'src> LefParser<'src> {
         let mut pins = Vec::new();
         loop {
             let txt = self.get_name()?;
-            match txt {
+            match txt.to_ascii_uppercase().as_str() {
                 "CLASS" => {
                     mac.class(self.parse_macro_class()?);
                 }
@@ -561,7 +581,7 @@ impl<'src> LefParser<'src> {
             }
         }
         // Parse the END-enclosing macro-name
-        self.expect_name(&name)?;
+        self.expect_ident(&name)?;
         // Set the pins, build our struct and return it
         mac.pins(pins);
         Ok(mac.build()?)
@@ -576,7 +596,7 @@ impl<'src> LefParser<'src> {
         let mut antenna_attrs = Vec::new();
         loop {
             let txt = self.get_name()?;
-            match txt {
+            match txt.to_ascii_uppercase().as_str() {
                 "END" => break, // End of Pin
                 "PORT" => {
                     ports.push(self.parse_macro_port()?);
@@ -608,7 +628,7 @@ impl<'src> LefParser<'src> {
                     let val = self.parse_number()?;
                     let mut layer = None;
                     if !self.matches(TokenType::SemiColon) {
-                        self.expect_name("LAYER")?;
+                        self.expect_keyword("LAYER")?;
                         layer = Some(self.parse_ident()?);
                     }
                     antenna_attrs.push(LefPinAntennaAttr { key, val, layer });
@@ -633,7 +653,7 @@ impl<'src> LefParser<'src> {
             }
         }
         // Get the pin-closing "END <name>"
-        self.expect_name(&name)?;
+        self.expect_ident(&name)?;
         // Set our port-objects, build and return the Pin
         pin.ports(ports);
         pin.antenna_attrs(antenna_attrs);
@@ -642,7 +662,7 @@ impl<'src> LefParser<'src> {
     /// Parse a [LefPinDirection]
     fn parse_pin_direction(&mut self) -> LefResult<LefPinDirection> {
         let txt = self.get_name()?;
-        let pin = match txt {
+        let pin = match txt.to_ascii_uppercase().as_str() {
             "INPUT" => LefPinDirection::Input,
             "FEEDTHRU" => LefPinDirection::FeedThru,
             "INOUT" => LefPinDirection::Inout,
@@ -650,7 +670,7 @@ impl<'src> LefParser<'src> {
                 // Outputs include an optional tri-state modifier
                 let mut tristate = false;
                 if !self.matches(TokenType::SemiColon) {
-                    self.expect_name("TRISTATE")?;
+                    self.expect_keyword("TRISTATE")?;
                     tristate = true;
                 }
                 LefPinDirection::Output { tristate }
@@ -679,7 +699,7 @@ impl<'src> LefParser<'src> {
                 }));
             }
             let txt = self.txt(&t);
-            match txt {
+            match txt.to_ascii_uppercase().as_str() {
                 "CLASS" => {
                     self.advance()?; // Eat the CLASS Token
                     class = Some(self.parse_enum::<LefPortClass>()?);
@@ -711,7 +731,7 @@ impl<'src> LefParser<'src> {
                 }));
             }
             let txt = self.txt(&t);
-            match txt {
+            match txt.to_ascii_uppercase().as_str() {
                 "LAYER" => {
                     geoms.push(self.parse_layer_geometries()?);
                 }
@@ -731,13 +751,13 @@ impl<'src> LefParser<'src> {
     fn parse_layer_geometries(&mut self) -> LefResult<LefLayerGeometries> {
         let mut layer = LefLayerGeometriesBuilder::default();
         // Check for the opening "LAYER" keyword
-        self.expect_name("LAYER")?;
+        self.expect_keyword("LAYER")?;
         // Parse the layer-name
         layer.layer_name(self.parse_ident()?);
         // Parse the options defined inline with the LAYER statement
         while !self.matches(TokenType::SemiColon) {
             let txt = self.get_name()?;
-            match txt {
+            match txt.to_ascii_uppercase().as_str() {
                 "EXCEPTPGNET" => {
                     layer.except_pg_net(true);
                 }
@@ -769,7 +789,7 @@ impl<'src> LefParser<'src> {
                 return self.err(None);
             }
             let txt = self.txt(&t);
-            match txt {
+            match txt.to_ascii_uppercase().as_str() {
                 "LAYER" | "END" => break, // End of geometries. (Really start/end of something else.)
                 "PATH" | "POLYGON" | "RECT" => {
                     geoms.push(self.parse_geometry()?);
@@ -809,18 +829,18 @@ impl<'src> LefParser<'src> {
         // let mut layer = LefLayerGeometriesBuilder::default();
         // let t = self.expect(TokenType::Name)?;
         let txt = self.get_name()?;
-        match txt {
+        match txt.to_ascii_uppercase().as_str() {
             "RECT" => {
                 if self.matches(TokenType::Name) {
                     unimplemented!();
                     // // Parse an optional MASK field
-                    // self.expect_name("MASK")?;
+                    // self.expect_keyword("MASK")?;
                     // let mask_num = self.parse_ident()?;
                 }
                 // if self.matches(TokenType::Name) {
                 //     unimplemented!();
                 //     // Parse the ITERATE options
-                //     self.expect_name("ITERATE")?;
+                //     self.expect_keyword("ITERATE")?;
                 //     let mask_num = self.parse_ident()?;
                 // }
                 // Parse the two points
@@ -871,17 +891,17 @@ impl<'src> LefParser<'src> {
         let mut units = LefUnits::default();
         loop {
             let txt = self.get_name()?;
-            match txt {
+            match txt.to_ascii_uppercase().as_str() {
                 "DATABASE" => {
                     // Parse the "DATABASE MICRONS" flavor
-                    self.expect_name("MICRONS")?;
+                    self.expect_keyword("MICRONS")?;
                     let num = self.parse_number()?;
                     self.expect(TokenType::SemiColon)?;
                     units.database_microns = Some(num);
                 }
                 "END" => {
                     // End of UNITS
-                    self.expect_name("UNITS")?;
+                    self.expect_keyword("UNITS")?;
                     break;
                 }
                 // All the other united quantities are unsupported
@@ -922,7 +942,7 @@ impl<'src> LefParser<'src> {
     /// Parse the MACRO::CLASS type-enumeration and its sub-types into a [LefMacroClass]
     fn parse_macro_class(&mut self) -> LefResult<LefMacroClass> {
         let txt = self.get_name()?;
-        match txt {
+        match txt.to_ascii_uppercase().as_str() {
             "BLOCK" => {
                 let mut tp = None;
                 if !self.matches(TokenType::SemiColon) {
@@ -956,7 +976,7 @@ impl<'src> LefParser<'src> {
             "COVER" => {
                 let mut bump = false;
                 if !self.matches(TokenType::SemiColon) {
-                    self.expect_name("BUMP")?;
+                    self.expect_keyword("BUMP")?;
                     bump = true;
                 }
                 self.expect(TokenType::SemiColon)?;
@@ -980,9 +1000,9 @@ impl<'src> LefParser<'src> {
         site.name(name.clone());
         loop {
             let txt = self.get_name()?;
-            match txt {
+            match txt.to_ascii_uppercase().as_str() {
                 "END" => {
-                    self.expect_name(&name)?;
+                    self.expect_ident(&name)?;
                     break;
                 }
                 "CLASS" => {
@@ -1013,7 +1033,7 @@ impl<'src> LefParser<'src> {
     /// Parse the Lef SIZE statement into an (x, y) pair of [LefDecimal]s
     fn parse_size(&mut self) -> LefResult<(LefDecimal, LefDecimal)> {
         let x = self.parse_number()?;
-        self.expect_name("BY")?;
+        self.expect_keyword("BY")?;
         let y = self.parse_number()?;
         self.expect(TokenType::SemiColon)?;
         Ok((x, y))
