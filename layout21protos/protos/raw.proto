@@ -1,0 +1,104 @@
+syntax = "proto3";
+
+package layout21.raw;
+
+// An (x,y) point in Cartesian layout space.
+message Point {
+  int64 x = 1;
+  int64 y = 2;
+}
+
+// # Layer-Purpose Pair 
+// As in many legacy layout systems, layers are described by two numbers:
+// * `number` describes describes a "physical layer". Example enumerated values might include "metal3", "diffusion". 
+// * `purpose` describes an "intent" of the [Layer]. Typical enumerated values include pins, labels, and drawings.
+message Layer {
+  int64 number = 1;
+  int64 purpose = 2;
+}
+
+// Domain-Qualified Cell Name 
+message QualifiedName {
+  string domain = 1;
+  string name = 2;
+}
+
+// # Rectangle Primitive
+message Rectangle {
+  // Net Name
+  string net = 1;
+
+  // The lower-left corner of the rectangle.
+  Point lower_left = 2;
+
+  int64 width = 3;
+  int64 height = 4;
+}
+
+// # Polygon Primitive
+message Polygon {
+  // Net Name
+  string net = 1;
+
+  // List of Vertices
+  // Note 
+  repeated Point vertices = 2;
+}
+
+// # Path Primitive
+// A single-layer, fixed-width path through a series of points
+message Path {
+  // Net Name
+  string net = 1;
+  // Points
+  repeated Point points = 2;
+  // Width
+  int64 width = 3;
+}
+
+// Container for Geometric Shapes on a single [Layer]
+message LayerShapes {
+  Layer layer = 1;
+  repeated Rectangle rectangles = 2;
+  repeated Polygon polygons = 3;
+  repeated Path paths = 4;
+}
+
+// # Layout Cell 
+// The most common element of layout re-use. 
+// Comprises a named set of geometric elements and [Instance]s of other [Cell]s. 
+message Cell {
+  // Cell Name
+  QualifiedName name = 1;
+  // Shapes, grouped by layer 
+  repeated LayerShapes shapes = 2;
+  // Instances of other cells 
+  repeated Instance instances = 3;
+ 
+  // Author
+  string author = 100;
+  // Copyright (something)
+  string copyright = 101;
+}
+
+// # Layout-Cell Instance
+// A located
+message Instance {
+  // Instance Name
+  string name = 1;
+  // Cell Name
+  QualifiedName cell_name = 3;
+  // Rotation
+  int32 rotation_clockwise_degrees = 4;
+  // Location
+  Point lower_left = 5;
+}
+
+// # Layout Library 
+// A collection of cells and asssociated meta-data. 
+message Library {
+  // Library Name 
+  QualifiedName name = 1;
+  // Cell Definitions
+  repeated Cell cells = 2;
+}
