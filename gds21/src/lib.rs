@@ -1807,6 +1807,7 @@ impl GdsReaderIter {
         &self.nxt
     }
     /// JSON-Serialize and write (all) contents of the Iterator to `writer`
+    #[cfg(any(test, feature = "selftest"))]
     fn write(&mut self, writer: &mut impl Write) -> Result<(), GdsError> {
         while let Some(r) = self.next()? {
             let entry: (usize, GdsRecord) = (self.numread, r);
@@ -1818,6 +1819,7 @@ impl GdsReaderIter {
         Ok(())
     }
     /// Open a GDS file `gds` and write all GdsRecords to JSON file `json`
+    #[cfg(any(test, feature = "selftest"))]
     fn dump(gds: &str, json: &str) -> Result<(), GdsError> {
         // This streams one record at a time, rather than loading all into memory.
 

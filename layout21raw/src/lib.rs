@@ -9,11 +9,17 @@
 //! Import from GDSII, LEF, and other industry formats remains WIP.
 //!
 
-use gds21;
-use layout21protos as proto;
+// Std-Lib
+use std::collections::HashMap;
+use std::convert::TryFrom;
+
+// Crates.io
 use serde::{Deserialize, Serialize};
 use slotmap::{new_key_type, SlotMap};
-use std::collections::HashMap;
+
+// Local imports
+use gds21;
+use layout21protos as proto;
 
 #[cfg(test)]
 mod tests;
@@ -64,6 +70,11 @@ impl From<String> for LayoutError {
 impl From<&str> for LayoutError {
     fn from(s: &str) -> Self {
         Self::Str(s.to_string())
+    }
+}
+impl From<std::num::TryFromIntError> for LayoutError {
+    fn from(e: std::num::TryFromIntError) -> Self {
+        Self::Boxed(Box::new(e))
     }
 }
 impl From<gds21::GdsError> for LayoutError {
@@ -196,6 +207,19 @@ impl Layers {
     pub fn get(&self, key: LayerKey) -> Option<&Layer> {
         self.slots.get(key)
     }
+    /// Get the ([LayerKey], [LayerPurpose]) objects for numbers (`layernum`, `purposenum`) if present.
+    /// Inserts a new [Layer] if `layernum` is not present.
+    /// Returns `LayerPurpose::Other(purposenum)` if `purposenum` is not present on that layer.
+    fn get_or_insert(&mut self, layernum: i16, purposenum: i16) -> (LayerKey, LayerPurpose) {
+        let layer = match self.keynum(layernum) {
+            Some(key) => key.clone(),
+            None => self.add(Layer::new(layernum)),
+        };
+        // FIXME: actually look up whether this is a defined purpose.
+        // For now just create a new numerically-valued one.
+        let purpose = LayerPurpose::Other(purposenum);
+        (layer, purpose)
+    }
 }
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum LayerPurpose {
@@ -234,6 +258,14 @@ pub struct Layer {
     pub other: HashMap<String, i16>,
 }
 impl Layer {
+    /// Create a new [Layer] with the given `layernum`.
+    /// All purposes are set to `None`.
+    pub fn new(num: i16) -> Self {
+        Self {
+            layernum: num,
+            ..Default::default()
+        }
+    }
     /// Retrieve the purpose-number for this layer and [Purpose] `purpose`
     pub fn purpose_num(&self, purpose: LayerPurpose) -> Option<i16> {
         match purpose {
@@ -345,6 +377,7 @@ pub struct Element {
 pub enum Shape {
     Rect { p0: Point, p1: Point },
     Poly { pts: Vec<Point> },
+    Path { width: usize, pts: Vec<Point> },
 }
 impl Shape {
     /// Retrieve our "origin", or first [Point]
@@ -352,6 +385,7 @@ impl Shape {
         match *self {
             Shape::Rect { ref p0, p1: _ } => p0,
             Shape::Poly { ref pts } => &pts[0],
+            Shape::Path { ref pts, .. } => &pts[0],
         }
     }
     /// Calculate our center-point
@@ -361,6 +395,7 @@ impl Shape {
             Shape::Poly { pts: _ } => {
                 unimplemented!("Shape::Poly::center");
             }
+            Shape::Path { .. } => todo!(),
         }
     }
     /// Indicate whether this shape is (more or less) horizontal or vertical
@@ -375,6 +410,7 @@ impl Shape {
             Shape::Poly { pts: _ } => {
                 unimplemented!("Shape::Poly::orientation");
             }
+            Shape::Path { .. } => todo!(),
         }
     }
     /// Shift coordinates by the (x,y) values specified in `pt`
@@ -395,6 +431,12 @@ impl Shape {
                     p.y += pt.y;
                 }
             }
+            Shape::Path { ref mut pts, .. } => {
+                for p in pts.iter_mut() {
+                    p.x += pt.x;
+                    p.y += pt.y;
+                }
+            }
         }
     }
     /// Boolean indication of whether we contain point `pt`
@@ -406,7 +448,8 @@ impl Shape {
                     && p0.y.min(p1.y) <= pt.y
                     && p0.y.max(p1.y) >= pt.y
             }
-            Shape::Poly { ref pts } => false,
+            Shape::Poly { .. } => false, // FIXME! todo!(),
+            Shape::Path { .. } => todo!(),
         }
     }
 }
@@ -513,6 +556,7 @@ impl GdsConverter {
                 xy.push(pts[0].y as i32);
                 xy
             }
+            Shape::Path { .. } => todo!(),
         };
         // Initialize our vector of elements with the shape
         let mut gds_elems = vec![gds21::GdsBoundary {
@@ -591,7 +635,7 @@ impl GdsImporter {
     }
     /// Internal implementation method. Convert all, starting from our top-level [gds21::GdsLibrary].
     fn import_lib(&mut self, gdslib: &gds21::GdsLibrary) -> LayoutResult<Library> {
-        // Check our in-memory self doesn't include any unsupported features
+        // Check our GDS doesn't (somehow) include any unsupported features
         if gdslib.libdirsize.is_some()
             || gdslib.srfname.is_some()
             || gdslib.libsecur.is_some()
@@ -609,10 +653,14 @@ impl GdsImporter {
         // Give it the same name as the GDS
         lib.name = gdslib.name.clone();
         // Set its distance units
-        lib.units = match gdslib.units.dbunit() {
-            1e-9 => Unit::Nano,
-            1e-6 => Unit::Micro,
-            _ => return Err(LayoutError::msg("Unsupported GDSII Unit")),
+        // FIXME: intermediate/ calculated units
+        let gdsunit = gdslib.units.dbunit();
+        if gdsunit == 1e-9 {
+            lib.units = Unit::Nano;
+        } else if gdsunit == 1e-6 {
+            lib.units = Unit::Micro;
+        } else {
+            return Err(LayoutError::msg("Unsupported GDSII Unit"));
         };
         // And convert each of its `structs` into our `cells`
         lib.cells = gdslib
@@ -622,6 +670,7 @@ impl GdsImporter {
             .collect::<Result<Vec<_>, _>>()?;
         Ok(lib)
     }
+    /// Import a GDS Cell ([gds21::GdsStruct]) into a [Cell]
     fn import_cell(&mut self, strukt: &gds21::GdsStruct) -> LayoutResult<Cell> {
         let mut cell = Cell::default();
         cell.name = strukt.name.clone();
@@ -632,104 +681,72 @@ impl GdsImporter {
         let mut elems: SlotMap<ElementKey, Element> = SlotMap::with_key();
         // Also keep a hash of by-layer elements, to aid in text-assignment in our second pass
         let mut layers: HashMap<i16, Vec<ElementKey>> = HashMap::new();
-        use gds21::GdsElement::*;
         for elem in &strukt.elems {
+            use gds21::GdsElement::*;
             match elem {
                 GdsBoundary(ref x) => {
-                    if x.xy.len() % 2 != 0 {
-                        return Err(LayoutError::msg(
-                            "GDS Boundary must have an even number of points",
-                        ));
-                    }
-                    let mut pts = Vec::new();
-                    for k in 0..x.xy.len() / 2 - 1 {
-                        pts.push(Point::new(x.xy[k * 2] as isize, x.xy[k * 2 + 1] as isize));
-                    }
-                    if pts[0] != *pts.last().unwrap() {
-                        return Err(LayoutError::msg(
-                            "GDS Boundary must start and end at the same point",
-                        ));
-                    }
-                    // Pop the redundant last entry
-                    pts.pop();
-                    // Check for Rectangles; they help
-                    let inner = if pts.len() == 4
-                        && ((pts[0].x == pts[1].x // Clockwise
-                            && pts[1].y == pts[2].y
-                            && pts[2].x == pts[3].x
-                            && pts[3].y == pts[0].y)
-                            || (pts[0].y == pts[1].y // Counter-clockwise
-                                && pts[1].x == pts[2].x
-                                && pts[2].y == pts[3].y
-                                && pts[3].x == pts[0].x))
-                    {
-                        // That makes this a Rectangle.
-                        Shape::Rect {
-                            p0: pts[0].clone(),
-                            p1: pts[2].clone(),
-                        }
-                    } else {
-                        // Otherwise, it's a polygon
-                        Shape::Poly { pts }
-                    };
-
-                    // FIXME: all the Layer hijinx
-                    // Ultimately will want to either:
-                    // - Have an initial layer-map, and ensure we stick to it, or
-                    // - Create layers on the fly, leaving all datatypes "unknown" or "other"
-                    let layer = if let Some(ref layer) = self.layers.keynum(x.layer) {
-                        *layer.clone()
-                    } else {
-                        let mut newlayer = Layer::default();
-                        newlayer.layernum = x.layer;
-                        self.layers.add(newlayer)
-                    };
-                    // Create the Element, and insert it in our slotmap
-                    let e = Element {
-                        net: None,
-                        layer,
-                        purpose: LayerPurpose::Other(x.datatype),
-                        inner,
-                    };
-                    let elemkey = elems.insert(e);
-                    // Store a reference to this new Element in our layers dict,
-                    // for potential connectivity-assignment in pass #2.
+                    let e = self.import_boundary(x)?;
+                    let ekey = elems.insert(e);
                     if let Some(ref mut bucket) = layers.get_mut(&x.layer) {
-                        bucket.push(elemkey);
+                        bucket.push(ekey);
                     } else {
-                        layers.insert(x.layer, vec![elemkey]);
+                        layers.insert(x.layer, vec![ekey]);
                     }
-                    todo!();
                 }
-                GdsPath(ref x) => todo!(),
-                GdsBox(ref x) => todo!(),
-                GdsArrayRef(ref x) => todo!(),
+                GdsPath(ref x) => {
+                    let e = self.import_path(x)?;
+                    let ekey = elems.insert(e);
+                    if let Some(ref mut bucket) = layers.get_mut(&x.layer) {
+                        bucket.push(ekey);
+                    } else {
+                        layers.insert(x.layer, vec![ekey]);
+                    }
+                }
+                GdsBox(ref x) => {
+                    let e = self.import_box(x)?;
+                    let ekey = elems.insert(e);
+                    if let Some(ref mut bucket) = layers.get_mut(&x.layer) {
+                        bucket.push(ekey);
+                    } else {
+                        layers.insert(x.layer, vec![ekey]);
+                    }
+                }
+                GdsArrayRef(ref x) => cell.insts.extend(self.import_instance_array(x)?),
                 GdsStructRef(ref x) => cell.insts.push(self.import_instance(x)?),
-                GdsTextElem(ref t) => texts.push(t),
-                GdsNode(ref x) => return Err(LayoutError::msg("Unsupported GDSII Element: Node")),
+                GdsTextElem(ref x) => texts.push(x),
+                GdsNode(ref _x) => {
+                    // GDSII "Node" elements are fairly rare, and are not supported.
+                    // (Maybe some day we'll even learn what they are.)
+                    return Err(LayoutError::msg("Unsupported GDSII Element: Node"));
+                }
             }
         }
-        // In the second pass, we sort out whether each [gds21::GdsTextElem] is a net-label,
+        // Pass two: sort out whether each [gds21::GdsTextElem] is a net-label,
         // And if so, assign it as a net-name on each intersecting [Element].
         // Text elements which do not overlap a geometric element on the same layer
         // are converted to annotations.
-        for txt in &texts {
-            let loc = Point::new(txt.xy[0] as isize, txt.xy[1] as isize);
-            if let Some(layer) = layers.get(&txt.layer) {
+        for textelem in &texts {
+            let loc = Point::new(textelem.xy[0] as isize, textelem.xy[1] as isize);
+            if let Some(layer) = layers.get(&textelem.layer) {
                 // Layer exists in geometry; see which elements intersect with this text
                 let mut hit = false;
                 for ekey in layer.iter() {
                     let elem = elems.get_mut(*ekey).unwrap();
                     if elem.inner.contains(&loc) {
+                        // Label lands inside this element.
+                        // Check whether we have an existing label.
+                        // If so, it better be the same net name!
                         if let Some(pname) = &elem.net {
-                            return Err(LayoutError::msg(format!(
-                                "GDSII labels shorting nets {} and {} on layer {}",
-                                pname,
-                                txt.string.clone(),
-                                txt.layer
-                            )));
+                            if pname != &textelem.string {
+                                return Err(LayoutError::msg(format!(
+                                    "GDSII labels shorting nets {} and {} on layer {}",
+                                    pname,
+                                    textelem.string.clone(),
+                                    textelem.layer
+                                )));
+                            }
                         }
-                        elem.net = Some(txt.string.clone());
+                        elem.net = Some(textelem.string.clone());
                         hit = true;
                     }
                 }
@@ -740,13 +757,121 @@ impl GdsImporter {
             }
             // No hits (or a no-shape Layer). Create an annotation instead.
             cell.annotations.push(TextElement {
-                string: txt.string.clone(),
+                string: textelem.string.clone(),
                 loc,
             });
         }
-
+        // Pull the elements out of the local slot-map, into the vector that [Cell] wants
+        cell.elems = elems.drain().map(|(_k, v)| v).collect();
         Ok(cell)
     }
+    /// Import a [gds21::GdsBoundary] into an [Element]
+    fn import_boundary(&mut self, x: &gds21::GdsBoundary) -> LayoutResult<Element> {
+        if x.xy.len() % 2 != 0 {
+            return Err(LayoutError::msg(
+                "GDS Boundary must have an even number of points",
+            ));
+        }
+        let mut pts = Vec::new();
+        for k in 0..x.xy.len() / 2 {
+            pts.push(Point::new(x.xy[k * 2] as isize, x.xy[k * 2 + 1] as isize));
+        }
+        if pts[0] != *pts.last().unwrap() {
+            return Err(LayoutError::msg(
+                "GDS Boundary must start and end at the same point",
+            ));
+        }
+        // Pop the redundant last entry
+        pts.pop();
+        // Check for Rectangles; they help
+        let inner = if pts.len() == 4
+            && ((pts[0].x == pts[1].x // Clockwise
+                && pts[1].y == pts[2].y
+                && pts[2].x == pts[3].x
+                && pts[3].y == pts[0].y)
+                || (pts[0].y == pts[1].y // Counter-clockwise
+                    && pts[1].x == pts[2].x
+                    && pts[2].y == pts[3].y
+                    && pts[3].x == pts[0].x))
+        {
+            // That makes this a Rectangle.
+            Shape::Rect {
+                p0: pts[0].clone(),
+                p1: pts[2].clone(),
+            }
+        } else {
+            // Otherwise, it's a polygon
+            Shape::Poly { pts }
+        };
+
+        // Grab (or create) its [Layer]
+        let (layer, purpose) = self.layers.get_or_insert(x.layer, x.datatype);
+        // Create the Element, and insert it in our slotmap
+        let e = Element {
+            net: None,
+            layer,
+            purpose,
+            inner,
+        };
+        Ok(e)
+    }
+    /// Import a [gds21::GdsBox] into an [Element]
+    fn import_box(&mut self, x: &gds21::GdsBox) -> LayoutResult<Element> {
+        if x.xy.len() != 10 {
+            return Err(LayoutError::msg("Invalid GDS Box XY Length"));
+        }
+        // GDS stores *five* coordinates per box (for whatever reason).
+        // This does not check fox "box validity", and imports the
+        // first and third of those five coordinates,
+        // which are by necessity for a valid [GdsBox] located at opposite corners.
+        let inner = Shape::Rect {
+            p0: Point::new(x.xy[0] as isize, x.xy[1] as isize),
+            p1: Point::new(x.xy[3] as isize, x.xy[4] as isize),
+        };
+
+        // Grab (or create) its [Layer]
+        let (layer, purpose) = self.layers.get_or_insert(x.layer, x.boxtype);
+        // Create the Element, and insert it in our slotmap
+        let e = Element {
+            net: None,
+            layer,
+            purpose,
+            inner,
+        };
+        Ok(e)
+    }
+    /// Import a [gds21::GdsPath] into an [Element]
+    fn import_path(&mut self, x: &gds21::GdsPath) -> LayoutResult<Element> {
+        if x.xy.len() % 2 != 0 {
+            // FIXME: make this a GDS thing
+            return Err(LayoutError::msg(
+                "GDS Boundary must have an even number of points",
+            ));
+        }
+        let mut pts = Vec::new();
+        for k in 0..x.xy.len() / 2 {
+            pts.push(Point::new(x.xy[k * 2] as isize, x.xy[k * 2 + 1] as isize));
+        }
+        let width = if let Some(w) = x.width {
+            w as usize
+        } else {
+            return Err(LayoutError::msg("Invalid nonspecifed GDS Path width "));
+        };
+        // Create the shape
+        let inner = Shape::Path { width, pts };
+
+        // Grab (or create) its [Layer]
+        let (layer, purpose) = self.layers.get_or_insert(x.layer, x.datatype);
+        // Create the Element, and insert it in our slotmap
+        let e = Element {
+            net: None,
+            layer,
+            purpose,
+            inner,
+        };
+        Ok(e)
+    }
+    /// Import a [gds21::GdsStructRef] cell/struct-instance into an [Instance]
     fn import_instance(&mut self, sref: &gds21::GdsStructRef) -> LayoutResult<Instance> {
         let inst_name = "".into(); // FIXME
         let cell_name = sref.name.clone();
@@ -769,6 +894,55 @@ impl GdsImporter {
             inst.angle = strans.angle;
         }
         Ok(inst)
+    }
+    /// Import a (two-dimensional) [gds21::GdsArrayRef] into [Instance]s
+    fn import_instance_array(&mut self, aref: &gds21::GdsArrayRef) -> LayoutResult<Vec<Instance>> {
+        let inst_name = "".to_string(); // FIXME
+        let cell_name = aref.name.clone();
+        let cell = CellRef::Name(aref.name.clone()); // FIXME
+        if aref.xy.len() != 6 {
+            return Err(LayoutError::msg("Invalid Array XY Length"));
+        }
+        // Check for (thus far) unsupported non-rectangular arrays
+        if aref.xy[1] != aref.xy[3] || aref.xy[0] != aref.xy[4] {
+            return Err(LayoutError::msg("Invalid Non-Rectangular GDS Array"));
+        }
+        // Sort out the inter-element spacing
+        let p0 = Point::new(aref.xy[0] as isize, aref.xy[1] as isize);
+        let width = aref.xy[0] as isize - aref.xy[2] as isize;
+        let height = aref.xy[1] as isize - aref.xy[5] as isize;
+        let xstep = width / (aref.cols as isize);
+        let ystep = height / (aref.rows as isize);
+        // Grab the reflection/ rotation settings
+        // FIXME: these need *actual* support
+        let mut reflect = false;
+        let mut angle = None;
+        if let Some(strans) = &aref.strans {
+            // FIXME: interpretation of the settings
+            if strans.abs_mag || strans.abs_angle || strans.mag.is_some() || strans.angle.is_some()
+            {
+                return Err(LayoutError::msg("Unsupported GDSII Array Attributes"));
+            }
+            angle = strans.angle;
+            reflect = strans.reflected;
+        }
+        // Create the Instances
+        let mut insts = Vec::with_capacity((aref.rows * aref.cols) as usize);
+        for ix in 0..(aref.cols as isize) {
+            let x = p0.x + ix * xstep;
+            for iy in 0..(aref.rows as isize) {
+                let y = p0.y + iy * ystep;
+                insts.push(Instance {
+                    inst_name: inst_name.clone(),
+                    cell_name: cell_name.clone(),
+                    cell: cell.clone(),
+                    p0: Point::new(x, y),
+                    reflect, // FIXME!
+                    angle,   // FIXME!
+                });
+            }
+        }
+        Ok(insts)
     }
 }
 /// # ProtoBuf Converter
@@ -899,6 +1073,14 @@ impl ProtoConverter {
                     .map(|p| proto::Point::new(p.x as i64, p.y as i64))
                     .collect::<Vec<_>>();
                 Ok(ProtoShape::Poly(proto::Polygon { net, vertices }))
+            }
+            Shape::Path { ref width, ref pts } => {
+                let width = i64::try_from(*width)?; //.ok_or(LayoutError::Tbd)?;
+                let points = pts
+                    .iter()
+                    .map(|p| proto::Point::new(p.x as i64, p.y as i64))
+                    .collect::<Vec<_>>();
+                Ok(ProtoShape::Path(proto::Path { net, width, points }))
             }
         }
     }
