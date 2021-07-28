@@ -7,35 +7,12 @@ use num_traits::Num;
 use serde::{Deserialize, Serialize};
 use slotmap::{new_key_type, SlotMap};
 
-/// # "Raw" Layout Module
-pub mod raw;
-
-// Create key-types for each internal type stored in [SlotMap]s
-new_key_type! {
-    /// Keys for [Cell] entries
-    pub struct CellKey;
-    /// Keys for [abstrakt::Abstract] entries
-    pub struct AbstractKey;
-    /// Keys for [CellView] entries
-    pub struct CellViewKey;
-}
-/// LayoutError-Specific Result Type
-pub type LayoutResult<T> = Result<T, LayoutError>;
-
-/// Distance Units Enumeration
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub enum Unit {
-    /// Micrometers, or microns for we olde folke
-    Micro,
-    /// Nanometers
-    Nano,
-}
-impl Default for Unit {
-    /// Default units are nanometers
-    fn default() -> Unit {
-        Unit::Nano
-    }
-}
+/// "Raw" Layout Imports
+use layout21raw as raw;
+use raw::{
+    AbstractKey, CellKey, CellRef, CellViewKey, Dir, Instance, LayoutError, LayoutResult, Point,
+    Unit,
+};
 
 /// Much of the confusion in a multi-coordinate system such as this
 /// lies in keeping track of which numbers are in which units.
@@ -71,24 +48,6 @@ pub struct LayerPitches<T: Num + Copy> {
     val: T,
 }
 
-/// Direction Enumeration
-/// Primarily for [Layer] orientations
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub enum Dir {
-    /// Horizontal
-    Horiz,
-    /// Vertical
-    Vert,
-}
-impl Dir {
-    /// Whichever direction we are, return the other one.
-    fn other(&self) -> Self {
-        match self {
-            Self::Horiz => Self::Vert,
-            Self::Vert => Self::Horiz,
-        }
-    }
-}
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TrackEntry {
     pub width: usize,
@@ -191,7 +150,7 @@ pub struct Stack {
     /// Measurement units
     pub units: Unit,
     /// Layer used for cell outlines/ boundaries
-    pub boundary_layer: Option<raw::DataTypeMap>,
+    pub boundary_layer: Option<raw::Layer>,
     /// Primitive Layer
     pub prim: PrimitiveLayer,
     /// Set of metal layers
@@ -218,7 +177,7 @@ pub struct Layer {
     /// Offset, in our periodic dimension
     pub offset: isize,
     /// Layer(s) for streaming exports
-    pub raw: Option<raw::DataTypeMap>,
+    pub raw: Option<raw::Layer>,
     /// Setting for period-by-period flipping
     pub flip: FlipMode,
     /// Primitive-layer relationshio
@@ -310,7 +269,7 @@ pub struct ViaLayer {
     /// Via size
     pub size: Point,
     /// Stream-out layer numbers
-    pub raw: Option<raw::DataTypeMap>,
+    pub raw: Option<raw::Layer>,
 }
 /// Assignment of a net onto a track-intersection
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -333,22 +292,6 @@ impl RelZ {
             RelZ::Below => RelZ::Above,
         }
     }
-}
-/// Instance of another Cell
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Instance {
-    /// Instance Name
-    pub inst_name: String,
-    /// Cell Name/ Path
-    pub cell_name: String,
-    /// Cell Definition Reference
-    pub cell: CellRef,
-    /// Bottom-Left Corner Point
-    pub p0: Point,
-    /// Reflection
-    pub reflect: bool,
-    /// Angle of Rotation (Degrees)
-    pub angle: Option<f64>,
 }
 /// # Layout Library
 ///
@@ -650,46 +593,6 @@ impl Outline {
         pts
     }
 }
-/// # Point in two-dimensional layout-space
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Point {
-    x: isize,
-    y: isize,
-}
-impl Point {
-    /// Create a new [Point] from (x,y) coordinates
-    pub fn new(x: isize, y: isize) -> Self {
-        Self { x, y }
-    }
-    /// Create a new [Point] which serves as an offset in direction `dir`
-    pub fn offset(val: isize, dir: Dir) -> Self {
-        match dir {
-            Dir::Horiz => Self { x: val, y: 0 },
-            Dir::Vert => Self { x: 0, y: val },
-        }
-    }
-    /// Create a new point shifted by `x` in the x-dimension and by `y` in the y-dimension
-    pub fn shift(&self, p: &Point) -> Point {
-        Point {
-            x: p.x + self.x,
-            y: p.y + self.y,
-        }
-    }
-    /// Create a new point scaled by `p.x` in the x-dimension and by `p.y` in the y-dimension
-    pub fn scale(&self, p: &Point) -> Point {
-        Point {
-            x: p.x * self.x,
-            y: p.y * self.y,
-        }
-    }
-    /// Get the coordinate associated with direction `dir`
-    fn coord(&self, dir: Dir) -> isize {
-        match dir {
-            Dir::Horiz => self.x,
-            Dir::Vert => self.y,
-        }
-    }
-}
 
 /// Raw-Layout Conversion Module
 pub mod conv {
@@ -758,17 +661,45 @@ pub mod conv {
     pub struct RawConverter {
         pub(crate) lib: Library,
         pub(crate) stack: validate::ValidStack,
+        pub(crate) layerkeys: Vec<raw::LayerKey>,
+        pub(crate) boundary_layer: raw::LayerKey,
     }
     impl RawConverter {
         /// Convert [Library] `lib` to a [raw::Library]
         /// Consumes `lib` in the process
-        pub fn convert(lib: Library, stack: Stack) -> Result<raw::Library, LayoutError> {
+        pub fn convert(lib: Library, stack: Stack) -> LayoutResult<raw::Library> {
+            let mut rawlayers = raw::Layers::default();
+            let mut layerkeys = Vec::new();
+            // Conversion requires our [Stack] specify a `boundary_layer`. If not, fail.
+            let boundary_layer = (stack.boundary_layer).as_ref().ok_or(LayoutError::msg(
+                "Cannot Convert Abstract to Raw without Boundary Layer",
+            ))?;
+            let boundary_layer = rawlayers.add(boundary_layer.clone());
+            for layer in stack.layers.iter() {
+                let rawlayer = match &layer.raw {
+                    Some(r) => r.clone(),
+                    None => {
+                        return Err(LayoutError::msg(
+                            "Error exporting to raw layout: no raw layer defined",
+                        ))
+                    }
+                };
+                let key = rawlayers.add(rawlayer);
+                layerkeys.push(key);
+            }
             let stack = validate::StackValidator::validate(stack)?;
-            Self { lib, stack }.convert_all()
+            Self {
+                lib,
+                stack,
+                layerkeys,
+                boundary_layer,
+            }
+            .convert_all(rawlayers)
         }
         /// Convert everything in our [Library]
-        fn convert_all(self) -> LayoutResult<raw::Library> {
+        fn convert_all(self, rawlayers: raw::Layers) -> LayoutResult<raw::Library> {
             let mut lib = raw::Library::new(&self.lib.name, self.stack.units);
+            lib.layers = rawlayers;
             // // Collect up unit-cells on each layer
             // for layer in self.stack.metals.iter() {
             //     let unit = self.convert_layer_unit(&layer.spec)?;
@@ -793,7 +724,7 @@ pub mod conv {
         /// Convert to a raw layout cell
         fn convert_cell(&self, cell: &Cell) -> Result<raw::Cell, LayoutError> {
             if cell.outline.x.len() > 1 {
-                return Err(LayoutError::Message(
+                return Err(LayoutError::Str(
                     "Non-rectangular outline; conversions not supported (yet)".into(),
                 ));
             };
@@ -834,6 +765,7 @@ pub mod conv {
                 insts,
                 arrays: Vec::new(),
                 elems,
+                ..Default::default()
             })
         }
         /// Create a [TempCell], organizing [Cell] data in more-convenient fashion for conversion
@@ -943,7 +875,8 @@ pub mod conv {
                     .ok_or(LayoutError::msg("Raw-Layout Layer Not Defined"))?;
                 let e = raw::Element {
                     net: None,
-                    layer: raw_layer.clone(), // FIXME: dont really wanna clone here
+                    layer: self.layerkeys[layer.index],
+                    purpose: raw::LayerPurpose::Drawing,
                     inner: raw::Shape::Rect {
                         p0: Point {
                             x: (assn.bot.dist - via_layer.size.x / 2) as isize,
@@ -975,10 +908,10 @@ pub mod conv {
             }
             // Convert all TrackSegments to raw Elements
             for t in layer_period.rails.iter() {
-                elems.extend(self.convert_track(t, &layer.spec)?);
+                elems.extend(self.convert_track(t, &layer)?);
             }
             for t in layer_period.signals.iter() {
-                elems.extend(self.convert_track(t, &layer.spec)?);
+                elems.extend(self.convert_track(t, &layer)?);
             }
             Ok(elems)
         }
@@ -993,16 +926,11 @@ pub mod conv {
                 insts: Vec::new(),
                 arrays: Vec::new(),
                 elems: vec![outline],
+                ..Default::default()
             })
         }
         /// Convert to a [raw::Element] polygon
         pub fn convert_outline(&self, cell: &impl HasOutline) -> LayoutResult<raw::Element> {
-            // Doing so requires our [Stack] specify a `boundary_layer`. If not, fail.
-            let layer = (self.stack.boundary_layer)
-                .as_ref()
-                .ok_or(LayoutError::msg(
-                    "Cannot Convert Abstract to Raw without Boundary Layer",
-                ))?;
             let outline: &Outline = cell.outline();
 
             // Create an array of Outline-Points
@@ -1016,51 +944,51 @@ pub mod conv {
             // Create the [raw::Element]
             Ok(raw::Element {
                 net: None,
-                layer: layer.clone(), // FIXME: stop cloning
+                layer: self.boundary_layer,
+                purpose: raw::LayerPurpose::Outline,
                 inner: raw::Shape::Poly { pts },
             })
         }
         /// Convert a [Track]-full of [TrackSegment]s to a vector of [raw::Element] rectangles
-        fn convert_track(&self, track: &Track, layer: &Layer) -> LayoutResult<Vec<raw::Element>> {
-            let raw_layer = layer
-                .raw
-                .as_ref()
-                .ok_or(LayoutError::msg("Raw-Layout Layer Not Defined"))?;
-
+        fn convert_track(
+            &self,
+            track: &Track,
+            layer: &validate::ValidMetalLayer,
+        ) -> LayoutResult<Vec<raw::Element>> {
             let elems = track
                 .segments
                 .iter()
-                .map(|seg| {
-                    match track.dir {
-                        Dir::Horiz => raw::Element {
-                            net: seg.net.clone(),
-                            layer: raw_layer.clone(), // FIXME: dont really wanna clone here
-                            inner: raw::Shape::Rect {
-                                p0: Point {
-                                    x: (seg.start) as isize,
-                                    y: (track.start as isize),
-                                },
-                                p1: Point {
-                                    x: (seg.stop) as isize,
-                                    y: (track.start + track.width as isize) as isize,
-                                },
+                .map(|seg| match track.dir {
+                    Dir::Horiz => raw::Element {
+                        net: seg.net.clone(),
+                        layer: self.layerkeys[layer.index],
+                        purpose: raw::LayerPurpose::Drawing,
+                        inner: raw::Shape::Rect {
+                            p0: Point {
+                                x: (seg.start) as isize,
+                                y: (track.start as isize),
+                            },
+                            p1: Point {
+                                x: (seg.stop) as isize,
+                                y: (track.start + track.width as isize) as isize,
                             },
                         },
-                        Dir::Vert => raw::Element {
-                            net: seg.net.clone(),
-                            layer: raw_layer.clone(), // FIXME: dont really wanna clone here
-                            inner: raw::Shape::Rect {
-                                p0: Point {
-                                    x: (track.start as isize),
-                                    y: (seg.start) as isize,
-                                },
-                                p1: Point {
-                                    x: (track.start + track.width as isize) as isize,
-                                    y: (seg.stop) as isize,
-                                },
+                    },
+                    Dir::Vert => raw::Element {
+                        net: seg.net.clone(),
+                        layer: self.layerkeys[layer.index],
+                        purpose: raw::LayerPurpose::Drawing,
+                        inner: raw::Shape::Rect {
+                            p0: Point {
+                                x: (track.start as isize),
+                                y: (seg.start) as isize,
+                            },
+                            p1: Point {
+                                x: (track.start + track.width as isize) as isize,
+                                y: (seg.stop) as isize,
                             },
                         },
-                    }
+                    },
                 })
                 .collect();
             Ok(elems)
@@ -1336,34 +1264,6 @@ pub struct CellViews {
     views: SlotMap<CellViewKey, CellView>,
 }
 
-///
-/// # Layout Error Enumeration
-///
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum LayoutError {
-    /// Uncategorized Error with Message
-    Message(String),
-    /// Error Exporting to Foreign Format
-    Export,
-    /// Validation of input data
-    Validation,
-    /// Everything to be categorized
-    Tbd,
-}
-impl LayoutError {
-    /// Create a [LayoutError::Message] from anything String-convertible
-    fn msg(s: impl Into<String>) -> Self {
-        Self::Message(s.into())
-    }
-}
-/// # Cell Reference Enumeration
-/// Used for enumerating the different types of things an [Instance] may refer to
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum CellRef {
-    Cell(CellKey),
-    Abstract(AbstractKey),
-    Name(String),
-}
 /// Trait for accessing three-dimensional [Outline] data from several views of Layouts
 pub trait HasOutline: Debug {
     /// Retrieve a reference to the x-y [Outline]
@@ -1402,7 +1302,7 @@ pub mod validate {
         /// Measurement units
         pub units: Unit,
         /// Layer used for cell outlines/ boundaries
-        pub boundary_layer: Option<raw::DataTypeMap>,
+        pub boundary_layer: Option<raw::Layer>,
 
         /// Primitive layer
         pub prim: PrimitiveLayer,

@@ -4,11 +4,12 @@ use super::*;
 fn stack() -> Stack {
     Stack {
         units: Unit::Nano,
-        boundary_layer: Some(raw::DataTypeMap {
+        boundary_layer: Some(raw::Layer {
             layernum: 236,
             drawing: Some(0),
             text: None,
             other: HashMap::new(),
+            ..Default::default()
         }),
         prim: PrimitiveLayer {
             pitch: Point::new(460, 3310),
@@ -26,11 +27,12 @@ fn stack() -> Stack {
                 offset: -245,
                 cutsize: 250,
                 overlap: 490,
-                raw: Some(raw::DataTypeMap {
+                raw: Some(raw::Layer {
                     layernum: 68,
                     drawing: Some(20),
                     text: Some(5),
                     other: HashMap::new(),
+                    ..Default::default()
                 }),
                 flip: FlipMode::EveryOther,
                 prim: PrimitiveMode::Partial,
@@ -47,11 +49,12 @@ fn stack() -> Stack {
                 cutsize: 250,
                 offset: -255,
                 overlap: 510,
-                raw: Some(raw::DataTypeMap {
+                raw: Some(raw::Layer {
                     layernum: 69,
                     drawing: Some(20),
                     text: Some(5),
                     other: HashMap::new(),
+                    ..Default::default()
                 }),
                 flip: FlipMode::EveryOther,
                 prim: PrimitiveMode::None,
@@ -68,11 +71,12 @@ fn stack() -> Stack {
                 offset: -245,
                 cutsize: 250,
                 overlap: 490,
-                raw: Some(raw::DataTypeMap {
+                raw: Some(raw::Layer {
                     layernum: 70,
                     drawing: Some(20),
                     text: Some(5),
                     other: HashMap::new(),
+                    ..Default::default()
                 }),
                 flip: FlipMode::EveryOther,
                 prim: PrimitiveMode::Partial,
@@ -89,11 +93,12 @@ fn stack() -> Stack {
                 cutsize: 250,
                 offset: -255,
                 overlap: 510,
-                raw: Some(raw::DataTypeMap {
+                raw: Some(raw::Layer {
                     layernum: 71,
                     drawing: Some(20),
                     text: Some(5),
                     other: HashMap::new(),
+                    ..Default::default()
                 }),
                 flip: FlipMode::EveryOther,
                 prim: PrimitiveMode::None,
@@ -104,44 +109,48 @@ fn stack() -> Stack {
                 name: "mcon".into(),
                 between: (0, 1),
                 size: Point::new(240, 240),
-                raw: Some(raw::DataTypeMap {
+                raw: Some(raw::Layer {
                     layernum: 67,
                     drawing: Some(44),
                     text: None,
                     other: HashMap::new(),
+                    ..Default::default()
                 }),
             },
             ViaLayer {
                 name: "via1".into(),
                 between: (1, 2),
                 size: Point::new(240, 240),
-                raw: Some(raw::DataTypeMap {
+                raw: Some(raw::Layer {
                     layernum: 68,
                     drawing: Some(44),
                     text: None,
                     other: HashMap::new(),
+                    ..Default::default()
                 }),
             },
             ViaLayer {
                 name: "via2".into(),
                 between: (2, 3),
                 size: Point::new(240, 240),
-                raw: Some(raw::DataTypeMap {
+                raw: Some(raw::Layer {
                     layernum: 69,
                     drawing: Some(44),
                     text: None,
                     other: HashMap::new(),
+                    ..Default::default()
                 }),
             },
             ViaLayer {
                 name: "via3".into(),
                 between: (3, 4),
                 size: Point::new(240, 240),
-                raw: Some(raw::DataTypeMap {
+                raw: Some(raw::Layer {
                     layernum: 70,
                     drawing: Some(44),
                     text: None,
                     other: HashMap::new(),
+                    ..Default::default()
                 }),
             },
         ],

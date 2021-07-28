@@ -1,11 +1,12 @@
 [package]
 authors = ["Dan Fritchman <dan@fritch.mn>"]
 edition = "2018"
-name = "layout21"
+name = "layout21raw"
 version = "0.1.0"
 
 [dependencies]
-layout21raw = {package = "layout21raw", version = "0.1.0", path = "../layout21raw"}
+layout21protos = {package = "layout21protos", version = "0.1.0", path = "../layout21protos"}
+gds21 = {package = "gds21", version = "0.1.0", path = "../gds21"}
 num-integer = "0.1"
 num-traits = "0.2"
 serde = {version = "1.0", features = ["derive"]}

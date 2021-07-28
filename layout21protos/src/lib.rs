@@ -141,6 +141,20 @@ mod tests {
         assert_eq!(x, rt);
     }
     #[test]
+    fn text() {
+        let x = TextElement {
+            string: "text_elem".into(),
+            loc: Some(Point::new(100, 100)),
+        };
+        assert_eq!(x.string, "text_elem");
+        assert_eq!(x.loc, Some(Point::new(100, 100)),);
+
+        // Protobuf Serialization Round-Trip
+        let bytes = to_bytes(&x);
+        let rt: TextElement = from_bytes(&bytes).unwrap();
+        assert_eq!(x, rt);
+    }
+    #[test]
     fn layer_shapes() {
         let x = LayerShapes {
             layer: Some(Layer {
@@ -264,6 +278,7 @@ mod tests {
             }),
             shapes: vec![],
             instances: vec![],
+            annotations: vec![],
             author: "author".into(),
             copyright: "copyright".into(),
         };
@@ -276,35 +291,7 @@ mod tests {
         );
         assert_eq!(x.shapes, []);
         assert_eq!(x.instances, []);
-        assert_eq!(x.author, "author");
-        assert_eq!(x.copyright, "copyright");
-
-        // Protobuf Serialization Round-Trip
-        let bytes = to_bytes(&x);
-        let rt: Cell = from_bytes(&bytes).unwrap();
-        assert_eq!(x, rt);
-    }
-    #[test]
-    fn cell2() {
-        let x = Cell {
-            name: Some(QualifiedName {
-                domain: "cell_domain".into(),
-                name: "cell_name".into(),
-            }),
-            shapes: vec![],
-            instances: vec![],
-            author: "author".into(),
-            copyright: "copyright".into(),
-        };
-        assert_eq!(
-            x.name,
-            Some(QualifiedName {
-                domain: "cell_domain".into(),
-                name: "cell_name".into(),
-            })
-        );
-        assert_eq!(x.shapes, []);
-        assert_eq!(x.instances, []);
+        assert_eq!(x.annotations, []);
         assert_eq!(x.author, "author");
         assert_eq!(x.copyright, "copyright");
 

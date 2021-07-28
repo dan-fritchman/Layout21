@@ -64,6 +64,19 @@ message LayerShapes {
   repeated Path paths = 4;
 }
 
+// # Text Annotation
+//
+// Note [TextElement]s are "layer-less",
+// i.e. they do not sit on different layers,
+// and do not describe connectivity or generate pins.
+// These are purely annotations in the sense of "design notes".
+message TextElement {
+  // String Value
+  string string = 1;
+  // Location
+  Point loc = 2;
+}
+
 // # Layout Cell 
 // The most common element of layout re-use. 
 // Comprises a named set of geometric elements and [Instance]s of other [Cell]s. 
@@ -74,6 +87,8 @@ message Cell {
   repeated LayerShapes shapes = 2;
   // Instances of other cells 
   repeated Instance instances = 3;
+  // Text Annotations
+  repeated TextElement annotations = 4;
  
   // Author
   string author = 100;

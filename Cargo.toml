@@ -3,8 +3,9 @@
 members = [
   "gds21",
   "lef21",
+  "layout21protos",
+  "layout21raw",
   "layout21",
   "layout21meta",
   "layout21macros",
-  "layout21protos",
 ]

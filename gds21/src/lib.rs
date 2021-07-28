@@ -551,7 +551,7 @@ fn read_str(file: &mut impl Read, len: u16) -> Result<String, GdsError> {
 fn read_bytes(file: &mut impl Read, len: u16) -> Result<Vec<u8>, std::io::Error> {
     let mut buf: Vec<u8> = vec![0; len as usize];
     file.read_exact(&mut buf)?;
-    Ok(buf) 
+    Ok(buf)
 }
 /// Read `len/2` i16s from `len` bytes
 fn read_i16(file: &mut impl Read, len: u16) -> Result<Vec<i16>, std::io::Error> {
@@ -749,8 +749,13 @@ pub struct GdsPlex(i32);
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct GdsUnits(f64, f64);
 impl GdsUnits {
+    /// Create a new [GdsUnits]
     pub fn new(num1: f64, num2: f64) -> Self {
         Self(num1, num2)
+    }
+    /// Get the database-unit size, used for all spatial data
+    pub fn dbunit(&self) -> f64 {
+        self.1
     }
 }
 impl Default for GdsUnits {
