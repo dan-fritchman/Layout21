@@ -62,9 +62,11 @@ fn gds_import1() -> LayoutResult<()> {
 fn resource(fname: &str) -> String {
     format!("{}/resources/{}", env!("CARGO_MANIFEST_DIR"), fname)
 }
+/// Take a trip through GDSII -> Layout21::Raw -> ProtoBuf
 #[test]
 fn gds_sample1() -> LayoutResult<()> {
     let samp = resource("sample1.gds");
+    // let samp = "/Users/dan/dev/ucb/osci/OsciBear/gds/user_analog_project_wrapper.gds";
     let gds = gds21::GdsLibrary::load(&samp)?;
     let lib = GdsImporter::import(gds)?;
     assert_eq!(lib.name, "dff1_lib");
