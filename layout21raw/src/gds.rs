@@ -40,7 +40,7 @@ impl GdsConverter {
         let mut elems = Vec::with_capacity(cell.elems.len() + cell.insts.len());
         // Convert each [Instance]
         for inst in cell.insts.iter() {
-            elems.push(self.convert_instance(inst).into());
+            elems.push(self.convert_instance(inst)?.into());
         }
         // Convert each [Element]
         // Note each can produce more than one [GdsElement]
@@ -54,13 +54,13 @@ impl GdsConverter {
         Ok(s)
     }
     /// Convert an [Instance] to a GDS instance, AKA [gds21::GdsStructRef]
-    fn convert_instance(&self, inst: &Instance) -> gds21::GdsStructRef {
-        gds21::GdsStructRef {
+    fn convert_instance(&self, inst: &Instance) -> LayoutResult<gds21::GdsStructRef> {
+        Ok(gds21::GdsStructRef {
             name: inst.cell_name.clone(),
-            xy: vec![inst.p0.x as i32, inst.p0.y as i32],
+            xy: self.convert_point(&inst.p0)?,
             strans: None, //FIXME!
             ..Default::default()
-        }
+        })
     }
     /// Convert an [Element] into one or more [gds21::GdsElement]
     ///
@@ -87,24 +87,22 @@ impl GdsConverter {
             )))?
             .clone();
 
-        let xy = match &elem.inner {
+        let xy: Vec<gds21::GdsPoint> = match &elem.inner {
             Shape::Rect { p0, p1 } => {
-                let x0 = p0.x as i32;
-                let y0 = p0.y as i32;
-                let x1 = p1.x as i32;
-                let y1 = p1.y as i32;
-                vec![x0, y0, x1, y0, x1, y1, x0, y1, x0, y0]
+                let x0 = p0.x.try_into()?;
+                let y0 = p0.y.try_into()?;
+                let x1 = p1.x.try_into()?;
+                let y1 = p1.y.try_into()?;
+                gds21::GdsPoint::vec(&[(x0, y0), (x1, y0), (x1, y1), (x0, y1), (x0, y0)])
             }
             Shape::Poly { pts } => {
                 // Flatten our points-vec, converting to 32-bit along the way
                 let mut xy = Vec::new();
                 for p in pts.iter() {
-                    xy.push(p.x as i32);
-                    xy.push(p.y as i32);
+                    xy.push(self.convert_point(p)?);
                 }
                 // Add the origin a second time, to "close" the polygon
-                xy.push(pts[0].x as i32);
-                xy.push(pts[0].y as i32);
+                xy.push(self.convert_point(&pts[0])?);
                 xy
             }
             Shape::Path { .. } => todo!(),
@@ -139,7 +137,7 @@ impl GdsConverter {
                     string: name.into(),
                     layer: layer.layernum,
                     texttype,
-                    xy: vec![loc.x as i32, loc.y as i32],
+                    xy: self.convert_point(&loc)?,
                     strans,
                     ..Default::default()
                 }
@@ -147,6 +145,11 @@ impl GdsConverter {
             )
         }
         Ok(gds_elems)
+    }
+    pub fn convert_point(&self, pt: &Point) -> LayoutResult<gds21::GdsPoint> {
+        let x = pt.x.try_into()?;
+        let y = pt.y.try_into()?;
+        Ok(gds21::GdsPoint::new(x, y))
     }
     /// Error creation helper
     fn err<T>(&self, msg: impl Into<String>) -> LayoutResult<T> {
@@ -276,7 +279,7 @@ impl GdsImporter {
         // Text elements which do not overlap a geometric element on the same layer
         // are converted to annotations.
         for textelem in &texts {
-            let loc = Point::new(textelem.xy[0] as isize, textelem.xy[1] as isize);
+            let loc = self.import_point(&textelem.xy)?;
             if let Some(layer) = layers.get(&textelem.layer) {
                 // Layer exists in geometry; see which elements intersect with this text
                 let mut hit = false;
@@ -324,13 +327,7 @@ impl GdsImporter {
     /// Import a [gds21::GdsBoundary] into an [Element]
     fn import_boundary(&mut self, x: &gds21::GdsBoundary) -> LayoutResult<Element> {
         self.ctx_stack.push(ImportContext::Geometry);
-        if x.xy.len() % 2 != 0 {
-            return self.err("GDS Boundary must have an even number of points");
-        }
-        let mut pts = Vec::new();
-        for k in 0..x.xy.len() / 2 {
-            pts.push(Point::new(x.xy[k * 2] as isize, x.xy[k * 2 + 1] as isize));
-        }
+        let mut pts: Vec<Point> = self.import_point_vec(&x.xy)?;
         if pts[0] != *pts.last().unwrap() {
             return self.err("GDS Boundary must start and end at the same point");
         }
@@ -372,16 +369,14 @@ impl GdsImporter {
     /// Import a [gds21::GdsBox] into an [Element]
     fn import_box(&mut self, x: &gds21::GdsBox) -> LayoutResult<Element> {
         self.ctx_stack.push(ImportContext::Geometry);
-        if x.xy.len() != 10 {
-            return self.err("Invalid GDS Box XY Length");
-        }
+
         // GDS stores *five* coordinates per box (for whatever reason).
         // This does not check fox "box validity", and imports the
         // first and third of those five coordinates,
         // which are by necessity for a valid [GdsBox] located at opposite corners.
         let inner = Shape::Rect {
-            p0: Point::new(x.xy[0] as isize, x.xy[1] as isize),
-            p1: Point::new(x.xy[3] as isize, x.xy[4] as isize),
+            p0: self.import_point(&x.xy[0])?,
+            p1: self.import_point(&x.xy[2])?,
         };
 
         // Grab (or create) its [Layer]
@@ -399,14 +394,8 @@ impl GdsImporter {
     /// Import a [gds21::GdsPath] into an [Element]
     fn import_path(&mut self, x: &gds21::GdsPath) -> LayoutResult<Element> {
         self.ctx_stack.push(ImportContext::Geometry);
-        if x.xy.len() % 2 != 0 {
-            // FIXME: make this a GDS thing
-            return self.err("GDS Boundary must have an even number of points");
-        }
-        let mut pts = Vec::new();
-        for k in 0..x.xy.len() / 2 {
-            pts.push(Point::new(x.xy[k * 2] as isize, x.xy[k * 2 + 1] as isize));
-        }
+
+        let pts = self.import_point_vec(&x.xy)?;
         let width = if let Some(w) = x.width {
             w as usize
         } else {
@@ -434,7 +423,7 @@ impl GdsImporter {
         self.ctx_stack
             .push(ImportContext::Instance(sref.name.clone()));
         let cell = CellRef::Name(sref.name.clone()); // FIXME
-        let p0 = Point::new(sref.xy[0] as isize, sref.xy[1] as isize);
+        let p0 = self.import_point(&sref.xy)?;
         let mut inst = Instance {
             inst_name,
             cell_name,
@@ -461,19 +450,20 @@ impl GdsImporter {
     fn import_instance_array(&mut self, aref: &gds21::GdsArrayRef) -> LayoutResult<Vec<Instance>> {
         let inst_name = "".to_string(); // FIXME
         let cell_name = aref.name.clone();
-        self.ctx_stack.push(ImportContext::Array(aref.name.clone()));
+        self.ctx_stack.push(ImportContext::Array(cell_name.clone()));
         let cell = CellRef::Name(aref.name.clone()); // FIXME
-        if aref.xy.len() != 6 {
-            return self.err("Invalid Array XY Length");
-        }
+
+        // Convert its three (x,y) coordinates
+        let p0 = self.import_point(&aref.xy[0])?;
+        let p1 = self.import_point(&aref.xy[1])?;
+        let p2 = self.import_point(&aref.xy[2])?;
         // Check for (thus far) unsupported non-rectangular arrays
-        if aref.xy[1] != aref.xy[3] || aref.xy[0] != aref.xy[4] {
+        if p0.y != p1.y || p0.x != p2.x {
             return self.err("Invalid Non-Rectangular GDS Array");
         }
         // Sort out the inter-element spacing
-        let p0 = Point::new(aref.xy[0] as isize, aref.xy[1] as isize);
-        let width = aref.xy[0] as isize - aref.xy[2] as isize;
-        let height = aref.xy[1] as isize - aref.xy[5] as isize;
+        let width = p1.x - p0.x;
+        let height = p2.y - p0.y;
         let xstep = width / (aref.cols as isize);
         let ystep = height / (aref.rows as isize);
         // Grab the reflection/ rotation settings
@@ -509,6 +499,18 @@ impl GdsImporter {
         }
         self.ctx_stack.pop();
         Ok(insts)
+    }
+    /// Import a [Point]
+    fn import_point(&mut self, pt: &gds21::GdsPoint) -> LayoutResult<Point> {
+        let x = pt.x.try_into()?;
+        let y = pt.y.try_into()?;
+        Ok(Point::new(x, y))
+    }
+    /// Import a vector of [Point]s
+    fn import_point_vec(&mut self, pts: &Vec<gds21::GdsPoint>) -> LayoutResult<Vec<Point>> {
+        pts.iter()
+            .map(|p| self.import_point(p))
+            .collect::<Result<Vec<_>, _>>()
     }
     /// Error creation helper
     fn err<T>(&self, msg: impl Into<String>) -> LayoutResult<T> {

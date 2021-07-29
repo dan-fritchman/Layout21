@@ -19,27 +19,27 @@ fn gds_import1() -> LayoutResult<()> {
                 GdsElement::GdsBoundary(GdsBoundary {
                     layer: 11,
                     datatype: 22,
-                    xy: vec![0, 0, 2, 0, 2, 2, 0, 2, 0, 0],
+                    xy: GdsPoint::vec(&[(0, 0), (2, 0), (2, 2), (0, 2), (0, 0)]),
                     ..Default::default()
                 }),
                 GdsElement::GdsTextElem(GdsTextElem {
                     string: "net1".into(),
                     layer: 11,    // Same layer as the boundary
                     texttype: 66, // Could be anything, for now
-                    xy: vec![1, 1],
+                    xy: GdsPoint::new(1, 1),
                     ..Default::default()
                 }),
                 GdsElement::GdsBoundary(GdsBoundary {
                     layer: 33,
                     datatype: 44,
-                    xy: vec![10, 10, 12, 10, 12, 12, 10, 12, 10, 10],
+                    xy: GdsPoint::vec(&[(10, 10), (12, 10), (12, 12), (10, 12), (10, 10)]),
                     ..Default::default()
                 }),
                 GdsElement::GdsTextElem(GdsTextElem {
                     string: "net1".into(),
                     layer: 44, // *Not* Same layer as the boundary
                     texttype: 66,
-                    xy: vec![11, 11], // Intersects with the boundary
+                    xy: GdsPoint::new(11, 11), // Intersects with the boundary
                     ..Default::default()
                 }),
             ],

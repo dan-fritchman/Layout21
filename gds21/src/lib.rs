@@ -777,6 +777,10 @@ impl GdsPoint {
     pub fn new(x: i32, y: i32) -> Self {
         GdsPoint { x, y }
     }
+    /// Create a vector of [GdsPoint] from an array of tuples
+    pub fn vec(pts: &[(i32, i32)]) -> Vec<Self> {
+        pts.iter().map(|pt| GdsPoint::new(pt.0, pt.1)).collect()
+    }
     /// Convert from a two-element vector
     fn parse(from: &Vec<i32>) -> Result<Self, GdsError> {
         if from.len() != 2 {

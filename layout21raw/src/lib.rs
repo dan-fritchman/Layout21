@@ -11,7 +11,7 @@
 
 // Std-Lib
 use std::collections::HashMap;
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 use std::hash::Hash;
 
 // Crates.io
