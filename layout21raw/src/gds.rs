@@ -8,44 +8,46 @@ use super::*;
 /// Converts a [raw::Library] to a GDSII library ([gds21::GdsLibrary]).
 /// The sole valid top-level entity for conversion is always a [Library].
 #[derive(Debug)]
-pub struct GdsConverter {
+pub struct GdsExporter {
     pub lib: Library,
 }
-impl GdsConverter {
-    pub fn convert(lib: Library) -> LayoutResult<gds21::GdsLibrary> {
-        Self { lib }.convert_all()
+impl GdsExporter {
+    pub fn export(lib: Library) -> LayoutResult<gds21::GdsLibrary> {
+        Self { lib }.export_all()
     }
-    fn convert_all(self) -> LayoutResult<gds21::GdsLibrary> {
+    fn export_all(self) -> LayoutResult<gds21::GdsLibrary> {
         if self.lib.libs.len() > 0 {
             return self.err("No nested libraries to GDS (yet)");
         }
         // Create a new Gds Library
         let mut lib = gds21::GdsLibrary::new(&self.lib.name);
         // Set its distance units
+        // In all cases the GDSII "user units" are set to 1µm.
         lib.units = match self.lib.units {
+            Unit::Micro => gds21::GdsUnits::new(1.0, 1e-6),
             Unit::Nano => gds21::GdsUnits::new(1e-3, 1e-9),
-            Unit::Micro => gds21::GdsUnits::new(1e-3, 1e-6),
+            Unit::Angstrom => gds21::GdsUnits::new(1e-4, 1e-10),
         };
         // And convert each of our `cells` into its `structs`
         lib.structs = self
             .lib
             .cells
             .iter()
-            .map(|c| self.convert_cell(c))
+            .map(|c| self.export_cell(c))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(lib)
     }
     /// Convert a [Cell] to a [gds21::GdsStruct] cell-definition
-    fn convert_cell(&self, cell: &Cell) -> LayoutResult<gds21::GdsStruct> {
+    fn export_cell(&self, cell: &Cell) -> LayoutResult<gds21::GdsStruct> {
         let mut elems = Vec::with_capacity(cell.elems.len() + cell.insts.len());
         // Convert each [Instance]
         for inst in cell.insts.iter() {
-            elems.push(self.convert_instance(inst)?.into());
+            elems.push(self.export_instance(inst)?.into());
         }
         // Convert each [Element]
         // Note each can produce more than one [GdsElement]
         for elem in cell.elems.iter() {
-            for gdselem in self.convert_element(elem)?.into_iter() {
+            for gdselem in self.export_element(elem)?.into_iter() {
                 elems.push(gdselem);
             }
         }
@@ -54,10 +56,10 @@ impl GdsConverter {
         Ok(s)
     }
     /// Convert an [Instance] to a GDS instance, AKA [gds21::GdsStructRef]
-    fn convert_instance(&self, inst: &Instance) -> LayoutResult<gds21::GdsStructRef> {
+    fn export_instance(&self, inst: &Instance) -> LayoutResult<gds21::GdsStructRef> {
         Ok(gds21::GdsStructRef {
             name: inst.cell_name.clone(),
-            xy: self.convert_point(&inst.p0)?,
+            xy: self.export_point(&inst.p0)?,
             strans: None, //FIXME!
             ..Default::default()
         })
@@ -73,7 +75,7 @@ impl GdsConverter {
     /// and include an explicit repetition of their origin for closure.
     /// So an N-sided polygon is described by a 2*(N+1)-entry vector.
     ///
-    pub fn convert_element(&self, elem: &Element) -> LayoutResult<Vec<gds21::GdsElement>> {
+    pub fn export_element(&self, elem: &Element) -> LayoutResult<Vec<gds21::GdsElement>> {
         let layer = self
             .lib
             .layers
@@ -99,10 +101,10 @@ impl GdsConverter {
                 // Flatten our points-vec, converting to 32-bit along the way
                 let mut xy = Vec::new();
                 for p in pts.iter() {
-                    xy.push(self.convert_point(p)?);
+                    xy.push(self.export_point(p)?);
                 }
                 // Add the origin a second time, to "close" the polygon
-                xy.push(self.convert_point(&pts[0])?);
+                xy.push(self.export_point(&pts[0])?);
                 xy
             }
             Shape::Path { .. } => todo!(),
@@ -137,7 +139,7 @@ impl GdsConverter {
                     string: name.into(),
                     layer: layer.layernum,
                     texttype,
-                    xy: self.convert_point(&loc)?,
+                    xy: self.export_point(&loc)?,
                     strans,
                     ..Default::default()
                 }
@@ -146,7 +148,7 @@ impl GdsConverter {
         }
         Ok(gds_elems)
     }
-    pub fn convert_point(&self, pt: &Point) -> LayoutResult<gds21::GdsPoint> {
+    pub fn export_point(&self, pt: &Point) -> LayoutResult<gds21::GdsPoint> {
         let x = pt.x.try_into()?;
         let y = pt.y.try_into()?;
         Ok(gds21::GdsPoint::new(x, y))
@@ -213,6 +215,8 @@ impl GdsImporter {
         // Only our enumerated values are thus far supported
         let rv = if gdsunit == 1e-9 {
             Unit::Nano
+        } else if gdsunit == 1e-10 {
+            Unit::Angstrom
         } else if gdsunit == 1e-6 {
             Unit::Micro
         } else {
@@ -224,9 +228,9 @@ impl GdsImporter {
     /// Import a GDS Cell ([gds21::GdsStruct]) into a [Cell]
     fn import_cell(&mut self, strukt: &gds21::GdsStruct) -> LayoutResult<Cell> {
         let mut cell = Cell::default();
-        cell.name = strukt.name.clone();
-        self.ctx_stack
-            .push(ImportContext::Cell(strukt.name.clone()));
+        let name = strukt.name.clone();
+        cell.name = name.clone();
+        self.ctx_stack.push(ImportContext::Cell(name));
         // Importing each cell requires at least two passes over its elements.
         // In the first pass we add each [Instance] and geometric element,
         // And keep a list of [gds21::GdsTextElem] on the side.
@@ -235,42 +239,38 @@ impl GdsImporter {
         // Also keep a hash of by-layer elements, to aid in text-assignment in our second pass
         let mut layers: HashMap<i16, Vec<ElementKey>> = HashMap::new();
         for elem in &strukt.elems {
+            /// A quick local enum, indicating whether each GDS element causes us
+            /// to add a new [Element]. If so, more stuff is to be done.
+            enum AddingAnElement {
+                Yes(Element),
+                No(()),
+            }
             use gds21::GdsElement::*;
-            match elem {
-                GdsBoundary(ref x) => {
-                    let e = self.import_boundary(x)?;
-                    let ekey = elems.insert(e);
-                    if let Some(ref mut bucket) = layers.get_mut(&x.layer) {
-                        bucket.push(ekey);
-                    } else {
-                        layers.insert(x.layer, vec![ekey]);
-                    }
-                }
-                GdsPath(ref x) => {
-                    let e = self.import_path(x)?;
-                    let ekey = elems.insert(e);
-                    if let Some(ref mut bucket) = layers.get_mut(&x.layer) {
-                        bucket.push(ekey);
-                    } else {
-                        layers.insert(x.layer, vec![ekey]);
-                    }
-                }
-                GdsBox(ref x) => {
-                    let e = self.import_box(x)?;
-                    let ekey = elems.insert(e);
-                    if let Some(ref mut bucket) = layers.get_mut(&x.layer) {
-                        bucket.push(ekey);
-                    } else {
-                        layers.insert(x.layer, vec![ekey]);
-                    }
-                }
-                GdsArrayRef(ref x) => cell.insts.extend(self.import_instance_array(x)?),
-                GdsStructRef(ref x) => cell.insts.push(self.import_instance(x)?),
-                GdsTextElem(ref x) => texts.push(x),
+            use AddingAnElement::{No, Yes};
+            let e = match elem {
+                GdsBoundary(ref x) => Yes(self.import_boundary(x)?),
+                GdsPath(ref x) => Yes(self.import_path(x)?),
+                GdsBox(ref x) => Yes(self.import_box(x)?),
+                GdsArrayRef(ref x) => No(cell.insts.extend(self.import_instance_array(x)?)),
+                GdsStructRef(ref x) => No(cell.insts.push(self.import_instance(x)?)),
+                GdsTextElem(ref x) => No(texts.push(x)),
                 GdsNode(ref _x) => {
                     // GDSII "Node" elements are fairly rare, and are not supported.
                     // (Maybe some day we'll even learn what they are.)
                     return self.err("Unsupported GDSII Element: Node");
+                }
+            };
+            // If we got a new element, add it to our per-layer hash
+            if let Yes(e) = e {
+                let layernum = match self.layers.get(e.layer) {
+                    Some(l) => l.layernum,
+                    None => return self.err("Internal error: element added to invalid layer"),
+                };
+                let ekey = elems.insert(e);
+                if let Some(ref mut bucket) = layers.get_mut(&layernum) {
+                    bucket.push(ekey);
+                } else {
+                    layers.insert(layernum, vec![ekey]);
                 }
             }
         }
@@ -355,7 +355,7 @@ impl GdsImporter {
         };
 
         // Grab (or create) its [Layer]
-        let (layer, purpose) = self.layers.get_or_insert(x.layer, x.datatype)?;
+        let (layer, purpose) = self.import_element_layer(x)?;
         // Create the Element, and insert it in our slotmap
         let e = Element {
             net: None,
@@ -380,7 +380,7 @@ impl GdsImporter {
         };
 
         // Grab (or create) its [Layer]
-        let (layer, purpose) = self.layers.get_or_insert(x.layer, x.boxtype)?;
+        let (layer, purpose) = self.import_element_layer(x)?;
         // Create the Element, and insert it in our slotmap
         let e = Element {
             net: None,
@@ -405,7 +405,7 @@ impl GdsImporter {
         let inner = Shape::Path { width, pts };
 
         // Grab (or create) its [Layer]
-        let (layer, purpose) = self.layers.get_or_insert(x.layer, x.datatype)?;
+        let (layer, purpose) = self.import_element_layer(x)?;
         // Create the Element, and insert it in our slotmap
         let e = Element {
             net: None,
@@ -419,14 +419,13 @@ impl GdsImporter {
     /// Import a [gds21::GdsStructRef] cell/struct-instance into an [Instance]
     fn import_instance(&mut self, sref: &gds21::GdsStructRef) -> LayoutResult<Instance> {
         let inst_name = "".into(); // FIXME
-        let cell_name = sref.name.clone();
-        self.ctx_stack
-            .push(ImportContext::Instance(sref.name.clone()));
-        let cell = CellRef::Name(sref.name.clone()); // FIXME
+        let cname = sref.name.clone();
+        let cell = CellRef::Name(cname.clone()); // FIXME
+        self.ctx_stack.push(ImportContext::Instance(cname.clone()));
         let p0 = self.import_point(&sref.xy)?;
         let mut inst = Instance {
             inst_name,
-            cell_name,
+            cell_name: cname,
             cell,
             p0,
             reflect: false, // FIXME!
@@ -511,6 +510,16 @@ impl GdsImporter {
         pts.iter()
             .map(|p| self.import_point(p))
             .collect::<Result<Vec<_>, _>>()
+    }
+    /// Get the ([LayerKey], [LayerPurpose]) pair for a GDS element implementing its [gds21::HasLayer] trait.
+    /// Layers are created if they do not already exist,
+    /// although this may eventually be a per-importer setting.
+    fn import_element_layer(
+        &mut self,
+        elem: &impl gds21::HasLayer,
+    ) -> LayoutResult<(LayerKey, LayerPurpose)> {
+        let spec = elem.layerspec();
+        self.layers.get_or_insert(spec.layer, spec.xtype)
     }
     /// Error creation helper
     fn err<T>(&self, msg: impl Into<String>) -> LayoutResult<T> {

@@ -24,7 +24,7 @@ use layout21protos as proto;
 
 // Re-exports
 pub mod gds;
-pub use gds::{GdsConverter, GdsImporter};
+pub use gds::{GdsExporter, GdsImporter};
 
 #[cfg(test)]
 mod tests;
@@ -112,6 +112,8 @@ pub enum Unit {
     Micro,
     /// Nanometers
     Nano,
+    /// Angstroms
+    Angstrom,
 }
 impl Default for Unit {
     /// Default units are nanometers
@@ -206,8 +208,8 @@ pub struct Instance {
 /// Keep track of active layers, and index them by number (FIXME: and name)
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Layers {
-    pub slots: SlotMap<LayerKey, Layer>,
-    pub nums: HashMap<i16, LayerKey>,
+    slots: SlotMap<LayerKey, Layer>,
+    nums: HashMap<i16, LayerKey>,
 }
 impl Layers {
     /// Add a [Layer] to our slot-map and number-map, and
@@ -366,7 +368,11 @@ impl Library {
     }
     /// Convert to a GDSII [gds21::GdsLibrary]
     pub fn to_gds(self) -> LayoutResult<gds21::GdsLibrary> {
-        GdsConverter::convert(self)
+        GdsExporter::export(self)
+    }
+    /// Convert to proto-buf
+    pub fn to_proto(self) -> LayoutResult<proto::Library> {
+        ProtoExporter::export(self)
     }
 }
 /// Raw-Layout Cell Definition
@@ -513,18 +519,17 @@ impl Shape {
         }
     }
 }
-/// # ProtoBuf Converter
-///
+/// # ProtoBuf Exporter
 #[derive(Debug)]
-pub struct ProtoConverter {
+pub struct ProtoExporter {
     pub lib: Library,
 }
-impl ProtoConverter {
-    pub fn convert(lib: Library) -> LayoutResult<proto::Library> {
-        Self { lib }.convert_all()
+impl ProtoExporter {
+    pub fn export(lib: Library) -> LayoutResult<proto::Library> {
+        Self { lib }.export_all()
     }
     /// Internal implementation method. Convert all, starting from our top-level [Library].
-    fn convert_all(&mut self) -> LayoutResult<proto::Library> {
+    fn export_all(&mut self) -> LayoutResult<proto::Library> {
         // Create a new [proto::Library]
         let mut lib = proto::Library::default();
         // FIXME: should these protos have a units field?
@@ -538,12 +543,12 @@ impl ProtoConverter {
             .lib
             .cells
             .iter()
-            .map(|c| self.convert_cell(c))
+            .map(|c| self.export_cell(c))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(lib)
     }
     /// Convert a [Cell] to a [proto::Cell] cell-definition
-    fn convert_cell(&self, cell: &Cell) -> LayoutResult<proto::Cell> {
+    fn export_cell(&self, cell: &Cell) -> LayoutResult<proto::Cell> {
         // Create the empty/default [proto::Cell]
         let mut pcell = proto::Cell::default();
         // Convert our name
@@ -555,13 +560,13 @@ impl ProtoConverter {
         pcell.instances = cell
             .insts
             .iter()
-            .map(|c| self.convert_instance(c))
+            .map(|c| self.export_instance(c))
             .collect::<Result<Vec<_>, _>>()?;
         // Convert each [Instance]
         pcell.annotations = cell
             .annotations
             .iter()
-            .map(|x| self.convert_annotation(x))
+            .map(|x| self.export_annotation(x))
             .collect::<Result<Vec<_>, _>>()?;
         // Collect up shapes by layer
         // FIXME: should we store them here this way in the first place? Perhaps.
@@ -588,7 +593,7 @@ impl ProtoConverter {
             });
             for elem in elems {
                 // Also sort into the proto-schema's by-shape-type vectors
-                match self.convert_element(elem)? {
+                match self.export_element(elem)? {
                     ProtoShape::Rect(r) => layershape.rectangles.push(r),
                     ProtoShape::Poly(p) => layershape.polygons.push(p),
                     ProtoShape::Path(p) => layershape.paths.push(p),
@@ -599,7 +604,7 @@ impl ProtoConverter {
         Ok(pcell)
     }
     /// Convert an [Instance] to a [proto::Instance]
-    fn convert_instance(&self, inst: &Instance) -> LayoutResult<proto::Instance> {
+    fn export_instance(&self, inst: &Instance) -> LayoutResult<proto::Instance> {
         Ok(proto::Instance {
             name: inst.inst_name.clone(),
             cell_name: Some(proto::QualifiedName {
@@ -611,13 +616,13 @@ impl ProtoConverter {
         })
     }
     /// Convert an [Instance] to a [proto::Instance]
-    fn convert_annotation(&self, text: &TextElement) -> LayoutResult<proto::TextElement> {
+    fn export_annotation(&self, text: &TextElement) -> LayoutResult<proto::TextElement> {
         Ok(proto::TextElement {
             string: text.string.clone(),
             loc: Some(proto::Point::new(text.loc.x as i64, text.loc.y as i64)),
         })
     }
-    fn convert_element(&self, elem: &Element) -> LayoutResult<ProtoShape> {
+    fn export_element(&self, elem: &Element) -> LayoutResult<ProtoShape> {
         // Convert unconnected nets to the empty string
         let net = if let Some(ref net) = elem.net {
             net.clone()

@@ -1935,6 +1935,42 @@ pub struct GdsLayerSpec {
     /// DataType (or TextType, NodeType, etc.) ID Number
     pub xtype: i16,
 }
+/// Trait for "layered" elements
+/// Sole function `layerspec` returns a [GdsLayerSpec] including the two numbers `layer` and `xtype`.
+pub trait HasLayer {
+    fn layerspec(&self) -> GdsLayerSpec;
+}
+impl GdsLayerSpec {
+    /// Create a new [GdsLayerSpec] ]
+    pub fn new(layer: i16, xtype: i16) -> GdsLayerSpec {
+        GdsLayerSpec { layer, xtype }
+    }
+}
+impl HasLayer for GdsBoundary {
+    fn layerspec(&self) -> GdsLayerSpec {
+        GdsLayerSpec::new(self.layer, self.datatype)
+    }
+}
+impl HasLayer for GdsTextElem {
+    fn layerspec(&self) -> GdsLayerSpec {
+        GdsLayerSpec::new(self.layer, self.texttype)
+    }
+}
+impl HasLayer for GdsNode {
+    fn layerspec(&self) -> GdsLayerSpec {
+        GdsLayerSpec::new(self.layer, self.nodetype)
+    }
+}
+impl HasLayer for GdsBox {
+    fn layerspec(&self) -> GdsLayerSpec {
+        GdsLayerSpec::new(self.layer, self.boxtype)
+    }
+}
+impl HasLayer for GdsPath {
+    fn layerspec(&self) -> GdsLayerSpec {
+        GdsLayerSpec::new(self.layer, self.datatype)
+    }
+}
 
 /// Enumeration of each context in which a record can be parsed, primarily for error reporting
 #[derive(Debug, Clone)]

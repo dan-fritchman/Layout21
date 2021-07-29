@@ -72,7 +72,7 @@ fn gds_sample1() -> LayoutResult<()> {
     assert_eq!(lib.name, "dff1_lib");
     let cell = &lib.cells[0];
     assert_eq!(cell.name, "dff1");
-    let p = ProtoConverter::convert(lib)?;
+    let p = ProtoExporter::export(lib)?;
     assert!(p.name.is_some());
     proto::save(&p, &resource("something.bin")).unwrap();
     let p2 = proto::open(&resource("something.bin")).unwrap();
