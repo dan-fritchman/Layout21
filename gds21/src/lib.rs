@@ -63,16 +63,13 @@
 //! ```
 //!
 
-use std::convert::TryFrom;
-use std::fmt;
+use std::convert::{TryFrom, TryInto};
+use std::error::Error;
 use std::fs::File;
-use std::io::{BufReader, BufWriter};
-use std::io::{Read, Write};
-use std::mem;
-use std::str;
-
 #[allow(unused_imports)]
 use std::io::prelude::*;
+use std::io::{BufReader, BufWriter, Read, Write};
+use std::{fmt, mem, str};
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use chrono::prelude::*;
@@ -766,6 +763,62 @@ impl Default for GdsUnits {
         Self(1e-3, 1e-9)
     }
 }
+
+/// # Gds Spatial Point
+/// Coordinate in (x,y) layout-space.
+/// Denoted in each [GdsLibrary]'s [GdsUnits].
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub struct GdsPoint {
+    pub x: i32,
+    pub y: i32,
+}
+impl GdsPoint {
+    /// Create a new [GdsPoint]
+    pub fn new(x: i32, y: i32) -> Self {
+        GdsPoint { x, y }
+    }
+    /// Convert from a two-element vector
+    fn parse(from: &Vec<i32>) -> Result<Self, GdsError> {
+        if from.len() != 2 {
+            return Err(GdsError::Other(
+                "GdsPoint coordinate vector: Invalid number of elements".into(),
+            ));
+        }
+        Ok(GdsPoint {
+            x: from[0],
+            y: from[1],
+        })
+    }
+    /// Convert an n-element vector if `i32` into an n/2-element vector of [GdsPoint]s.
+    fn parse_vec(from: &[i32]) -> Result<Vec<GdsPoint>, GdsError> {
+        if from.len() % 2 != 0 {
+            return Err(GdsError::Other(
+                "GdsPoint coordinate vector: Invalid number of elements".into(),
+            ));
+        }
+        let mut rv = Vec::with_capacity(from.len() / 2);
+        for i in 0..from.len() / 2 {
+            rv.push(GdsPoint {
+                x: from[i * 2],
+                y: from[i * 2 + 1],
+            });
+        }
+        Ok(rv)
+    }
+    /// Flatten to a two-element vector
+    fn flatten(&self) -> Vec<i32> {
+        vec![self.x, self.y]
+    }
+    /// Convert an n-element vector of [GdsPoint]s to a 2n-element i32 vector.
+    fn flatten_vec(src: &Vec<GdsPoint>) -> Vec<i32> {
+        let mut rv = Vec::with_capacity(src.len() * 2);
+        for pt in src.iter() {
+            rv.push(pt.x);
+            rv.push(pt.y);
+        }
+        rv
+    }
+}
 /// # Gds Mask-Format Enumeration
 /// As set by the FORMAT record
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
@@ -819,28 +872,28 @@ pub struct GdsPath {
     /// DataType ID
     pub datatype: i16,
     /// Vector of x,y coordinates
-    pub xy: Vec<i32>,
+    pub xy: Vec<GdsPoint>,
 
     // Optional Fields
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub width: Option<i32>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub path_type: Option<i16>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub begin_extn: Option<i32>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub end_extn: Option<i32>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub elflags: Option<GdsElemFlags>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub plex: Option<GdsPlex>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[builder(default, setter(strip_option))]
     pub properties: Vec<GdsProperty>,
 }
@@ -855,7 +908,7 @@ impl GdsPath {
                 GdsRecord::EndElement => break, // End-of-element
                 GdsRecord::Layer(d) => b.layer(d),
                 GdsRecord::DataType(d) => b.datatype(d),
-                GdsRecord::Xy(d) => b.xy(d),
+                GdsRecord::Xy(d) => b.xy(GdsPoint::parse_vec(&d)?),
                 GdsRecord::Width(d) => b.width(d),
                 GdsRecord::PathType(d) => b.path_type(d),
                 GdsRecord::BeginExtn(d) => b.begin_extn(d),
@@ -898,7 +951,7 @@ impl ToRecords for GdsPath {
         if let Some(ref e) = self.end_extn {
             records.push(GdsRecord::EndExtn(*e));
         }
-        records.push(GdsRecord::Xy(self.xy.clone()));
+        records.push(GdsRecord::Xy(GdsPoint::flatten_vec(&self.xy)));
         for prop in self.properties.iter() {
             records.push(GdsRecord::PropAttr(prop.attr));
             records.push(GdsRecord::PropValue(prop.value.clone()));
@@ -930,16 +983,16 @@ pub struct GdsBoundary {
     /// DataType ID
     pub datatype: i16,
     /// Vector of x,y coordinates
-    pub xy: Vec<i32>,
+    pub xy: Vec<GdsPoint>,
 
     // Optional Fields
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub elflags: Option<GdsElemFlags>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub plex: Option<GdsPlex>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[builder(default, setter(strip_option))]
     pub properties: Vec<GdsProperty>,
 }
@@ -954,7 +1007,7 @@ impl GdsBoundary {
                 GdsRecord::EndElement => break, // End-of-element
                 GdsRecord::Layer(d) => b.layer(d),
                 GdsRecord::DataType(d) => b.datatype(d),
-                GdsRecord::Xy(d) => b.xy(d),
+                GdsRecord::Xy(d) => b.xy(GdsPoint::parse_vec(&d)?),
                 GdsRecord::Plex(d) => b.plex(GdsPlex(d)),
                 GdsRecord::ElemFlags(d0, d1) => b.elflags(GdsElemFlags(d0, d1)),
                 GdsRecord::PropAttr(attr) => {
@@ -981,7 +1034,7 @@ impl ToRecords for GdsBoundary {
         }
         records.push(GdsRecord::Layer(self.layer));
         records.push(GdsRecord::DataType(self.datatype));
-        records.push(GdsRecord::Xy(self.xy.clone()));
+        records.push(GdsRecord::Xy(GdsPoint::flatten_vec(&self.xy)));
         for prop in self.properties.iter() {
             records.push(GdsRecord::PropAttr(prop.attr));
             records.push(GdsRecord::PropValue(prop.value.clone()));
@@ -1009,21 +1062,21 @@ pub struct GdsStructRef {
     // Required Fields
     /// Struct (Cell) Name
     pub name: String,
-    /// Vector of x,y coordinates
-    pub xy: Vec<i32>,
+    /// Location x,y coordinates
+    pub xy: GdsPoint,
 
     // Optional Fields
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     /// Translation & Reflection Options
     pub strans: Option<GdsStrans>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub elflags: Option<GdsElemFlags>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub plex: Option<GdsPlex>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[builder(default, setter(strip_option))]
     pub properties: Vec<GdsProperty>,
 }
@@ -1036,7 +1089,7 @@ impl GdsStructRef {
             b = match r {
                 GdsRecord::EndElement => break, // End-of-element
                 GdsRecord::StructRefName(d) => b.name(d),
-                GdsRecord::Xy(d) => b.xy(d),
+                GdsRecord::Xy(d) => b.xy(GdsPoint::parse(&d)?),
                 GdsRecord::Plex(d) => b.plex(GdsPlex(d)),
                 GdsRecord::ElemFlags(d0, d1) => b.elflags(GdsElemFlags(d0, d1)),
                 GdsRecord::Strans(d0, d1) => b.strans(GdsStrans::parse(it, d0, d1)?),
@@ -1067,7 +1120,7 @@ impl ToRecords for GdsStructRef {
             let rs = e.to_records();
             records.extend(rs);
         }
-        records.push(GdsRecord::Xy(self.xy.clone()));
+        records.push(GdsRecord::Xy(GdsPoint::flatten(&self.xy)));
         for prop in self.properties.iter() {
             records.push(GdsRecord::PropAttr(prop.attr));
             records.push(GdsRecord::PropValue(prop.value.clone()));
@@ -1093,23 +1146,23 @@ pub struct GdsArrayRef {
     /// Struct (Cell) Name
     pub name: String,
     /// Vector of x,y coordinates
-    pub xy: Vec<i32>,
+    pub xy: [GdsPoint; 3],
     /// Number of columns
     pub cols: i16,
     /// Number of rows
     pub rows: i16,
     // Optional Fields
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default)]
     /// Translation & Reflection Options
     pub strans: Option<GdsStrans>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub elflags: Option<GdsElemFlags>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub plex: Option<GdsPlex>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[builder(default, setter(strip_option))]
     pub properties: Vec<GdsProperty>,
 }
@@ -1123,7 +1176,19 @@ impl GdsArrayRef {
                 GdsRecord::EndElement => break, // End-of-element
                 GdsRecord::StructRefName(d) => b.name(d),
                 GdsRecord::ColRow { rows, cols } => b.rows(rows).cols(cols),
-                GdsRecord::Xy(d) => b.xy(d),
+                GdsRecord::Xy(d) => {
+                    // XY coordinates must be a three-element array.
+                    // First parse a generic [GdsRecord::Xy] to a vector,
+                    // and then convert, checking length in the process.
+                    let v = GdsPoint::parse_vec(&d)?;
+                    let xy: [GdsPoint; 3] = match v.try_into() {
+                        Ok(xy) => xy,
+                        Err(_) => {
+                            return Err(GdsError::Other("Invalid XY for GdsArrayRef".into()));
+                        }
+                    };
+                    b.xy(xy)
+                }
                 GdsRecord::Plex(d) => b.plex(GdsPlex(d)),
                 GdsRecord::ElemFlags(d0, d1) => b.elflags(GdsElemFlags(d0, d1)),
                 GdsRecord::Strans(d0, d1) => b.strans(GdsStrans::parse(it, d0, d1)?),
@@ -1158,7 +1223,10 @@ impl ToRecords for GdsArrayRef {
             cols: self.cols,
             rows: self.rows,
         });
-        records.push(GdsRecord::Xy(self.xy.clone()));
+        let mut xy = GdsPoint::flatten(&self.xy[0]);
+        xy.extend(GdsPoint::flatten(&self.xy[1]));
+        xy.extend(GdsPoint::flatten(&self.xy[2]));
+        records.push(GdsRecord::Xy(xy));
         for prop in self.properties.iter() {
             records.push(GdsRecord::PropAttr(prop.attr));
             records.push(GdsRecord::PropValue(prop.value.clone()));
@@ -1186,29 +1254,29 @@ pub struct GdsTextElem {
     /// Text-Type ID
     pub texttype: i16,
     /// Vector of x,y coordinates
-    pub xy: Vec<i32>,
+    pub xy: GdsPoint,
 
     // Optional Fields
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub presentation: Option<GdsPresentation>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub path_type: Option<i16>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub width: Option<i32>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default)]
     /// Translation & Reflection Options
     pub strans: Option<GdsStrans>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub elflags: Option<GdsElemFlags>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub plex: Option<GdsPlex>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[builder(default, setter(strip_option))]
     pub properties: Vec<GdsProperty>,
 }
@@ -1224,7 +1292,7 @@ impl GdsTextElem {
                 GdsRecord::EndElement => break, // End-of-element
                 GdsRecord::Layer(d) => b.layer(d),
                 GdsRecord::TextType(d) => b.texttype(d),
-                GdsRecord::Xy(d) => b.xy(d),
+                GdsRecord::Xy(d) => b.xy(GdsPoint::parse(&d)?),
                 GdsRecord::String(d) => b.string(d),
                 GdsRecord::Presentation(d0, d1) => b.presentation(GdsPresentation(d0, d1)),
                 GdsRecord::PathType(d) => b.path_type(d),
@@ -1269,7 +1337,7 @@ impl ToRecords for GdsTextElem {
             let rs = e.to_records();
             records.extend(rs);
         }
-        records.push(GdsRecord::Xy(self.xy.clone()));
+        records.push(GdsRecord::Xy(GdsPoint::flatten(&self.xy)));
         records.push(GdsRecord::String(self.string.clone()));
         for prop in self.properties.iter() {
             records.push(GdsRecord::PropAttr(prop.attr));
@@ -1296,16 +1364,16 @@ pub struct GdsNode {
     /// Node-Type ID
     pub nodetype: i16,
     /// Vector of x,y coordinates
-    pub xy: Vec<i32>,
+    pub xy: Vec<GdsPoint>,
 
     // Optional Fields
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub elflags: Option<GdsElemFlags>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub plex: Option<GdsPlex>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[builder(default, setter(strip_option))]
     pub properties: Vec<GdsProperty>,
 }
@@ -1319,7 +1387,7 @@ impl GdsNode {
                 GdsRecord::EndElement => break, // End-of-element
                 GdsRecord::Layer(d) => b.layer(d),
                 GdsRecord::Nodetype(d) => b.nodetype(d),
-                GdsRecord::Xy(d) => b.xy(d),
+                GdsRecord::Xy(d) => b.xy(GdsPoint::parse_vec(&d)?),
                 GdsRecord::Plex(d) => b.plex(GdsPlex(d)),
                 GdsRecord::ElemFlags(d0, d1) => b.elflags(GdsElemFlags(d0, d1)),
                 GdsRecord::PropAttr(attr) => {
@@ -1346,7 +1414,7 @@ impl ToRecords for GdsNode {
         }
         records.push(GdsRecord::Layer(self.layer));
         records.push(GdsRecord::Nodetype(self.nodetype));
-        records.push(GdsRecord::Xy(self.xy.clone()));
+        records.push(GdsRecord::Xy(GdsPoint::flatten_vec(&self.xy)));
         for prop in self.properties.iter() {
             records.push(GdsRecord::PropAttr(prop.attr));
             records.push(GdsRecord::PropValue(prop.value.clone()));
@@ -1372,16 +1440,16 @@ pub struct GdsBox {
     /// Box-Type ID
     pub boxtype: i16,
     /// Vector of x,y coordinates
-    pub xy: Vec<i32>,
+    pub xy: [GdsPoint; 5],
 
     // Optional Fields
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub elflags: Option<GdsElemFlags>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub plex: Option<GdsPlex>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[builder(default, setter(strip_option))]
     pub properties: Vec<GdsProperty>,
 }
@@ -1395,7 +1463,19 @@ impl GdsBox {
                 GdsRecord::EndElement => break, // End-of-element
                 GdsRecord::Layer(d) => b.layer(d),
                 GdsRecord::BoxType(d) => b.boxtype(d),
-                GdsRecord::Xy(d) => b.xy(d),
+                GdsRecord::Xy(d) => {
+                    // XY coordinates must be a five-element array.
+                    // First parse a generic [GdsRecord::Xy] to a vector,
+                    // and then convert, checking length in the process.
+                    let v = GdsPoint::parse_vec(&d)?;
+                    let xy: [GdsPoint; 5] = match v.try_into() {
+                        Ok(xy) => xy,
+                        Err(_) => {
+                            return Err(GdsError::Other("Invalid XY for GdsBox".into()));
+                        }
+                    };
+                    b.xy(xy)
+                }
                 GdsRecord::Plex(d) => b.plex(GdsPlex(d)),
                 GdsRecord::ElemFlags(d0, d1) => b.elflags(GdsElemFlags(d0, d1)),
                 GdsRecord::PropAttr(attr) => {
@@ -1422,7 +1502,7 @@ impl ToRecords for GdsBox {
         }
         records.push(GdsRecord::Layer(self.layer));
         records.push(GdsRecord::BoxType(self.boxtype));
-        records.push(GdsRecord::Xy(self.xy.clone()));
+        records.push(GdsRecord::Xy(GdsPoint::flatten_vec(&self.xy.to_vec())));
         for prop in self.properties.iter() {
             records.push(GdsRecord::PropAttr(prop.attr));
             records.push(GdsRecord::PropValue(prop.value.clone()));
@@ -1638,28 +1718,28 @@ pub struct GdsLibrary {
     pub structs: Vec<GdsStruct>,
 
     // Optional (and all thus far unsupported) fields
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub libdirsize: Option<Unsupported>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub srfname: Option<Unsupported>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub libsecur: Option<Unsupported>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub reflibs: Option<Unsupported>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub fonts: Option<Unsupported>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub attrtable: Option<Unsupported>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub generations: Option<Unsupported>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub format_type: Option<GdsFormatType>,
 }
@@ -1871,7 +1951,7 @@ pub enum GdsContext {
 /// Most errors are tied in some sense to parsing and decoding.
 /// Once a valid [GdsLibrary] is created in memory, it can generally be streamed to bytes.
 ///
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub enum GdsError {
     /// Invalid binary -> record conversion
     RecordDecode(GdsRecordType, GdsDataType, u16),
@@ -1891,13 +1971,15 @@ pub enum GdsError {
     Decode,
     /// Other encoding errors
     Encode,
+    /// Boxed (External) Errors
+    Boxed(Box<dyn Error>),
     /// Other errors
     Other(String),
 }
 impl std::fmt::Display for GdsError {
     /// Display a [GdsError].
     /// This functionally delegates to the (derived) [std::fmt::Debug] implementation.
-    /// Maybe more info that wanted in some cases. Certainly enough.
+    /// Maybe more info that wanted in some cases. But certainly enough.
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", self)
     }
@@ -1905,17 +1987,22 @@ impl std::fmt::Display for GdsError {
 impl std::error::Error for GdsError {}
 impl From<std::io::Error> for GdsError {
     fn from(e: std::io::Error) -> Self {
-        GdsError::FileIO(format!("{:?}", e))
+        Self::Boxed(Box::new(e))
     }
 }
 impl From<std::str::Utf8Error> for GdsError {
     fn from(e: std::str::Utf8Error) -> Self {
-        GdsError::Other(format!("{:?}", e))
+        Self::Boxed(Box::new(e))
     }
 }
 impl From<String> for GdsError {
     fn from(e: String) -> Self {
         GdsError::Other(e)
+    }
+}
+impl From<&str> for GdsError {
+    fn from(e: &str) -> Self {
+        GdsError::Other(e.to_string())
     }
 }
 
@@ -1973,7 +2060,7 @@ mod tests {
             dates: test_dates(),
             elems: vec![GdsElement::GdsStructRef(GdsStructRef {
                 name: "dff1".into(),
-                xy: vec![11_000, 11_000],
+                xy: GdsPoint::new(11_000, 11_000),
                 strans: None,
                 elflags: None,
                 plex: None,
@@ -1998,7 +2085,11 @@ mod tests {
             dates: test_dates(),
             elems: vec![GdsElement::GdsArrayRef(GdsArrayRef {
                 name: "dff1".into(),
-                xy: vec![0, 0, 0, 10_000_000, 10_000_000, 0],
+                xy: [
+                    GdsPoint::new(0, 0),
+                    GdsPoint::new(0, 10_000_000),
+                    GdsPoint::new(10_000_000, 0),
+                ],
                 cols: 100,
                 rows: 100,
                 strans: None,
@@ -2019,10 +2110,9 @@ mod tests {
     fn record_too_long() -> Result<(), GdsError> {
         let mut lib = GdsLibrary::new("mylib");
         let mut newcell = GdsStruct::new("mycell");
-        let xy = vec![0; 20_000];
         newcell.elems.push(
             GdsBoundary {
-                xy,
+                xy: GdsPoint::parse_vec(&vec![0; 20_000])?,
                 ..GdsBoundary::default()
             }
             .into(),
@@ -2040,7 +2130,7 @@ mod tests {
     /// Compare `lib` to "golden" data loaded from JSON at path `golden`.
     fn check(lib: &GdsLibrary, fname: &str) {
         // Uncomment this bit to over-write the golden data
-        // save_json(lib, fname);
+        save_json(lib, fname);
 
         let golden = load_json(fname);
         assert_eq!(*lib, golden);
