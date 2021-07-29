@@ -72,6 +72,8 @@ fn gds_sample1() -> LayoutResult<()> {
     assert_eq!(cell.name, "dff1");
     let p = ProtoConverter::convert(lib)?;
     assert!(p.name.is_some());
-
+    proto::save(&p, &resource("something.bin")).unwrap();
+    let p2 = proto::open(&resource("something.bin")).unwrap();
+    assert_eq!(p, p2);
     Ok(())
 }

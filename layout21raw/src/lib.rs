@@ -12,6 +12,7 @@
 // Std-Lib
 use std::collections::HashMap;
 use std::convert::TryFrom;
+use std::hash::Hash;
 
 // Crates.io
 use serde::{Deserialize, Serialize};
@@ -210,24 +211,48 @@ impl Layers {
     /// Get the ([LayerKey], [LayerPurpose]) objects for numbers (`layernum`, `purposenum`) if present.
     /// Inserts a new [Layer] if `layernum` is not present.
     /// Returns `LayerPurpose::Other(purposenum)` if `purposenum` is not present on that layer.
-    fn get_or_insert(&mut self, layernum: i16, purposenum: i16) -> (LayerKey, LayerPurpose) {
-        let layer = match self.keynum(layernum) {
+    fn get_or_insert(
+        &mut self,
+        layernum: i16,
+        purposenum: i16,
+    ) -> LayoutResult<(LayerKey, LayerPurpose)> {
+        // Get the [LayerKey] for `layernum`, creating the [Layer] if it doesn't exist.
+        let key = match self.keynum(layernum) {
             Some(key) => key.clone(),
             None => self.add(Layer::new(layernum)),
         };
-        // FIXME: actually look up whether this is a defined purpose.
-        // For now just create a new numerically-valued one.
-        let purpose = LayerPurpose::Other(purposenum);
-        (layer, purpose)
+        // Get that [Layer], so we can get or add a [LayerPurpose]
+        let layer = self
+            .slots
+            .get_mut(key)
+            .ok_or(LayoutError::msg("Layer Not Found"))?;
+        // Get or create the corresponding [LayerPurpose]
+        let purpose = match layer.purpose(purposenum) {
+            Some(purpose) => purpose.clone(),
+            None => {
+                // Create a new anonymous/ numbered layer-purpose
+                let purpose = LayerPurpose::Other(purposenum);
+                layer.add_purpose(purposenum, purpose.clone())?;
+                purpose
+            }
+        };
+        Ok((key, purpose))
     }
 }
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+/// Layer-Purpose Enumeration
+/// Includes the common use-cases for each shape,
+/// and two "escape hatches", one named and one not.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum LayerPurpose {
     Drawing,
     Pin,
+    Label,
     Obstruction,
     Outline,
-    Other(i16), // etc
+    /// Named purpose, not first-class supported
+    Named(String, i16),
+    /// Other purpose, not first-class supported nor named
+    Other(i16),
 }
 /// # Layer Specification
 /// As in seemingly every layout system, this uses two numbers to identify each layer.
@@ -244,37 +269,41 @@ impl LayerSpec {
 pub struct Layer {
     /// Layer Number
     pub layernum: i16,
-    /// Drawing (Geometry) DataType Value
-    pub drawing: Option<i16>,
-    /// Pin DataType Value
-    pub pin: Option<i16>,
-    /// Obstruction DataType Value
-    pub obs: Option<i16>,
-    /// Text DataType Value
-    pub text: Option<i16>,
-    /// Outline DataType Value
-    pub outline: Option<i16>,
-    /// Any Other DataType Values
-    pub other: HashMap<String, i16>,
+    /// Number => Purpose Lookup
+    purps: HashMap<i16, LayerPurpose>,
+    /// Purpose => Number Lookup
+    nums: HashMap<LayerPurpose, i16>,
 }
 impl Layer {
     /// Create a new [Layer] with the given `layernum`.
-    /// All purposes are set to `None`.
     pub fn new(num: i16) -> Self {
         Self {
             layernum: num,
             ..Default::default()
         }
     }
+    /// Add a new [LayerPurpose]
+    pub fn add_purpose(&mut self, num: i16, purp: LayerPurpose) -> LayoutResult<()> {
+        // If we get a numbered purpose, make sure its id matches `num`.
+        match purp {
+            LayerPurpose::Named(_, k) | LayerPurpose::Other(k) => {
+                if k != num {
+                    return Err(LayoutError::msg("Invalid LayerPurpose"));
+                }
+            }
+            _ => (),
+        };
+        self.purps.insert(num, purp.clone());
+        self.nums.insert(purp, num);
+        Ok(())
+    }
+    /// Retrieve purpose-number `num`
+    pub fn purpose(&self, num: i16) -> Option<&LayerPurpose> {
+        self.purps.get(&num)
+    }
     /// Retrieve the purpose-number for this layer and [Purpose] `purpose`
-    pub fn purpose_num(&self, purpose: LayerPurpose) -> Option<i16> {
-        match purpose {
-            LayerPurpose::Drawing => self.drawing,
-            LayerPurpose::Outline => self.drawing, // FIXME: split this out
-            LayerPurpose::Pin => self.pin,
-            LayerPurpose::Obstruction => self.obs,
-            LayerPurpose::Other(k) => Some(k),
-        }
+    pub fn num(&self, purpose: &LayerPurpose) -> Option<&i16> {
+        self.nums.get(purpose)
     }
 }
 
@@ -325,8 +354,6 @@ pub struct Cell {
     pub name: String,
     /// Cell Instances
     pub insts: Vec<Instance>,
-    /// Instance Arrays
-    pub arrays: Vec<InstArray>,
     /// Primitive Elements
     pub elems: Vec<Element>,
     /// Text Annotations
@@ -345,21 +372,6 @@ pub struct TextElement {
     pub string: String,
     /// Location
     pub loc: Point,
-}
-/// # Array of Instances
-///
-/// Two-dimensional array of identical [Instance]s of the same [Cell].
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct InstArray {
-    pub inst_name: String,
-    pub cell_name: String,
-    pub rows: usize,
-    pub cols: usize,
-    pub xpitch: usize,
-    pub ypitch: usize,
-    pub p0: Point,
-    pub reflect: bool,
-    pub angle: Option<f64>,
 }
 /// # Primitive Geometric Element
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -487,13 +499,13 @@ impl GdsConverter {
     }
     /// Convert a [Cell] to a [gds21::GdsStruct] cell-definition
     fn convert_cell(&self, cell: &Cell) -> LayoutResult<gds21::GdsStruct> {
-        let mut elems = Vec::new();
+        let mut elems = Vec::with_capacity(cell.elems.len() + cell.insts.len());
+        // Convert each [Instance]
         for inst in cell.insts.iter() {
             elems.push(self.convert_instance(inst).into());
         }
-        for arr in cell.arrays.iter() {
-            elems.push(self.convert_array(arr).into());
-        }
+        // Convert each [Element]
+        // Note each can produce more than one [GdsElement]
         for elem in cell.elems.iter() {
             for gdselem in self.convert_element(elem)?.into_iter() {
                 elems.push(gdselem);
@@ -530,11 +542,12 @@ impl GdsConverter {
             .get(elem.layer)
             .ok_or(LayoutError::msg("Layer Not Defined"))?;
         let datatype = layer
-            .purpose_num(elem.purpose)
+            .num(&elem.purpose)
             .ok_or(LayoutError::msg(format!(
                 "LayerPurpose Not Defined for {}, {:?}",
                 layer.layernum, elem.purpose
-            )))?;
+            )))?
+            .clone();
 
         let xy = match &elem.inner {
             Shape::Rect { p0, p1 } => {
@@ -569,8 +582,9 @@ impl GdsConverter {
         // If there's an assigned net, create a corresponding text-element
         if let Some(name) = &elem.net {
             let texttype = layer
-                .text
-                .ok_or(LayoutError::msg("Text Layer Not Defined"))?;
+                .num(&LayerPurpose::Label)
+                .ok_or(LayoutError::msg("Text Layer Not Defined"))?
+                .clone();
 
             // Text is placed in the shape's (at least rough) center
             let loc = elem.inner.center();
@@ -595,24 +609,6 @@ impl GdsConverter {
             )
         }
         Ok(gds_elems)
-    }
-    /// Convert an [InstArray] to GDS-format [gds21::GdsArrayRef]
-    ///
-    /// GDS requires three "points" to define an array,
-    /// Essentially at its origin and opposite edges
-    pub fn convert_array(&self, arr: &InstArray) -> gds21::GdsArrayRef {
-        let x0 = arr.p0.x as i32;
-        let y0 = arr.p0.y as i32;
-        let x1 = x0 + (arr.xpitch * arr.cols + 1) as i32;
-        let y1 = y0 + (arr.ypitch * arr.rows + 1) as i32;
-        gds21::GdsArrayRef {
-            name: arr.cell_name.clone(),
-            xy: vec![x0, y0, x1, y0, x0, y1],
-            rows: arr.rows as i16,
-            cols: arr.cols as i16,
-            strans: None, //FIXME!
-            ..Default::default()
-        }
     }
 }
 /// # GDSII Importer
@@ -647,21 +643,12 @@ impl GdsImporter {
         {
             return Err(LayoutError::msg("Unsupported GDSII Feature"));
         }
-
         // Create a new [Library]
         let mut lib = Library::default();
         // Give it the same name as the GDS
         lib.name = gdslib.name.clone();
         // Set its distance units
-        // FIXME: intermediate/ calculated units
-        let gdsunit = gdslib.units.dbunit();
-        if gdsunit == 1e-9 {
-            lib.units = Unit::Nano;
-        } else if gdsunit == 1e-6 {
-            lib.units = Unit::Micro;
-        } else {
-            return Err(LayoutError::msg("Unsupported GDSII Unit"));
-        };
+        lib.units = self.import_units(&gdslib.units)?;
         // And convert each of its `structs` into our `cells`
         lib.cells = gdslib
             .structs
@@ -669,6 +656,20 @@ impl GdsImporter {
             .map(|x| self.import_cell(x))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(lib)
+    }
+    /// Import our [Unit]s
+    fn import_units(&mut self, units: &gds21::GdsUnits) -> LayoutResult<Unit> {
+        // Peel out the GDS "database unit", the one of its numbers that really matters
+        let gdsunit = units.dbunit();
+        // FIXME: intermediate/ calculated units
+        // Only our enumerated values are thus far supported
+        if gdsunit == 1e-9 {
+            Ok(Unit::Nano)
+        } else if gdsunit == 1e-6 {
+            Ok(Unit::Micro)
+        } else {
+            Err(LayoutError::msg("Unsupported GDSII Unit"))
+        }
     }
     /// Import a GDS Cell ([gds21::GdsStruct]) into a [Cell]
     fn import_cell(&mut self, strukt: &gds21::GdsStruct) -> LayoutResult<Cell> {
@@ -805,7 +806,7 @@ impl GdsImporter {
         };
 
         // Grab (or create) its [Layer]
-        let (layer, purpose) = self.layers.get_or_insert(x.layer, x.datatype);
+        let (layer, purpose) = self.layers.get_or_insert(x.layer, x.datatype)?;
         // Create the Element, and insert it in our slotmap
         let e = Element {
             net: None,
@@ -830,7 +831,7 @@ impl GdsImporter {
         };
 
         // Grab (or create) its [Layer]
-        let (layer, purpose) = self.layers.get_or_insert(x.layer, x.boxtype);
+        let (layer, purpose) = self.layers.get_or_insert(x.layer, x.boxtype)?;
         // Create the Element, and insert it in our slotmap
         let e = Element {
             net: None,
@@ -861,7 +862,7 @@ impl GdsImporter {
         let inner = Shape::Path { width, pts };
 
         // Grab (or create) its [Layer]
-        let (layer, purpose) = self.layers.get_or_insert(x.layer, x.datatype);
+        let (layer, purpose) = self.layers.get_or_insert(x.layer, x.datatype)?;
         // Create the Element, and insert it in our slotmap
         let e = Element {
             net: None,
@@ -999,9 +1000,12 @@ impl ProtoConverter {
         // FIXME: should we store them here this way in the first place? Perhaps.
         let mut layers: HashMap<(i16, i16), Vec<&Element>> = HashMap::new();
         for elem in &cell.elems {
-            let layer = self.lib.layers.get(elem.layer).ok_or("???")?;
+            let layer = self.lib.layers.get(elem.layer).ok_or("Invalid Layer")?;
             let number = layer.layernum;
-            let purpose = layer.drawing.ok_or("???")?;
+            let purpose = layer
+                .num(&elem.purpose)
+                .ok_or("Invalid Layer Purpose / DataType")?
+                .clone();
             if layers.contains_key(&(number, purpose)) {
                 layers.get_mut(&(number, purpose)).unwrap().push(elem);
             } else {
@@ -1009,7 +1013,6 @@ impl ProtoConverter {
             }
         }
         // Now turn those into [proto::LayerShape]s
-        let mut layershapes = vec![];
         for (layernum, elems) in layers {
             let mut layershape = proto::LayerShapes::default();
             layershape.layer = Some(proto::Layer {
@@ -1024,7 +1027,7 @@ impl ProtoConverter {
                     ProtoShape::Path(p) => layershape.paths.push(p),
                 }
             }
-            layershapes.push(layershape);
+            pcell.shapes.push(layershape);
         }
         Ok(pcell)
     }

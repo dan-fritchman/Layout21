@@ -2,6 +2,11 @@
 //! # Protobuf Definitions
 //!
 
+// Std-Lib Imports
+use std::error::Error;
+use std::fs::File;
+use std::io::{BufWriter, Read, Write};
+
 // These are used by the macro-expanded code
 #[allow(unused_imports)]
 use prost::Message;
@@ -25,6 +30,31 @@ impl Layer {
     }
 }
 
+/// Encode into Byte-Vector
+pub fn to_bytes<T: Message + Sized + Default>(data: &T) -> Vec<u8> {
+    let mut buf = Vec::<u8>::with_capacity(data.encoded_len());
+    data.encode(&mut buf).unwrap();
+    buf
+}
+/// Decode from byte array/vector
+pub fn from_bytes<T: Message + Sized + Default>(bytes: &[u8]) -> Result<T, prost::DecodeError> {
+    T::decode(bytes)
+}
+/// Open from file `fname`
+pub fn open<T: Message + Sized + Default>(fname: &str) -> Result<T, Box<dyn Error>> {
+    let mut file = File::open(&fname)?;
+    let mut buf = Vec::<u8>::new();
+    file.read_to_end(buf.as_mut())?;
+    let res = T::decode(buf.as_ref())?;
+    Ok(res)
+}
+/// Save to file `fname`
+pub fn save<T: Message + Sized + Default>(data: &T, fname: &str) -> Result<(), Box<dyn Error>> {
+    let mut file = BufWriter::new(File::create(fname)?);
+    file.write_all(&to_bytes(data))?;
+    Ok(())
+}
+
 /// # Unit Tests
 ///
 /// Primarily basic generation of each proto-expanded type,
@@ -36,16 +66,6 @@ impl Layer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    /// Encode into Byte-Vector
-    fn to_bytes<T: Message + Sized + Default>(data: &T) -> Vec<u8> {
-        let mut buf = Vec::<u8>::with_capacity(data.encoded_len());
-        data.encode(&mut buf).unwrap();
-        buf
-    }
-    /// Decode from byte array/vector
-    fn from_bytes<T: Message + Sized + Default>(bytes: &[u8]) -> Result<T, prost::DecodeError> {
-        T::decode(bytes)
-    }
     #[test]
     fn point() {
         let x = Point { x: 5, y: 6 };
