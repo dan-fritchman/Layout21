@@ -164,6 +164,7 @@ impl GdsExporter {
 pub struct GdsImporter {
     pub layers: Layers,
     ctx_stack: Vec<ImportContext>,
+    unsupported: Vec<gds21::GdsElement>,
 }
 impl GdsImporter {
     /// Import a [gds21::GdsLibrary] into a [Library]
@@ -172,9 +173,21 @@ impl GdsImporter {
         let mut importer = Self {
             layers: Layers::default(),
             ctx_stack: vec![ImportContext::Library(lib.name.clone())],
+            unsupported: vec![],
         };
         let mut rv = importer.import_lib(&lib)?;
-        let Self { layers, .. } = importer;
+        let Self {
+            layers,
+            unsupported,
+            ..
+        } = importer;
+        if unsupported.len() > 0 {
+            println!(
+                "Read {} Unsupported GDS Elements: {:?}",
+                unsupported.len(),
+                unsupported
+            );
+        }
         rv.layers = layers;
         Ok(rv)
     }
@@ -211,13 +224,15 @@ impl GdsImporter {
         self.ctx_stack.push(ImportContext::Units);
         // Peel out the GDS "database unit", the one of its numbers that really matters
         let gdsunit = units.dbunit();
-        // FIXME: intermediate/ calculated units
-        // Only our enumerated values are thus far supported
-        let rv = if gdsunit == 1e-9 {
-            Unit::Nano
-        } else if gdsunit == 1e-10 {
+        // FIXME: intermediate/ calculated units. Only our enumerated values are thus far supported
+        // Note: sadly many real-life GDSII files set, for example "1nm" units,
+        // but do so with the floating-point number *next to* 1e-9.
+        // These files presumably rely on other software "converging" to 1nm, as we do here.
+        let rv = if (gdsunit - 1e-10).abs() < 1e-13 {
             Unit::Angstrom
-        } else if gdsunit == 1e-6 {
+        } else if (gdsunit - 1e-9).abs() < 1e-12 {
+            Unit::Nano
+        } else if (gdsunit - 1e-6).abs() < 1e-9 {
             Unit::Micro
         } else {
             return self.err(format!("Unsupported GDSII Unit: {:10.3e}", gdsunit));
@@ -254,11 +269,9 @@ impl GdsImporter {
                 GdsArrayRef(ref x) => No(cell.insts.extend(self.import_instance_array(x)?)),
                 GdsStructRef(ref x) => No(cell.insts.push(self.import_instance(x)?)),
                 GdsTextElem(ref x) => No(texts.push(x)),
-                GdsNode(ref _x) => {
-                    // GDSII "Node" elements are fairly rare, and are not supported.
-                    // (Maybe some day we'll even learn what they are.)
-                    return self.err("Unsupported GDSII Element: Node");
-                }
+                // GDSII "Node" elements are fairly rare, and are not supported.
+                // (Maybe some day we'll even learn what they are.)
+                GdsNode(ref x) => No(self.unsupported.push(x.clone().into())),
             };
             // If we got a new element, add it to our per-layer hash
             if let Yes(e) = e {
