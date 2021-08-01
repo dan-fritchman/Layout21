@@ -39,7 +39,9 @@
                     "kind": "lib"
                 }
             },
-            "args": [],
+            "args": [
+                "scan"
+            ],
             "cwd": "${workspaceFolder}"
         },
         {
