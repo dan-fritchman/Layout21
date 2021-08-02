@@ -68,13 +68,14 @@ use std::error::Error;
 use std::fs::File;
 #[allow(unused_imports)]
 use std::io::prelude::*;
-use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
+use std::io::{BufWriter, Cursor, Read, Seek, SeekFrom, Write};
 use std::{fmt, mem, str};
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use chrono::prelude::*;
 use chrono::{Datelike, NaiveDate, NaiveDateTime};
 use enum_dispatch::enum_dispatch;
+use memmap::Mmap;
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use serde::{Deserialize, Serialize};
@@ -234,7 +235,7 @@ pub enum GdsRecord {
 }
 impl GdsRecord {
     /// Encode into bytes and write onto `writer`
-    pub fn encode(&self, writer: &mut impl Write) -> Result<(), GdsError> {
+    pub fn encode(&self, writer: &mut impl Write) -> GdsResult<()> {
         // This is split in two parts - header and data -
         // largely to ease handling the variety of datatypes
 
@@ -425,7 +426,7 @@ pub enum GdsDataType {
 pub struct GdsFloat64;
 impl GdsFloat64 {
     /// Decode eight GDSII-float-encoded bytes to `f64`
-    pub fn decode(bytes: &[u8]) -> Result<f64, GdsError> {
+    pub fn decode(bytes: &[u8]) -> GdsResult<f64> {
         if bytes.len() != 8 {
             return Err(GdsError::Decode); // Bad length
         }
@@ -508,7 +509,7 @@ impl GdsStrans {
         }
     }
     /// Parse from records
-    fn parse(it: &mut GdsParser, d0: u8, d1: u8) -> Result<Self, GdsError> {
+    fn parse(it: &mut GdsParser, d0: u8, d1: u8) -> GdsResult<Self> {
         // Decode the first two bytes
         let mut s = Self::decode(d0, d1);
         // And parse optional magnitude & angle
@@ -621,7 +622,7 @@ impl GdsPoint {
         pts.iter().map(|pt| GdsPoint::new(pt.0, pt.1)).collect()
     }
     /// Convert from a two-element vector
-    fn parse(from: &Vec<i32>) -> Result<Self, GdsError> {
+    fn parse(from: &Vec<i32>) -> GdsResult<Self> {
         if from.len() != 2 {
             return Err(GdsError::Str(
                 "GdsPoint coordinate vector: Invalid number of elements".into(),
@@ -633,7 +634,7 @@ impl GdsPoint {
         })
     }
     /// Convert an n-element vector if `i32` into an n/2-element vector of [GdsPoint]s.
-    fn parse_vec(from: &[i32]) -> Result<Vec<GdsPoint>, GdsError> {
+    fn parse_vec(from: &[i32]) -> GdsResult<Vec<GdsPoint>> {
         if from.len() % 2 != 0 {
             return Err(GdsError::Str(
                 "GdsPoint coordinate vector: Invalid number of elements".into(),
@@ -687,7 +688,7 @@ impl GdsProperty {
     /// Parse from record-iterator `it`
     /// Numeric attribute `attr` is collected beforehand,
     /// as its record is the indication to parse an (attr, value) pair.
-    fn parse(it: &mut GdsParser, attr: i16) -> Result<Self, GdsError> {
+    fn parse(it: &mut GdsParser, attr: i16) -> GdsResult<Self> {
         // `PropAttr` records must *immediately* be followed by `PropValue`,
         // or parsing/ decoding fails.
         let value = if let Some(GdsRecord::PropValue(v)) = it.next()? {
@@ -742,7 +743,7 @@ pub struct GdsPath {
 }
 impl GdsPath {
     /// Parse from record-iterator `it`
-    fn parse(it: &mut GdsParser) -> Result<GdsPath, GdsError> {
+    fn parse(it: &mut GdsParser) -> GdsResult<GdsPath> {
         let mut b = GdsPathBuilder::default();
         let mut props: Vec<GdsProperty> = Vec::new();
 
@@ -841,7 +842,7 @@ pub struct GdsBoundary {
 }
 impl GdsBoundary {
     /// Parse from record-iterator `it`
-    fn parse(it: &mut GdsParser) -> Result<GdsBoundary, GdsError> {
+    fn parse(it: &mut GdsParser) -> GdsResult<GdsBoundary> {
         let mut b = GdsBoundaryBuilder::default();
         let mut props: Vec<GdsProperty> = Vec::new();
 
@@ -924,7 +925,7 @@ pub struct GdsStructRef {
     pub properties: Vec<GdsProperty>,
 }
 impl GdsStructRef {
-    fn parse(it: &mut GdsParser) -> Result<GdsStructRef, GdsError> {
+    fn parse(it: &mut GdsParser) -> GdsResult<GdsStructRef> {
         let mut b = GdsStructRefBuilder::default();
         let mut props: Vec<GdsProperty> = Vec::new();
 
@@ -1010,7 +1011,7 @@ pub struct GdsArrayRef {
     pub properties: Vec<GdsProperty>,
 }
 impl GdsArrayRef {
-    fn parse(it: &mut GdsParser) -> Result<GdsArrayRef, GdsError> {
+    fn parse(it: &mut GdsParser) -> GdsResult<GdsArrayRef> {
         let mut b = GdsArrayRefBuilder::default();
         let mut props: Vec<GdsProperty> = Vec::new();
 
@@ -1126,7 +1127,7 @@ pub struct GdsTextElem {
 impl GdsTextElem {
     /// Parse a [GdsTextElem] from an iterator of [GdsRecord]s.
     /// Assumes the initial `Text` record has already been parsed.
-    fn parse(it: &mut GdsParser) -> Result<GdsTextElem, GdsError> {
+    fn parse(it: &mut GdsParser) -> GdsResult<GdsTextElem> {
         let mut b = GdsTextElemBuilder::default();
         let mut props: Vec<GdsProperty> = Vec::new();
 
@@ -1221,7 +1222,7 @@ pub struct GdsNode {
     pub properties: Vec<GdsProperty>,
 }
 impl GdsNode {
-    fn parse(it: &mut GdsParser) -> Result<GdsNode, GdsError> {
+    fn parse(it: &mut GdsParser) -> GdsResult<GdsNode> {
         let mut b = GdsNodeBuilder::default();
         let mut props: Vec<GdsProperty> = Vec::new();
 
@@ -1297,7 +1298,7 @@ pub struct GdsBox {
     pub properties: Vec<GdsProperty>,
 }
 impl GdsBox {
-    fn parse(it: &mut GdsParser) -> Result<GdsBox, GdsError> {
+    fn parse(it: &mut GdsParser) -> GdsResult<GdsBox> {
         let mut b = GdsBoxBuilder::default();
         let mut props: Vec<GdsProperty> = Vec::new();
 
@@ -1395,7 +1396,7 @@ pub struct GdsDateTimes {
 }
 impl GdsDateTimes {
     /// Parse from GDSII's vector of i16's format
-    fn parse(d: Vec<i16>) -> Result<Self, GdsError> {
+    fn parse(d: Vec<i16>) -> GdsResult<Self> {
         if d.len() != 12 {
             return Err(GdsError::Decode);
         }
@@ -1477,7 +1478,7 @@ impl GdsStruct {
         }
     }
     /// Parse from record-iterator `it`
-    fn parse(it: &mut GdsParser, dates: Vec<i16>) -> Result<GdsStruct, GdsError> {
+    fn parse(it: &mut GdsParser, dates: Vec<i16>) -> GdsResult<GdsStruct> {
         let mut strukt = GdsStructBuilder::default();
         // Parse and store the header information: `dates` and `name`
         strukt = strukt.dates(GdsDateTimes::parse(dates)?);
@@ -1509,7 +1510,7 @@ impl GdsStruct {
         Ok(strukt.build()?)
     }
     /// Encode and write to `writer`
-    pub fn encode(&self, writer: &mut impl Write) -> Result<(), GdsError> {
+    pub fn encode(&self, writer: &mut impl Write) -> GdsResult<()> {
         // Write our modification-date info
         GdsRecord::BgnStruct {
             dates: self.dates.encode(),
@@ -1596,19 +1597,19 @@ impl GdsLibrary {
         }
     }
     /// Read a GDS loaded from file at path `file_name`
-    pub fn load(file_name: &str) -> Result<GdsLibrary, GdsError> {
+    pub fn load(file_name: &str) -> GdsResult<GdsLibrary> {
         // Create an iterator over records
         let mut it = GdsParser::open(file_name)?;
         // And parse it to a library-tree
-        let lib = GdsLibrary::parse(&mut it)?;
-        Ok(lib)
+        GdsLibrary::parse(&mut it)
     }
-    pub fn scan_(fname: &str) -> Result<(), GdsError> {
+    pub fn scan_(fname: &str) -> GdsResult<()> {
+        // FIXME: the actual name "scan" here conflicts with some std-lib trait, figure out what to call this
         GdsScanner::scan(fname)?;
         Ok(())
     }
     /// Parse a GdsLibrary from record-iterator `it`
-    fn parse(it: &mut GdsParser) -> Result<GdsLibrary, GdsError> {
+    fn parse(it: &mut GdsParser) -> GdsResult<GdsLibrary> {
         let mut lib = GdsLibraryBuilder::default();
         let mut structs = Vec::<GdsStruct>::with_capacity(1024);
         // Read the Header and its version data
@@ -1652,14 +1653,14 @@ impl GdsLibrary {
         Ok(lib.build()?)
     }
     /// Save to file `fname`
-    pub fn save(&self, fname: &str) -> Result<(), GdsError> {
+    pub fn save(&self, fname: &str) -> GdsResult<()> {
         let mut file = BufWriter::new(File::create(fname)?);
         self.encode(&mut file)?;
         file.flush()?;
         Ok(())
     }
     /// Encode and write in binary form to `writer`
-    pub fn encode(&self, writer: &mut impl Write) -> Result<(), GdsError> {
+    pub fn encode(&self, writer: &mut impl Write) -> GdsResult<()> {
         // Check our in-memory self doesn't include any unsupported features
         if self.libdirsize.is_some()
             || self.srfname.is_some()
@@ -1720,77 +1721,72 @@ struct GdsStructScan {
 /// Scans a file for [GdsStruct] definitions,
 /// creating a first-pass list of their names and byte-locations.
 struct GdsScanner {
+    /// Reader-helper
     rdr: GdsReader,
-    nxt: Option<GdsRecordHeader>,
+    /// Next record-header, stored for peeking
+    nxt: GdsRecordHeader,
 }
 impl GdsScanner {
     /// Create a new GdsReader iterator
-    fn new(file: BufReader<File>) -> Self {
-        Self {
-            rdr: GdsReader::new(file),
-            nxt: None,
-        }
+    fn new(mut rdr: GdsReader) -> GdsResult<Self> {
+        // Decode the first record to initialize our "peeker"
+        let nxt = rdr.read_header()?;
+        Ok(Self { rdr, nxt })
     }
     /// Open and scan structs in file `fname`
-    fn scan(fname: &str) -> Result<Vec<GdsStructScan>, GdsError> {
-        let mut me = Self::new(BufReader::new(File::open(&fname)?));
-        // Scan over the first record, loading its header into `nxt`
-        me._next()?;
-        // And do primary scanning
+    fn scan(fname: &str) -> GdsResult<Vec<GdsStructScan>> {
+        let rdr = GdsReader::open(fname)?;
+        let mut me = Self::new(rdr)?;
         me.scan_lib()
     }
     /// Expect / require the next record to be of type `rtype`
     /// Skips over the remainder of its content, if any.
-    fn expect(&mut self, rtype: GdsRecordType) -> Result<(), GdsError> {
-        match self.peek() {
-            Some(hdr) if hdr.rtype == rtype => {
-                // Success. Skip over the record and advance to the next.
-                self.skip()?;
-                Ok(())
-            }
-            _ => Err(GdsError::Decode),
+    fn expect(&mut self, rtype: GdsRecordType) -> GdsResult<()> {
+        if self.peek().rtype == rtype {
+            // Success. Skip over the record and advance to the next.
+            self.skip()
+        } else {
+            self.err()
         }
     }
     /// Get the next record's header, asserting it must be of type `rtype`.
     /// Consuming the remainder of the record is left to the caller.
-    fn get(&mut self, rtype: GdsRecordType) -> Result<&GdsRecordHeader, GdsError> {
-        match self.peek() {
-            Some(hdr) if hdr.rtype == rtype => Ok(hdr),
-            _ => Err(GdsError::Decode),
+    fn get(&mut self, rtype: GdsRecordType) -> GdsResult<&GdsRecordHeader> {
+        if self.peek().rtype == rtype {
+            Ok(self.peek())
+        } else {
+            self.err()
         }
     }
     /// Advance our iterator and return the next element
-    fn next(&mut self) -> Result<Option<GdsRecordHeader>, GdsError> {
-        match self.peek() {
-            None => return Ok(None),
-            // If we've reached [EndLib], keep returning it forever
-            Some(hdr) if hdr.rtype == GdsRecordType::EndLib => return Ok(Some(*hdr)),
-            _ => (),
-        };
-        self._next()
+    fn next(&mut self) -> GdsResult<GdsRecordHeader> {
+        if self.peek().rtype == GdsRecordType::EndLib {
+            // Once we reach [EndLib], keep returning it forever
+            Ok(self.peek().clone())
+        } else {
+            self._next()
+        }
     }
-    fn _next(&mut self) -> Result<Option<GdsRecordHeader>, GdsError> {
+    fn _next(&mut self) -> GdsResult<GdsRecordHeader> {
         // Decode a new header and swap it with our `nxt`
-        let mut rv = Some(self.rdr.read_header()?);
+        let mut rv = self.rdr.read_header()?;
         mem::swap(&mut rv, &mut self.nxt);
         Ok(rv)
     }
     /// Skip over the current record's content, if any, and load the next.
-    fn skip(&mut self) -> Result<(), GdsError> {
-        if let Some(hdr) = self.peek() {
-            let len = hdr.len.into();
-            self.rdr.file.seek(SeekFrom::Current(len))?;
-        }
+    fn skip(&mut self) -> GdsResult<()> {
+        let len = self.nxt.len.into();
+        self.rdr.file.seek(SeekFrom::Current(len))?;
         self._next()?;
         Ok(())
     }
     /// Peek at our next record, without advancing
     #[inline(always)]
-    fn peek(&self) -> &Option<GdsRecordHeader> {
+    fn peek(&self) -> &GdsRecordHeader {
         &self.nxt
     }
     /// Scan the GDS for cell/ struct definitions
-    fn scan_lib(&mut self) -> Result<Vec<GdsStructScan>, GdsError> {
+    fn scan_lib(&mut self) -> GdsResult<Vec<GdsStructScan>> {
         // Read off header info
         self.expect(GdsRecordType::Header)?;
         self.expect(GdsRecordType::BgnLib)?;
@@ -1803,17 +1799,12 @@ impl GdsScanner {
 
         // Scan all of the structs
         let mut strukts = Vec::<GdsStructScan>::with_capacity(1024);
-        while let Some(GdsRecordHeader { rtype, .. }) = self.peek() {
+        loop {
+            let GdsRecordHeader { rtype, .. } = self.peek();
             match rtype {
                 GdsRecordType::EndLib => break,
                 GdsRecordType::BgnStruct => strukts.push(self.scan_struct()?),
-                _ => {
-                    return Err(GdsError::Str(format!(
-                        "Invalid Record Type {:?} at Position {}",
-                        rtype.clone(),
-                        self.rdr.file.stream_position()?
-                    )))
-                }
+                _ => return self.err(),
             }
         }
         Ok(strukts)
@@ -1821,7 +1812,7 @@ impl GdsScanner {
     /// Scan a single struct definition.
     /// Starts *after* the [BgnStruct] *header* has been read (just above).
     /// Returns a [GdsStructScan] if successful.
-    fn scan_struct(&mut self) -> Result<GdsStructScan, GdsError> {
+    fn scan_struct(&mut self) -> GdsResult<GdsStructScan> {
         // Create our scan-structure, and store the start-position of the struct.
         // Note this requires backing up the four header bytes.
         let mut s = GdsStructScan::default();
@@ -1835,7 +1826,8 @@ impl GdsScanner {
         self.next()?;
 
         // Scan the struct content. Skip over everything until [EndStruct]
-        while let Some(GdsRecordHeader { rtype, .. }) = self.peek() {
+        loop {
+            let GdsRecordHeader { rtype, .. } = self.peek();
             match rtype {
                 GdsRecordType::EndStruct => {
                     // Note the `len` of [EndStruct] is also zero, so we need not adjust the `end` position.
@@ -1846,26 +1838,21 @@ impl GdsScanner {
                 // While many library-header record-types are invalid here,
                 // there's at least one we should check for: end-of-library,
                 // Lest we find one and get stuck forever.
-                GdsRecordType::EndLib => {
-                    return Err(GdsError::Str(format!(
-                        "Invalid Record Type {:?} at Position {}",
-                        rtype.clone(),
-                        self.rdr.file.stream_position()?
-                    )))
-                }
+                GdsRecordType::EndLib => return self.err(),
                 // Everything else: skip and continue
                 _ => self.skip()?,
             }
         }
         Ok(s)
     }
-    // fn err<T>(&self) -> Result<T, GdsError> {
-    //     Err(GdsError::Str(format!(
-    //         "Invalid Record Type {:?} at Position {}",
-    //         self.nxt.rtype,
-    //         self.rdr.file.stream_position()?
-    //     )))
-    // }
+    /// Error generation helper
+    fn err<T>(&mut self) -> GdsResult<T> {
+        Err(GdsError::Str(format!(
+            "Scanned Invalid Record {:?} at Byte Position {}",
+            self.nxt.rtype,
+            self.rdr.file.stream_position()?
+        )))
+    }
 }
 /// # GdsParser
 ///
@@ -1880,33 +1867,32 @@ struct GdsParser {
 }
 impl GdsParser {
     /// Create a new GdsReader iterator for the file at path `fname`
-    fn open(fname: &str) -> Result<GdsParser, GdsError> {
-        let mut me = Self::new(BufReader::new(File::open(&fname)?));
-        // And read our first record, without its None-check
-        me._next()?;
-        Ok(me)
+    fn open(fname: &str) -> GdsResult<GdsParser> {
+        let rdr = GdsReader::open(fname)?;
+        Self::new(rdr)
     }
     /// Create a new GdsReader iterator
-    fn new(file: BufReader<File>) -> GdsParser {
-        GdsParser {
-            rdr: GdsReader::new(file),
-            nxt: None,
-            numread: 0,
-        }
+    fn new(mut rdr: GdsReader) -> GdsResult<GdsParser> {
+        // Decode the first record to initialize our "peeker"
+        let nxt = rdr.decode_record()?;
+        Ok(GdsParser {
+            rdr,
+            nxt: Some(nxt),
+            numread: 1,
+        })
     }
-    fn parse_lib(&mut self) -> Result<GdsLibrary, GdsError> {
-        self._next()?;
+    /// Parse a [GdsLibrary]. Generally the start-state when reading a GDS file.
+    fn parse_lib(&mut self) -> GdsResult<GdsLibrary> {
         GdsLibrary::parse(self)
     }
-
     /// Advance our iterator and return the next element
-    fn next(&mut self) -> Result<Option<GdsRecord>, GdsError> {
+    fn next(&mut self) -> GdsResult<Option<GdsRecord>> {
         if self.nxt.is_none() || self.nxt == Some(GdsRecord::EndLib) {
             return Ok(None);
         }
         self._next()
     }
-    fn _next(&mut self) -> Result<Option<GdsRecord>, GdsError> {
+    fn _next(&mut self) -> GdsResult<Option<GdsRecord>> {
         // Decode a new Record and swap it with our `nxt`
         let mut rv = Some(self.rdr.decode_record()?);
         mem::swap(&mut rv, &mut self.nxt);
@@ -1919,7 +1905,7 @@ impl GdsParser {
     }
     /// JSON-Serialize and write (all) contents of the Iterator to `writer`
     #[cfg(any(test, feature = "selftest"))]
-    fn write(&mut self, writer: &mut impl Write) -> Result<(), GdsError> {
+    fn write(&mut self, writer: &mut impl Write) -> GdsResult<()> {
         while let Some(r) = self.next()? {
             let entry: (usize, GdsRecord) = (self.numread, r);
             let s = serde_json::to_string(&entry).unwrap();
@@ -1931,7 +1917,7 @@ impl GdsParser {
     }
     /// Open a GDS file `gds` and write all GdsRecords to JSON file `json`
     #[cfg(any(test, feature = "selftest"))]
-    fn dump(gds: &str, json: &str) -> Result<(), GdsError> {
+    fn dump(gds: &str, json: &str) -> GdsResult<()> {
         // This streams one record at a time, rather than loading all into memory.
         // Create a ReaderIter from `gds`
         let mut myself = Self::open(gds)?;
@@ -1946,25 +1932,40 @@ impl GdsParser {
         Ok(())
     }
 }
+/// Size (in bytes) of the read/decode buffer array
+const READER_BUFSIZE: usize = 65537;
 /// # GdsReader
 /// Helper for parsing and scanning GDS coming from files and similar sources.
 struct GdsReader {
-    /// File being read
-    file: BufReader<File>,
     /// Read/conversion buffer
-    buf: [u8; 20_000], // FIXME: confirm buffer size
+    buf: [u8; READER_BUFSIZE], // FIXME: confirm buffer size
+    /// File being read
+    file: Cursor<Mmap>,
+    // Note: past/alternate versions use an API-compatible [BufReader<File>], like so:
+    // file: BufReader<File>,
+    // Both implement the [Read] and [Seek] traits required by most of [GdsReader]'s methods.
+    // The memory-mapping is *much* faster for initial scanning,
+    // as [BufReader] seems to have an extra-slow [Seek] implementation.
+    // This comes at the cost of injecting the memory-un-safety of loading the [Mmap].
 }
 impl GdsReader {
+    /// Create a [GdsReader] of file `fname`
+    fn open(fname: &str) -> GdsResult<GdsReader> {
+        let file = File::open(fname)?;
+        let mmap = unsafe { Mmap::map(&file)? };
+        let cursor = Cursor::new(mmap);
+        Ok(Self::new(cursor))
+    }
     /// Create a [GdsReader] of `file`
-    fn new(file: BufReader<File>) -> GdsReader {
+    fn new(file: Cursor<Mmap>) -> GdsReader {
         GdsReader {
             file,
-            buf: [0; 20_000],
+            buf: [0; READER_BUFSIZE],
         }
     }
     /// Read the next record-header from our file.
     /// Returns a [GdsRecordHeader] if successful.
-    fn read_header(&mut self) -> Result<GdsRecordHeader, GdsError> {
+    fn read_header(&mut self) -> GdsResult<GdsRecordHeader> {
         // (Legacy shorthand)
         let file = &mut self.file;
         // Read the 16-bit record-size. (In bytes, including the four header bytes.)
@@ -1998,7 +1999,7 @@ impl GdsReader {
     /// Decode the next binary-encoded [GdsRecord] from open [Read]-object `file`.
     /// Returns a [GdsError] if `file` cursor is not on a record-boundary,
     /// or if binary decoding otherwise fails.
-    pub fn decode_record(&mut self) -> Result<GdsRecord, GdsError> {
+    pub fn decode_record(&mut self) -> GdsResult<GdsRecord> {
         // Read the record header (types and length)
         let GdsRecordHeader { rtype, dtype, len } = self.read_header()?;
 
@@ -2092,7 +2093,7 @@ impl GdsReader {
         Ok(record)
     }
     /// Read `len` bytes and convert to `String`
-    fn read_str(&mut self, len: u16) -> Result<String, GdsError> {
+    fn read_str(&mut self, len: u16) -> GdsResult<String> {
         let len: usize = len.into();
         // ASCII Decode. First load bytes into our buffer.
         let mut data = &mut self.buf[0..len];
@@ -2134,7 +2135,7 @@ impl GdsReader {
         Ok(rv)
     }
     /// Read `len/8` f64s from `len` bytes, decoding GDS's float-format along the way
-    fn read_f64(&mut self, len: u16) -> Result<Vec<f64>, GdsError> {
+    fn read_f64(&mut self, len: u16) -> GdsResult<Vec<f64>> {
         let len: usize = len.into();
         // This is more fun, as it requires first grabbing "gds floats",
         // which we capture as eight-byte Vec<u8>, and then convert to IEEE-standard floats.
@@ -2211,12 +2212,11 @@ pub enum GdsContext {
     Text,
     Node,
 }
-///
+/// # GdsResult Type-Alias
+pub type GdsResult<T> = Result<T, GdsError>;
 /// # Gds Error Enumeration
-///
 /// Most errors are tied in some sense to parsing and decoding.
 /// Once a valid [GdsLibrary] is created in memory, it can generally be streamed to bytes.
-///
 #[derive(Debug)]
 pub enum GdsError {
     /// Invalid binary -> record conversion
@@ -2275,6 +2275,7 @@ impl From<&str> for GdsError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::BufReader;
 
     /// Specified creation date for test cases
     fn test_dates() -> GdsDateTimes {
@@ -2285,7 +2286,7 @@ mod tests {
         }
     }
     #[test]
-    fn scan() -> Result<(), GdsError> {
+    fn scan() -> GdsResult<()> {
         // Read a sample GDS and compare to golden data
         let fname = format!(
             "{}/resources/has_properties.gds",
@@ -2295,7 +2296,7 @@ mod tests {
         Ok(())
     }
     #[test]
-    fn it_reads() -> Result<(), GdsError> {
+    fn it_reads() -> GdsResult<()> {
         // Read a sample GDS and compare to golden data
         let fname = format!("{}/resources/sample1.gds", env!("CARGO_MANIFEST_DIR"));
         let lib = GdsLibrary::load(&fname)?;
@@ -2303,12 +2304,12 @@ mod tests {
         Ok(())
     }
     #[test]
-    fn it_dumps_records() -> Result<(), GdsError> {
+    fn it_dumps_records() -> GdsResult<()> {
         GdsParser::dump(&resource("sample1.gds"), &resource("sample1.records.json"))?;
         Ok(())
     }
     #[test]
-    fn it_round_trips() -> Result<(), GdsError> {
+    fn it_round_trips() -> GdsResult<()> {
         // Read a sample
         let lib = GdsLibrary::load(&resource("sample1.gds"))?;
         // And check it round-trips to file
@@ -2316,7 +2317,7 @@ mod tests {
         Ok(())
     }
     #[test]
-    fn it_has_gds_properties() -> Result<(), GdsError> {
+    fn it_has_gds_properties() -> GdsResult<()> {
         // Read a sample
         let lib = GdsLibrary::load(&resource("has_properties.gds"))?;
         // Check it against golden data
@@ -2326,7 +2327,7 @@ mod tests {
         Ok(())
     }
     #[test]
-    fn it_instantiates() -> Result<(), GdsError> {
+    fn it_instantiates() -> GdsResult<()> {
         // Read a sample, add a cell which instantiates it
         let fname = format!("{}/resources/sample1.gds", env!("CARGO_MANIFEST_DIR"));
         let mut lib = GdsLibrary::load(&fname)?;
@@ -2351,7 +2352,7 @@ mod tests {
         Ok(())
     }
     #[test]
-    fn it_arrays() -> Result<(), GdsError> {
+    fn it_arrays() -> GdsResult<()> {
         // Read a sample, add a cell which arrays it
         let fname = format!("{}/resources/sample1.gds", env!("CARGO_MANIFEST_DIR"));
         let mut lib = GdsLibrary::load(&fname)?;
@@ -2383,7 +2384,7 @@ mod tests {
     }
     #[test]
     /// Test too-long record length generates an Error
-    fn record_too_long() -> Result<(), GdsError> {
+    fn record_too_long() -> GdsResult<()> {
         let mut lib = GdsLibrary::new("mylib");
         let mut newcell = GdsStruct::new("mycell");
         newcell.elems.push(
@@ -2432,15 +2433,17 @@ mod tests {
 }
 #[cfg(any(test, feature = "selftest"))]
 /// Check `lib` matches across a write-read round-trip cycle
-pub fn roundtrip(lib: &GdsLibrary) -> Result<(), GdsError> {
+pub fn roundtrip(lib: &GdsLibrary) -> GdsResult<()> {
     use tempfile::tempfile;
     // Write to a temporary file
     let mut file = tempfile()?;
     lib.encode(&mut file)?;
     // Rewind to the file-start, and read it back
     file.seek(SeekFrom::Start(0))?;
-    let mut rdr = GdsParser::new(BufReader::new(file));
-    let lib2 = rdr.parse_lib()?;
+    let mmap = unsafe { Mmap::map(&file)? };
+    let rdr = GdsReader::new(Cursor::new(mmap));
+    let mut parser = GdsParser::new(rdr)?;
+    let lib2 = parser.parse_lib()?;
     // And check the two line up
     assert_eq!(*lib, lib2);
     Ok(())
