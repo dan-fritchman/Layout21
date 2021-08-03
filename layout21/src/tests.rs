@@ -1,18 +1,20 @@
 use super::*;
 
 /// Create a [Stack] used by a number of tests
-fn stack() -> Stack {
-    Stack {
+fn stack() -> LayoutResult<Stack> {
+    let metal_purps = [
+        (20, raw::LayerPurpose::Drawing),
+        (5, raw::LayerPurpose::Label),
+    ];
+    let via_purps = [(44, raw::LayerPurpose::Drawing)];
+    let stack = Stack {
         units: Unit::Nano,
-        boundary_layer: Some(raw::Layer {
-            layernum: 236,
-            drawing: Some(0),
-            text: None,
-            other: HashMap::new(),
-            ..Default::default()
-        }),
+        boundary_layer: Some(raw::Layer::from_pairs(
+            236,
+            &[(0, raw::LayerPurpose::Outline)],
+        )?),
         prim: PrimitiveLayer {
-            pitch: Point::new(460, 3310),
+            pitches: (460, 3310).into(),
         },
         layers: vec![
             Layer {
@@ -24,16 +26,10 @@ fn stack() -> Stack {
                     TrackSpec::pwr(490),
                 ],
                 dir: Dir::Horiz,
-                offset: -245,
-                cutsize: 250,
-                overlap: 490,
-                raw: Some(raw::Layer {
-                    layernum: 68,
-                    drawing: Some(20),
-                    text: Some(5),
-                    other: HashMap::new(),
-                    ..Default::default()
-                }),
+                offset: (-245).into(),
+                cutsize: (250).into(),
+                overlap: (490).into(),
+                raw: Some(raw::Layer::from_pairs(68, &metal_purps)?),
                 flip: FlipMode::EveryOther,
                 prim: PrimitiveMode::Partial,
             },
@@ -46,16 +42,10 @@ fn stack() -> Stack {
                     TrackSpec::pwr(510),
                 ],
                 dir: Dir::Vert,
-                cutsize: 250,
-                offset: -255,
-                overlap: 510,
-                raw: Some(raw::Layer {
-                    layernum: 69,
-                    drawing: Some(20),
-                    text: Some(5),
-                    other: HashMap::new(),
-                    ..Default::default()
-                }),
+                cutsize: (250).into(),
+                offset: (-255).into(),
+                overlap: (510).into(),
+                raw: Some(raw::Layer::from_pairs(69, &metal_purps)?),
                 flip: FlipMode::EveryOther,
                 prim: PrimitiveMode::None,
             },
@@ -68,18 +58,12 @@ fn stack() -> Stack {
                     TrackSpec::pwr(490),
                 ],
                 dir: Dir::Horiz,
-                offset: -245,
-                cutsize: 250,
-                overlap: 490,
-                raw: Some(raw::Layer {
-                    layernum: 70,
-                    drawing: Some(20),
-                    text: Some(5),
-                    other: HashMap::new(),
-                    ..Default::default()
-                }),
+                offset: (-245).into(),
+                cutsize: (250).into(),
+                overlap: (490).into(),
+                raw: Some(raw::Layer::from_pairs(70, &metal_purps)?),
                 flip: FlipMode::EveryOther,
-                prim: PrimitiveMode::Partial,
+                prim: PrimitiveMode::None,
             },
             Layer {
                 name: "met4".into(),
@@ -90,16 +74,10 @@ fn stack() -> Stack {
                     TrackSpec::pwr(510),
                 ],
                 dir: Dir::Vert,
-                cutsize: 250,
-                offset: -255,
-                overlap: 510,
-                raw: Some(raw::Layer {
-                    layernum: 71,
-                    drawing: Some(20),
-                    text: Some(5),
-                    other: HashMap::new(),
-                    ..Default::default()
-                }),
+                cutsize: (250).into(),
+                offset: (-255).into(),
+                overlap: (510).into(),
+                raw: Some(raw::Layer::from_pairs(71, &metal_purps)?),
                 flip: FlipMode::EveryOther,
                 prim: PrimitiveMode::None,
             },
@@ -108,58 +86,35 @@ fn stack() -> Stack {
             ViaLayer {
                 name: "mcon".into(),
                 between: (0, 1),
-                size: Point::new(240, 240),
-                raw: Some(raw::Layer {
-                    layernum: 67,
-                    drawing: Some(44),
-                    text: None,
-                    other: HashMap::new(),
-                    ..Default::default()
-                }),
+                size: (240, 240).into(),
+                raw: Some(raw::Layer::from_pairs(67, &via_purps)?),
             },
             ViaLayer {
                 name: "via1".into(),
                 between: (1, 2),
-                size: Point::new(240, 240),
-                raw: Some(raw::Layer {
-                    layernum: 68,
-                    drawing: Some(44),
-                    text: None,
-                    other: HashMap::new(),
-                    ..Default::default()
-                }),
+                size: (240, 240).into(),
+                raw: Some(raw::Layer::from_pairs(68, &via_purps)?),
             },
             ViaLayer {
                 name: "via2".into(),
                 between: (2, 3),
-                size: Point::new(240, 240),
-                raw: Some(raw::Layer {
-                    layernum: 69,
-                    drawing: Some(44),
-                    text: None,
-                    other: HashMap::new(),
-                    ..Default::default()
-                }),
+                size: (240, 240).into(),
+                raw: Some(raw::Layer::from_pairs(69, &via_purps)?),
             },
             ViaLayer {
                 name: "via3".into(),
                 between: (3, 4),
-                size: Point::new(240, 240),
-                raw: Some(raw::Layer {
-                    layernum: 70,
-                    drawing: Some(44),
-                    text: None,
-                    other: HashMap::new(),
-                    ..Default::default()
-                }),
+                size: (240, 240).into(),
+                raw: Some(raw::Layer::from_pairs(70, &via_purps)?),
             },
         ],
-    }
+    };
+    Ok(stack)
 }
 /// Run the test-stack through validation
 #[test]
 fn validate_stack() -> LayoutResult<()> {
-    let s = stack();
+    let s = stack()?;
     validate::StackValidator::validate(s)?;
     Ok(())
 }
@@ -267,7 +222,7 @@ fn create_lib2() -> Result<(), LayoutError> {
             inst_name: "inst1".into(),
             cell_name: "IsInst".into(),
             cell: CellRef::Cell(c2),
-            p0: Point::new(20, 2),
+            loc: (20, 2).into(),
             reflect: false,
             angle: None,
         }],
@@ -363,7 +318,7 @@ fn create_lib3() -> Result<(), LayoutError> {
                 inst_name: "inst1".into(),
                 cell_name: "IsAbstrakt".into(),
                 cell: CellRef::Abstract(c2),
-                p0: Point::new(0, 0),
+                loc: (0, 0).into(),
                 reflect: false,
                 angle: None,
             },
@@ -371,7 +326,7 @@ fn create_lib3() -> Result<(), LayoutError> {
                 inst_name: "inst2".into(),
                 cell_name: "IsAbstrakt".into(),
                 cell: CellRef::Abstract(c2),
-                p0: Point::new(200, 20),
+                loc: (200, 20).into(),
                 reflect: false,
                 angle: None,
             },
@@ -379,7 +334,7 @@ fn create_lib3() -> Result<(), LayoutError> {
                 inst_name: "inst4".into(),
                 cell_name: "IsAbstrakt".into(),
                 cell: CellRef::Abstract(c2),
-                p0: Point::new(400, 40),
+                loc: (400, 40).into(),
                 reflect: false,
                 angle: None,
             },
@@ -399,10 +354,64 @@ fn create_lib3() -> Result<(), LayoutError> {
     });
     exports(lib)
 }
+
+/// Create a cell with abstract instances
+#[test]
+fn create_lib4() -> Result<(), LayoutError> {
+    let mut lib = Library::new("lib4");
+
+    let c2 = lib.abstracts.insert(abstrakt::Abstract {
+        name: "Unit".into(),
+        top_layer: 0,
+        outline: Outline::rect(20, 1)?,
+        ports: vec![
+            abstrakt::Port {
+                name: "inp".into(),
+                kind: abstrakt::PortKind::Edge {
+                    layer: 1,
+                    track: 1,
+                    side: abstrakt::Side::Left,
+                },
+            },
+            abstrakt::Port {
+                name: "out".into(),
+                kind: abstrakt::PortKind::Edge {
+                    layer: 1,
+                    track: 5,
+                    side: abstrakt::Side::Right,
+                },
+            },
+        ],
+    });
+
+    // Create an array of instances
+    let instances = (0..9_isize)
+        .map(|k| Instance {
+            inst_name: format!("inst{}", k),
+            cell_name: "Unit".into(),
+            cell: CellRef::Abstract(c2),
+            loc: (20 * k, 0).into(),
+            reflect: false,
+            angle: None,
+        })
+        .collect();
+    let c = Cell {
+        name: "HasUnits".into(),
+        top_layer: 3,
+        outline: Outline::rect(300, 2)?,
+        instances,
+        assignments: Vec::new(),
+        cuts: Vec::new(),
+    };
+    let c = lib.cells.insert(c);
+
+    // lib.cells.insert(Cell {
+    exports(lib)
+}
 /// Export [Library] `lib` in several formats
 fn exports(lib: Library) -> LayoutResult<()> {
     save_yaml(&lib, &resource(&format!("{}.yaml", &lib.name)))?;
-    let raw = conv::RawConverter::convert(lib, stack())?;
+    let raw = rawconv::RawConverter::convert(lib, stack()?)?;
     save_yaml(&raw, &resource(&format!("{}.raw.yaml", &raw.name)))?;
     let gds = raw.to_gds()?;
     save_yaml(&gds, &resource(&format!("{}.gds.yaml", &gds.name)))?;
@@ -413,7 +422,7 @@ fn exports(lib: Library) -> LayoutResult<()> {
 use std::io::prelude::*;
 #[test]
 fn stack_to_yaml() -> LayoutResult<()> {
-    save_yaml(&stack(), &resource("stack.yaml"))
+    save_yaml(&stack()?, &resource("stack.yaml"))
 }
 /// Grab the full path of resource-file `fname`
 fn resource(fname: &str) -> String {

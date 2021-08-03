@@ -148,6 +148,7 @@ impl GdsExporter {
         }
         Ok(gds_elems)
     }
+    /// Convert a [Point] to a GDS21 [gds21::GdsPoint]
     pub fn export_point(&self, pt: &Point) -> LayoutResult<gds21::GdsPoint> {
         let x = pt.x.try_into()?;
         let y = pt.y.try_into()?;
@@ -159,7 +160,6 @@ impl GdsExporter {
     }
 }
 /// # GDSII Importer
-///
 #[derive(Debug)]
 pub struct GdsImporter {
     pub layers: Layers,
@@ -223,7 +223,7 @@ impl GdsImporter {
     fn import_units(&mut self, units: &gds21::GdsUnits) -> LayoutResult<Unit> {
         self.ctx_stack.push(ImportContext::Units);
         // Peel out the GDS "database unit", the one of its numbers that really matters
-        let gdsunit = units.dbunit();
+        let gdsunit = units.db_unit();
         // FIXME: intermediate/ calculated units. Only our enumerated values are thus far supported
         // Note: sadly many real-life GDSII files set, for example "1nm" units,
         // but do so with the floating-point number *next to* 1e-9.
@@ -309,15 +309,22 @@ impl GdsImporter {
                         let lower_case_name = textelem.string.to_lowercase();
                         if let Some(pname) = &elem.net {
                             if *pname != lower_case_name {
-                                return self.err(format!(
-                                    "GDSII labels shorting nets {} and {} on layer {}",
+                                println!(
+                                    "Warning: GDSII labels shorting nets {} and {} on layer {}",
                                     pname,
                                     textelem.string.clone(),
                                     textelem.layer
-                                ));
+                                );
+                                // return self.err(format!(
+                                //     "GDSII labels shorting nets {} and {} on layer {}",
+                                //     pname,
+                                //     textelem.string.clone(),
+                                //     textelem.layer
+                                // ));
                             }
+                        } else {
+                            elem.net = Some(lower_case_name);
                         }
-                        elem.net = Some(lower_case_name);
                         hit = true;
                     }
                 }
@@ -488,7 +495,7 @@ impl GdsImporter {
                 return self.err("Unsupported GDSII Instance: Absolute");
             }
             if strans.mag.is_some() || strans.angle.is_some() {
-                println!("Warning support for instance orientation in-progress");
+                println!("Warning support for array orientation in-progress");
             }
             angle = strans.angle;
             reflect = strans.reflected;

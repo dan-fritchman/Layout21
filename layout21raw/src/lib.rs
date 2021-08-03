@@ -17,6 +17,7 @@ use std::hash::Hash;
 // Crates.io
 use serde::{Deserialize, Serialize};
 use slotmap::{new_key_type, SlotMap};
+use std::ops::Not;
 
 // Local imports
 use gds21;
@@ -170,11 +171,18 @@ pub enum Dir {
 }
 impl Dir {
     /// Whichever direction we are, return the other one.
-    pub fn other(&self) -> Self {
+    pub fn other(self) -> Self {
         match self {
             Self::Horiz => Self::Vert,
             Self::Vert => Self::Horiz,
         }
+    }
+}
+impl Not for Dir {
+    type Output = Self;
+    /// Exclamation Operator returns the opposite direction
+    fn not(self) -> Self::Output {
+        Self::other(self)
     }
 }
 
@@ -305,6 +313,14 @@ impl Layer {
             layernum: num,
             ..Default::default()
         }
+    }
+    /// Create a new [Layer] purpose-numbers `pairs`.
+    pub fn from_pairs(layernum: i16, pairs: &[(i16, LayerPurpose)]) -> LayoutResult<Self> {
+        let mut layer = Self::new(layernum);
+        for (num, purpose) in pairs {
+            layer.add_purpose(*num, purpose.clone())?;
+        }
+        Ok(layer)
     }
     /// Add a new [LayerPurpose]
     pub fn add_purpose(&mut self, num: i16, purp: LayerPurpose) -> LayoutResult<()> {
