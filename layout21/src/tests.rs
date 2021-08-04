@@ -250,7 +250,7 @@ fn create_abstract() -> Result<(), LayoutError> {
             kind: abstrakt::PortKind::Edge {
                 layer: 2,
                 track: 2,
-                side: abstrakt::Side::Bottom,
+                side: abstrakt::Side::BottomOrLeft,
             },
         },
         abstrakt::Port {
@@ -258,7 +258,7 @@ fn create_abstract() -> Result<(), LayoutError> {
             kind: abstrakt::PortKind::Edge {
                 layer: 2,
                 track: 4,
-                side: abstrakt::Side::Top,
+                side: abstrakt::Side::TopOrRight,
             },
         },
         abstrakt::Port {
@@ -266,7 +266,7 @@ fn create_abstract() -> Result<(), LayoutError> {
             kind: abstrakt::PortKind::Edge {
                 layer: 1,
                 track: 1,
-                side: abstrakt::Side::Left,
+                side: abstrakt::Side::BottomOrLeft,
             },
         },
         abstrakt::Port {
@@ -274,7 +274,7 @@ fn create_abstract() -> Result<(), LayoutError> {
             kind: abstrakt::PortKind::Edge {
                 layer: 1,
                 track: 5,
-                side: abstrakt::Side::Right,
+                side: abstrakt::Side::TopOrRight,
             },
         },
         abstrakt::Port {
@@ -361,24 +361,24 @@ fn create_lib4() -> Result<(), LayoutError> {
     let mut lib = Library::new("lib4");
 
     let c2 = lib.abstracts.insert(abstrakt::Abstract {
-        name: "Unit".into(),
+        name: "UnitCell".into(),
         top_layer: 0,
         outline: Outline::rect(20, 1)?,
         ports: vec![
             abstrakt::Port {
                 name: "inp".into(),
                 kind: abstrakt::PortKind::Edge {
-                    layer: 1,
+                    layer: 0,
                     track: 1,
-                    side: abstrakt::Side::Left,
+                    side: abstrakt::Side::BottomOrLeft,
                 },
             },
             abstrakt::Port {
                 name: "out".into(),
                 kind: abstrakt::PortKind::Edge {
-                    layer: 1,
+                    layer: 0,
                     track: 5,
-                    side: abstrakt::Side::Right,
+                    side: abstrakt::Side::TopOrRight,
                 },
             },
         ],
@@ -388,7 +388,7 @@ fn create_lib4() -> Result<(), LayoutError> {
     let instances = (0..9_isize)
         .map(|k| Instance {
             inst_name: format!("inst{}", k),
-            cell_name: "Unit".into(),
+            cell_name: "UnitCell".into(),
             cell: CellRef::Abstract(c2),
             loc: (20 * k, 0).into(),
             reflect: false,

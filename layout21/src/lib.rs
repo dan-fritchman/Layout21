@@ -1,13 +1,11 @@
 // Std-lib imports
-use std::collections::HashMap;
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryFrom;
 use std::fmt::Debug;
 
 // Crates.io
-use derive_more::{Add, AddAssign, Div, DivAssign, From, Mul, MulAssign, Rem, Sub, SubAssign, Sum};
+use derive_more::{Add, AddAssign, DivAssign, From, MulAssign, Sub, SubAssign, Sum};
 use enum_dispatch::enum_dispatch;
 use num_integer;
-use num_traits::Num;
 use serde::{Deserialize, Serialize};
 use slotmap::{new_key_type, SlotMap};
 
@@ -164,6 +162,19 @@ pub enum UnitType {
 pub struct Xy<T: HasUnits> {
     pub x: T,
     pub y: T,
+}
+impl<T: HasUnits> Xy<T> {
+    /// Create a new [Xy].
+    fn new(x: T, y: T) -> Xy<T> {
+        Self { x, y }
+    }
+    /// Create a new [Xy] with transposed coordinates.
+    fn transpose(&self) -> Xy<T> {
+        Self {
+            y: self.x,
+            x: self.y,
+        }
+    }
 }
 impl<T: HasUnits> std::ops::Index<Dir> for Xy<T> {
     type Output = T;
@@ -331,7 +342,7 @@ pub struct Layer {
     pub raw: Option<raw::Layer>,
     /// Setting for period-by-period flipping
     pub flip: FlipMode,
-    /// Primitive-layer relationshio
+    /// Primitive-layer relationship
     pub prim: PrimitiveMode,
 }
 impl Layer {

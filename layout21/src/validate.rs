@@ -27,21 +27,6 @@ pub(crate) struct ValidStack {
     /// Pitches per metal layer, one each for those in `stack`
     pub(crate) pitches: Vec<DbUnits>,
 }
-impl ValidStack {
-    /// Retrieve the number of primitive-sized pitches in a period of layer number `layer`
-    pub(crate) fn primitive_pitches(&self, layer: usize) -> PrimPitches {
-        let layer = &self.metals[layer];
-        let dir = layer.spec.dir.other();
-        let prim_pitch = self.prim.pitches[dir];
-        if layer.pitch % prim_pitch != 0 {
-            panic!("INVALID LAYER PITCH!!!");
-        }
-        return PrimPitches {
-            dir,
-            num: layer.pitch / prim_pitch,
-        };
-    }
-}
 #[derive(Debug)]
 pub(crate) struct StackValidator;
 impl StackValidator {
@@ -75,7 +60,7 @@ impl StackValidator {
             }
             pitches[num] = pitch;
         }
-        // FIXME: checks on [ViaLayer]s
+        // FIXME: add checks on [ViaLayer]s
         // Stack checks out! Return its derived data
         Ok(ValidStack {
             units,
@@ -138,6 +123,13 @@ impl ValidMetalLayer {
         let mut cursor = self.pitch * (idx / len);
         cursor += track.start + track.width / 2;
         Ok(cursor)
+    }
+    /// Get the spanning-coordinates of signal-track `idx`, in our periodic dimension
+    pub fn span(&self, idx: usize) -> LayoutResult<(DbUnits, DbUnits)> {
+        let len = self.period.signals.len();
+        let track = &self.period.signals[idx % len];
+        let cursor = self.pitch * (idx / len) + track.start;
+        Ok((cursor, cursor + track.width))
     }
 }
 /// Location on a [Track], including the db-unit cross-dimension

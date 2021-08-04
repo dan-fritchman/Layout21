@@ -73,12 +73,13 @@ pub struct TopLoc {
     /// Whether `at` refers to the track-indices above or below
     relz: RelZ,
 }
-/// X/Y Side Enumeration
-/// Note the requirements on [Outline] shapes ensure each track has a unique left/right or top/bottom pair of edges.
+/// # Port Side Enumeration
+///
+/// Note there are only two such sides: the "zero-side" [BottomOrLeft] and the "width-side" [TopOrRight].
+/// Each [Layer]'s orientation ([Dir]) dictates between bottom/left and top/right.
+/// Also note the requirements on [Outline] shapes ensure each track has a unique left/right or top/bottom pair of edges.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Side {
-    Left,
-    Right,
-    Top,
-    Bottom,
+    BottomOrLeft,
+    TopOrRight,
 }

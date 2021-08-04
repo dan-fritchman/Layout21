@@ -66,6 +66,7 @@ struct TempPeriod<'a> {
 pub struct RawConverter {
     pub(crate) lib: Library,
     pub(crate) stack: validate::ValidStack,
+    pub(crate) rawlayers: raw::Layers,
     pub(crate) layerkeys: Vec<raw::LayerKey>,
     pub(crate) boundary_layer: raw::LayerKey,
 }
@@ -73,38 +74,43 @@ impl RawConverter {
     /// Convert [Library] `lib` to a [raw::Library]
     /// Consumes `lib` in the process
     pub fn convert(lib: Library, stack: Stack) -> LayoutResult<raw::Library> {
-        let mut rawlayers = raw::Layers::default();
-        let mut layerkeys = Vec::new();
+        let stack = validate::StackValidator::validate(stack)?;
+        let (mut rawlayers, layerkeys) = Self::convert_layers(&stack)?;
         // Conversion requires our [Stack] specify a `boundary_layer`. If not, fail.
         let boundary_layer = (stack.boundary_layer).as_ref().ok_or(LayoutError::msg(
             "Cannot Convert Abstract to Raw without Boundary Layer",
         ))?;
         let boundary_layer = rawlayers.add(boundary_layer.clone());
-        for layer in stack.layers.iter() {
-            let rawlayer = match &layer.raw {
-                Some(r) => r.clone(),
-                None => {
-                    return Err(LayoutError::msg(
-                        "Error exporting to raw layout: no raw layer defined",
-                    ))
-                }
+        Self {
+            lib,
+            stack,
+            rawlayers,
+            layerkeys,
+            boundary_layer,
+        }
+        .convert_lib()
+    }
+    /// Convert our [Stack] to [raw::Layers]
+    fn convert_layers(
+        stack: &validate::ValidStack,
+    ) -> LayoutResult<(raw::Layers, Vec<raw::LayerKey>)> {
+        let mut rawlayers = raw::Layers::default();
+        let mut layerkeys = Vec::new();
+        for layer in stack.metals.iter() {
+            let rawlayer = match &layer.spec.raw {
+                Some(r) => r.clone(), // FIXME: stop cloning
+                None => return Err("Error exporting: no raw layer defined".into()),
             };
             let key = rawlayers.add(rawlayer);
             layerkeys.push(key);
         }
-        let stack = validate::StackValidator::validate(stack)?;
-        Self {
-            lib,
-            stack,
-            layerkeys,
-            boundary_layer,
-        }
-        .convert_all(rawlayers)
+        Ok((rawlayers, layerkeys))
     }
     /// Convert everything in our [Library]
-    fn convert_all(self, rawlayers: raw::Layers) -> LayoutResult<raw::Library> {
+    /// FIXME: do we need to consume `self`?
+    fn convert_lib(self) -> LayoutResult<raw::Library> {
         let mut lib = raw::Library::new(&self.lib.name, self.stack.units);
-        lib.layers = rawlayers;
+        lib.layers = self.rawlayers.clone();
         // Convert each defined [Cell] to a [raw::Cell]
         for (_id, cell) in self.lib.cells.iter() {
             lib.cells.push(self.convert_cell(cell)?);
@@ -322,18 +328,52 @@ impl RawConverter {
     /// Convert an [Abstract]
     /// FIXME: make these [raw::Abstract] instead
     pub fn convert_abstract(&self, abs: &abstrakt::Abstract) -> LayoutResult<raw::Cell> {
-        let mut elems = Vec::with_capacity(2 * abs.ports.len() + 1);
+        let mut elems = Vec::with_capacity(abs.ports.len() + 1);
         // Create our [Outline]s boundary
         elems.push(self.convert_outline(abs)?);
         // Create shapes for each pin
         for port in abs.ports.iter() {
             // Add its shape
             use abstrakt::PortKind::{Edge, Zfull, Zlocs};
+
             let elem = match &port.kind {
-                Edge { layer, track, side } => {}
+                Edge {
+                    layer: layer_index,
+                    track,
+                    side,
+                } => {
+                    let layer = &self.stack.metals[*layer_index].spec;
+                    // First get the "infinite dimension" coordinate from the edge
+                    let infdims: (DbUnits, DbUnits) = match side {
+                        abstrakt::Side::BottomOrLeft => (DbUnits(0), DbUnits(100)),
+                        abstrakt::Side::TopOrRight => {
+                            // FIXME: this assumes rectangular outlines; will take some more work for polygons.
+                            let outside = self.convert_to_db_units(abs.outline().max(layer.dir));
+                            (outside - DbUnits(100), outside)
+                        }
+                    };
+                    // Now get the "periodic dimension" from our layer-center
+                    let perdims: (DbUnits, DbUnits) = self.track_span(*layer_index, *track)?;
+                    // Presuming we're horizontal, points are here:
+                    let mut pts = [Xy::new(infdims.0, perdims.0), Xy::new(infdims.1, perdims.1)];
+                    // And if vertical, just transpose them
+                    if layer.dir == Dir::Vert {
+                        pts[0] = pts[0].transpose();
+                        pts[1] = pts[1].transpose();
+                    }
+                    raw::Element {
+                        net: Some(port.name.clone()),
+                        layer: self.layerkeys[*layer_index],
+                        purpose: raw::LayerPurpose::Drawing,
+                        inner: raw::Shape::Rect {
+                            p0: self.convert_xy(&pts[0]),
+                            p1: self.convert_xy(&pts[1]),
+                        },
+                    }
+                }
                 Zlocs { .. } | Zfull { .. } => todo!(),
             };
-            // elems.push(elem);
+            elems.push(elem);
         }
         // And return a new [raw::Abstract]
         Ok(raw::Cell {
@@ -342,7 +382,16 @@ impl RawConverter {
             ..Default::default()
         })
     }
-    /// Convert to a [raw::Element] polygon
+    /// Get the positions spanning track number `track` on layer number `layer`
+    fn track_span(
+        &self,
+        layer_index: usize,
+        track_index: usize,
+    ) -> LayoutResult<(DbUnits, DbUnits)> {
+        let layer = &self.stack.metals[layer_index];
+        layer.span(track_index)
+    }
+    /// Convert an [Outline] to a [raw::Element] polygon
     pub fn convert_outline(&self, cell: &impl HasOutline) -> LayoutResult<raw::Element> {
         let outline: &Outline = cell.outline();
         // Create an array of Outline-Points
@@ -505,15 +554,12 @@ impl RawConverter {
         layer: &validate::ValidMetalLayer,
         periodnum: usize,
     ) -> bool {
-        // Grab the layer's span in its periodic dimension
-        let layer_min = layer.spec.offset + (layer.pitch * periodnum);
-        let layer_max = layer_min + layer.pitch;
         // Grab the instance's [DbUnits] span, in the layer's periodic direction
         let dir = !layer.spec.dir;
         let inst_min = self.convert_to_db_units(inst.inst.loc[dir]);
         let inst_max = inst_min + self.convert_to_db_units(inst.def.outline().max(dir));
         // And return the boolean intersection. "Touching" edge-to-edge is *not* considered an intersection.
-        return inst_min < layer_max && inst_max > layer_min;
+        return inst_max > layer.pitch * periodnum && inst_min < layer.pitch * (periodnum + 1);
     }
     /// Convert any [UnitSpeced]-convertible distances into [DbUnits]
     fn convert_to_db_units(&self, pt: impl Into<UnitSpeced>) -> DbUnits {
@@ -544,5 +590,13 @@ impl RawConverter {
     /// Error creation helper
     fn err<T>(&self, msg: impl Into<String>) -> LayoutResult<T> {
         Err(LayoutError::Export(msg.into()))
+    }
+    /// Error creation helper
+    /// Unwrap the [Option] `opt` if it is [Some], and return our error if not.
+    fn unwrap<T>(&self, opt: Option<T>, msg: impl Into<String>) -> LayoutResult<T> {
+        match opt {
+            Some(val) => Ok(val),
+            None => self.err(msg),
+        }
     }
 }
