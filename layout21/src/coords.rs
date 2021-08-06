@@ -165,7 +165,7 @@ impl<T: HasUnits> Xy<T> {
 }
 impl<T: HasUnits> std::ops::Index<Dir> for Xy<T> {
     type Output = T;
-    pub fn index(&self, dir: Dir) -> &Self::Output {
+    fn index(&self, dir: Dir) -> &Self::Output {
         match dir {
             Dir::Horiz => &self.x,
             Dir::Vert => &self.y,

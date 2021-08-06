@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 // Local imports
 use crate::coords::{Int, PrimPitches};
-use crate::raw::Dir;
+use crate::raw::{Dir, LayoutError, LayoutResult};
 use crate::{abstrakt, cell};
 
 /// Block Outlines are "Tetris Shaped" rectilinear polygons

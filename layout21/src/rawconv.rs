@@ -1,10 +1,14 @@
 //! # Raw-Layout Conversion Module
 
+// Std-lib
+use std::collections::{HashMap, HashSet};
+
+// Local imports
 use super::*;
 use crate::cell::{Instance, LayoutImpl};
 use crate::coords::{DbUnits, HasUnits, PrimPitches, UnitSpeced, Xy};
 use crate::outline::{HasOutline, Outline};
-use crate::raw;
+use crate::raw::{self, HasErrors};
 
 /// A short-lived set of references to an [Instance] and its cell-definition
 #[derive(Debug, Clone)]
@@ -65,6 +69,44 @@ struct TempPeriod<'a> {
     top_assns: Vec<AssignKey>,
     bot_assns: Vec<AssignKey>,
 }
+
+/// # Dependency-Orderer
+///
+/// Ideally an iterator, but really just a struct that creates an in-order [Vec] at creation time.
+#[derive(Debug)]
+pub struct DepOrder<'a> {
+    lib: &'a Library,
+    stack: Vec<cell::CellBagKey>,
+    seen: HashSet<cell::CellBagKey>,
+}
+impl<'a> DepOrder<'a> {
+    fn order(lib: &'a Library) -> Vec<cell::CellBagKey> {
+        let mut me = Self {
+            lib,
+            stack: Vec::new(),
+            seen: HashSet::new(),
+        };
+        for key in me.lib.cells.keys() {
+            me.push(key)
+        }
+        me.stack
+    }
+    fn push(&mut self, key: cell::CellBagKey) {
+        if !self.seen.contains(&key) {
+            let cell = &self.lib.cells[key];
+            // If the cell has an implementation, visit its [Instance]s before inserting it
+            if let Some(layout) = &cell.layout {
+                for inst in &layout.instances {
+                    self.push(inst.cell);
+                }
+            }
+            // And insert the cell (key) itself
+            self.seen.insert(key);
+            self.stack.push(key);
+        }
+    }
+}
+
 /// # Converter from [Library] and constituent elements to [raw::Library]
 pub struct RawConverter {
     pub(crate) lib: Library,
@@ -73,7 +115,7 @@ pub struct RawConverter {
     pub(crate) layerkeys: Vec<raw::LayerKey>,
     pub(crate) boundary_layer: raw::LayerKey,
     /// Mapping from our cell-definition keys to the raw-library keys
-    pub(crate) rawcells: HashMap<CellKey, raw::CellKey>,
+    pub(crate) rawcells: HashMap<cell::CellBagKey, raw::CellKey>,
 }
 impl RawConverter {
     /// Convert [Library] `lib` to a [raw::Library]
@@ -113,20 +155,22 @@ impl RawConverter {
         Ok((rawlayers, layerkeys))
     }
     /// Convert everything in our [Library]
-    /// FIXME: do we need to consume `self`?
     fn convert_lib(&mut self) -> LayoutResult<raw::Library> {
-        let mut lib = raw::Library::new(&self.lib.name, self.stack.units);
-        lib.layers = self.rawlayers.clone();
+        let mut rawlib = raw::Library::new(&self.lib.name, self.stack.units);
+        rawlib.layers = self.rawlayers.clone();
         // Convert each defined [Cell] to a [raw::Cell]
-        for (_id, cell) in self.lib.cells.iter() {
-            lib.cells.push(self.convert_cell(cell)?);
+        for srckey in DepOrder::order(&self.lib).iter() {
+            let srccell = &self.lib.cells[*srckey];
+            let rawcell = self.convert_cell(srccell)?;
+            let rawkey = rawlib.cells.insert(rawcell);
+            self.rawcells.insert(*srckey, rawkey);
         }
-        Ok(lib)
+        Ok(rawlib)
     }
     /// Convert a [CellBag] to a [raw::Cell]
     /// In reality only one of the cell-views is converted,
     /// generally the "most specific" available view.
-    fn convert_cell(&mut self, cell: &cell::CellBag) -> LayoutResult<raw::Cell> {
+    fn convert_cell(&self, cell: &cell::CellBag) -> LayoutResult<raw::Cell> {
         if let Some(ref x) = cell.raw {
             Ok(x.clone())
         } else if let Some(ref x) = cell.layout {
@@ -134,14 +178,14 @@ impl RawConverter {
         } else if let Some(ref x) = cell.abstrakt {
             self.convert_abstract(x)
         } else {
-            self.err(format!(
+            self.fail(format!(
                 "No Abstract or Implementation found for cell {}",
                 cell.name
             ))
         }
     }
     /// Convert to a raw layout cell
-    fn convert_layout_impl(&mut self, cell: &LayoutImpl) -> LayoutResult<raw::Cell> {
+    fn convert_layout_impl(&self, cell: &LayoutImpl) -> LayoutResult<raw::Cell> {
         if cell.outline.x.len() > 1 {
             return Err(LayoutError::Str(
                 "Non-rectangular outline; conversions not supported (yet)".into(),
@@ -179,18 +223,17 @@ impl RawConverter {
         })
     }
     /// Convert an [Instance] to a [raw::Instance]
-    fn convert_instance(&mut self, inst: &Instance) -> LayoutResult<raw::Instance> {
-        let celldef = self.lib.cells.get(inst.cell);
-        let celldef = self.unwrap(
-            celldef,
-            format!("Undefined cell for Instance {}", inst.inst_name),
+    fn convert_instance(&self, inst: &Instance) -> LayoutResult<raw::Instance> {
+        // Get the raw-cell pointer from our mapping.
+        // Note this requires dependent cells be converted first, depth-wise.
+        let rawkey = self.unwrap(
+            self.rawcells.get(&inst.cell),
+            format!("Internal Error Exporting Instance {}", inst.inst_name),
         )?;
         // Primarily scale the location of each instance by our pitches
         Ok(raw::Instance {
             inst_name: inst.inst_name.clone(),
-            // FIXME: both these fields
-            cell_name: inst.cell_name.clone(),
-            cell: inst.cell.clone(),
+            cell: rawkey.clone(),
             p0: self.convert_xy(&inst.loc),
             reflect: inst.reflect,
             angle: inst.angle,
@@ -216,7 +259,7 @@ impl RawConverter {
                 } else if let Some(ref x) = cell.layout {
                     Ok(TempInstance { inst, def: x })
                 } else {
-                    self.err(format!("Undefined Cell for Instance {}", inst.inst_name))
+                    self.fail(format!("Undefined Cell for Instance {}", inst.inst_name))
                 }
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -300,11 +343,6 @@ impl RawConverter {
             // Assign both track-segments to the net
             segment.net = Some(assn.net.clone());
 
-            // FIXME: orientations will be wrong here
-            let raw_layer = via_layer
-                .raw
-                .as_ref()
-                .ok_or(LayoutError::msg("Raw-Layout Layer Not Defined"))?;
             let e = raw::Element {
                 net: None,
                 layer: self.layerkeys[layer.index],
@@ -349,7 +387,7 @@ impl RawConverter {
     }
     /// Convert an [Abstract]
     /// FIXME: make these [raw::LayoutAbstract] instead
-    pub fn convert_abstract(&mut self, abs: &abstrakt::LayoutAbstract) -> LayoutResult<raw::Cell> {
+    pub fn convert_abstract(&self, abs: &abstrakt::LayoutAbstract) -> LayoutResult<raw::Cell> {
         let mut elems = Vec::with_capacity(abs.ports.len() + 1);
         // Create our [Outline]s boundary
         elems.push(self.convert_outline(abs)?);
@@ -414,7 +452,7 @@ impl RawConverter {
         layer.span(track_index)
     }
     /// Convert an [Outline] to a [raw::Element] polygon
-    pub fn convert_outline(&mut self, cell: &impl HasOutline) -> LayoutResult<raw::Element> {
+    pub fn convert_outline(&self, cell: &impl HasOutline) -> LayoutResult<raw::Element> {
         let outline: &Outline = cell.outline();
         // Create an array of Outline-Points
         let mut pts = vec![Point { x: 0, y: 0 }];
@@ -584,7 +622,7 @@ impl RawConverter {
         return inst_max > layer.pitch * periodnum && inst_min < layer.pitch * (periodnum + 1);
     }
     /// Convert any [UnitSpeced]-convertible distances into [DbUnits]
-    fn convert_to_db_units(&mut self, pt: impl Into<UnitSpeced>) -> DbUnits {
+    fn convert_to_db_units(&self, pt: impl Into<UnitSpeced>) -> DbUnits {
         let pt: UnitSpeced = pt.into();
         match pt {
             UnitSpeced::DbUnits(u) => u, // Return as-is
@@ -593,41 +631,28 @@ impl RawConverter {
                 let pitch = self.stack.prim.pitches[p.dir];
                 (p.num * pitch.raw()).into()
             }
-            UnitSpeced::LayerPitches(p) => {
+            UnitSpeced::LayerPitches(_p) => {
                 // LayerPitches are always in the layer's "periodic" dimension
                 todo!()
             }
         }
     }
     /// Convert an [Xy] into a [raw::Point]
-    fn convert_xy<T: HasUnits + Into<UnitSpeced>>(&mut self, xy: &Xy<T>) -> raw::Point {
+    fn convert_xy<T: HasUnits + Into<UnitSpeced>>(&self, xy: &Xy<T>) -> raw::Point {
         let x = self.convert_to_db_units(xy.x);
         let y = self.convert_to_db_units(xy.y);
         self.convert_point(x, y)
     }
     /// Convert a two-tuple of [DbUnits] into a [raw::Point]
-    fn convert_point(&mut self, x: DbUnits, y: DbUnits) -> raw::Point {
+    fn convert_point(&self, x: DbUnits, y: DbUnits) -> raw::Point {
         raw::Point::new(x.0, y.0)
     }
-    /// Error creation helper
-    fn err<T>(&mut self, msg: impl Into<String>) -> LayoutResult<T> {
-        Err(self.err2(msg))
-    }
-    /// Error creation helper
-    /// Unwrap the [Option] `opt` if it is [Some], and return our error if not.
-    fn unwrap<T>(&mut self, opt: Option<T>, msg: impl Into<String>) -> LayoutResult<T> {
-        match opt {
-            Some(val) => Ok(val),
-            None => self.err(msg),
-        }
-    }
 }
-impl raw::HasErrors for RawConverter {
-    /// Error creation helper
-    fn err(&mut self, msg: impl Into<String>) -> LayoutError {
+impl HasErrors for RawConverter {
+    fn err(&self, msg: impl Into<String>) -> LayoutError {
         LayoutError::Export {
-            msg: msg.into(),
-            ctx: self.ctx_stack.clone(),
+            message: msg.into(),
+            stack: Vec::new(), // FIXME! get a stack already! self.ctx_stack.clone(),
         }
     }
 }

@@ -1,9 +1,13 @@
+//!
+//! # Layout21 Structured Layout Generation Package
+//! (with some cutesy name to come)
+//!
+
 // Std-lib imports
 use std::convert::TryFrom;
 use std::fmt::Debug;
 
 // Crates.io
-use num_integer;
 use serde::{Deserialize, Serialize};
 use slotmap::{new_key_type, SlotMap};
 

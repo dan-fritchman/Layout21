@@ -1,8 +1,17 @@
+//! # Cell Definition
+//!
+//! Defines the [Cell] type, which represents a multi-viewed piece of reusable hardware.
+//! [Cell]s can, and generally do, have one or more associated "views",
+//! including [LayoutAbstract]s, [LayoutImpl], interface definitions, and/or "raw" layouts.
+//!
+
+// Crates.io
 use enum_dispatch::enum_dispatch;
 use serde::{Deserialize, Serialize};
 use slotmap::new_key_type;
 
-use crate::{abstrakt, interface, outline, raw};
+// Local imports
+use crate::{abstrakt, coords, interface, outline, raw};
 use crate::{Assign, TrackIntersection};
 
 // Create a slotmap key-type for [CellBag]s
@@ -113,7 +122,7 @@ pub struct Instance {
     /// Cell Definition Reference
     pub cell: CellBagKey,
     /// Location, in primitive pitches
-    pub loc: coord::Xy<coord::PrimPitches>,
+    pub loc: coords::Xy<coords::PrimPitches>,
     /// Reflection
     pub reflect: bool,
     /// Angle of Rotation (Degrees)

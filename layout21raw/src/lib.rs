@@ -104,7 +104,7 @@ pub trait HasErrors {
         Err(self.err(msg))
     }
     /// Unwrap the [Option] `opt` if it is [Some], and return our error if not.
-    fn unwrap<T>(&mut self, opt: Option<T>, msg: impl Into<String>) -> LayoutResult<T> {
+    fn unwrap<T>(&self, opt: Option<T>, msg: impl Into<String>) -> LayoutResult<T> {
         match opt {
             Some(val) => Ok(val),
             None => self.fail(msg),

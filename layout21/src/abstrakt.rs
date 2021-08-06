@@ -13,7 +13,11 @@
 //! Hence the misspelling.
 //!
 
-use super::*;
+// Crates.io
+use serde::{Deserialize, Serialize};
+
+// Local imports
+use crate::{outline, RelZ};
 
 /// Abstract-Layout
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -21,7 +25,7 @@ pub struct LayoutAbstract {
     /// Cell Name
     pub name: String,
     /// Outline in "Tetris-Shapes"
-    pub outline: Outline,
+    pub outline: outline::Outline,
     /// Top Metal Layer
     pub top_layer: usize,
     /// Ports

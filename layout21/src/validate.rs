@@ -3,9 +3,10 @@
 //!
 
 // Local imports
-use crate::coords::{DbUnits, PrimPitches, LayerPitches, Xy};
-use super::*;
-
+use crate::coords::DbUnits;
+use crate::raw::{self, LayoutError, LayoutResult};
+use crate::{Assign, Layer, LayerPeriod, PrimitiveLayer, RelZ, Stack, TrackIntersection, Unit};
+use crate::{PrimitiveMode, ViaLayer};
 
 /// Helper-function for asserting all sorts of boolean conditions, returning [LayoutResult] and enabling the question-mark operator.
 pub(crate) fn assert(b: bool) -> LayoutResult<()> {

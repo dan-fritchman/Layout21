@@ -1,3 +1,5 @@
+use super::cell::*;
+use super::outline::*;
 use super::*;
 
 /// Create a [Stack] used by a number of tests
@@ -118,10 +120,10 @@ fn validate_stack() -> LayoutResult<()> {
     validate::StackValidator::validate(s)?;
     Ok(())
 }
-/// Create a cell
+/// Create a layout-implementation
 #[test]
-fn create_cell() -> Result<(), LayoutError> {
-    Cell {
+fn create_layout() -> Result<(), LayoutError> {
+    LayoutImpl {
         name: "HereGoes".into(),
         top_layer: 3,
         outline: Outline::rect(50, 5)?,
@@ -144,59 +146,62 @@ fn create_cell() -> Result<(), LayoutError> {
 fn create_lib1() -> Result<(), LayoutError> {
     let mut lib = Library::new("lib1");
 
-    lib.cells.insert(Cell {
-        name: "HereGoes".into(),
-        top_layer: 2,
-        outline: Outline::rect(50, 5)?,
-        instances: Vec::new(),
-        assignments: vec![Assign {
-            net: "clk".into(),
-            at: TrackIntersection {
-                layer: 1,
-                track: 4,
-                at: 2,
-                relz: RelZ::Below,
-            },
-        }],
-        cuts: vec![
-            TrackIntersection {
-                layer: 0,
-                track: 1,
-                at: 1,
-                relz: RelZ::Above,
-            },
-            TrackIntersection {
-                layer: 0,
-                track: 1,
-                at: 3,
-                relz: RelZ::Above,
-            },
-            TrackIntersection {
-                layer: 0,
-                track: 1,
-                at: 5,
-                relz: RelZ::Above,
-            },
-            TrackIntersection {
-                layer: 1,
-                track: 1,
-                at: 1,
-                relz: RelZ::Below,
-            },
-            TrackIntersection {
-                layer: 1,
-                track: 1,
-                at: 3,
-                relz: RelZ::Below,
-            },
-            TrackIntersection {
-                layer: 1,
-                track: 1,
-                at: 5,
-                relz: RelZ::Below,
-            },
-        ],
-    });
+    lib.cells.insert(
+        LayoutImpl {
+            name: "HereGoes".into(),
+            top_layer: 2,
+            outline: Outline::rect(50, 5)?,
+            instances: Vec::new(),
+            assignments: vec![Assign {
+                net: "clk".into(),
+                at: TrackIntersection {
+                    layer: 1,
+                    track: 4,
+                    at: 2,
+                    relz: RelZ::Below,
+                },
+            }],
+            cuts: vec![
+                TrackIntersection {
+                    layer: 0,
+                    track: 1,
+                    at: 1,
+                    relz: RelZ::Above,
+                },
+                TrackIntersection {
+                    layer: 0,
+                    track: 1,
+                    at: 3,
+                    relz: RelZ::Above,
+                },
+                TrackIntersection {
+                    layer: 0,
+                    track: 1,
+                    at: 5,
+                    relz: RelZ::Above,
+                },
+                TrackIntersection {
+                    layer: 1,
+                    track: 1,
+                    at: 1,
+                    relz: RelZ::Below,
+                },
+                TrackIntersection {
+                    layer: 1,
+                    track: 1,
+                    at: 3,
+                    relz: RelZ::Below,
+                },
+                TrackIntersection {
+                    layer: 1,
+                    track: 1,
+                    at: 5,
+                    relz: RelZ::Below,
+                },
+            ],
+        }
+        .into(),
+    );
     exports(lib)
 }
 /// Create a cell with instances
@@ -204,39 +209,44 @@ fn create_lib1() -> Result<(), LayoutError> {
 fn create_lib2() -> Result<(), LayoutError> {
     let mut lib = Library::new("lib2");
 
-    let c2 = lib.cells.insert(Cell {
-        name: "IsInst".into(),
-        top_layer: 2,
-        outline: Outline::rect(100, 10)?,
+    let c2 = lib.cells.insert(
+        LayoutImpl {
+            name: "IsInst".into(),
+            top_layer: 2,
+            outline: Outline::rect(100, 10)?,
 
-        instances: vec![],
-        assignments: vec![],
-        cuts: Vec::new(),
-    });
+            instances: vec![],
+            assignments: vec![],
+            cuts: Vec::new(),
+        }
+        .into(),
+    );
 
-    lib.cells.insert(Cell {
-        name: "HasInst".into(),
-        top_layer: 3,
-        outline: Outline::rect(200, 20)?,
-        instances: vec![Instance {
-            inst_name: "inst1".into(),
-            cell_name: "IsInst".into(),
-            cell: CellRef::Cell(c2),
-            loc: (20, 2).into(),
-            reflect: false,
-            angle: None,
-        }],
-        assignments: vec![Assign {
-            net: "clk".into(),
-            at: TrackIntersection {
-                layer: 1,
-                track: 1,
-                at: 1,
-                relz: RelZ::Above,
-            },
-        }],
-        cuts: Vec::new(),
-    });
+    lib.cells.insert(
+        LayoutImpl {
+            name: "HasInst".into(),
+            top_layer: 3,
+            outline: Outline::rect(200, 20)?,
+            instances: vec![Instance {
+                inst_name: "inst1".into(),
+                cell: c2,
+                loc: (20, 2).into(),
+                reflect: false,
+                angle: None,
+            }],
+            assignments: vec![Assign {
+                net: "clk".into(),
+                at: TrackIntersection {
+                    layer: 1,
+                    track: 1,
+                    at: 1,
+                    relz: RelZ::Above,
+                },
+            }],
+            cuts: Vec::new(),
+        }
+        .into(),
+    );
     exports(lib)
 }
 
@@ -302,56 +312,59 @@ fn create_abstract() -> Result<(), LayoutError> {
 fn create_lib3() -> Result<(), LayoutError> {
     let mut lib = Library::new("lib3");
 
-    let c2 = lib.abstracts.insert(abstrakt::LayoutAbstract {
-        name: "IsAbstrakt".into(),
-        top_layer: 0,
-        outline: Outline::rect(100, 10)?,
-        ports: Vec::new(),
-    });
+    let c2 = lib.cells.insert(
+        abstrakt::LayoutAbstract {
+            name: "IsAbstrakt".into(),
+            top_layer: 0,
+            outline: Outline::rect(100, 10)?,
+            ports: Vec::new(),
+        }
+        .into(),
+    );
 
-    lib.cells.insert(Cell {
-        name: "HasAbstrakts".into(),
-        top_layer: 3,
-        outline: Outline::rect(500, 50)?,
-        instances: vec![
-            Instance {
-                inst_name: "inst1".into(),
-                cell_name: "IsAbstrakt".into(),
-                cell: CellRef::LayoutAbstract(c2),
-                loc: (0, 0).into(),
-                reflect: false,
-                angle: None,
-            },
-            Instance {
-                inst_name: "inst2".into(),
-                cell_name: "IsAbstrakt".into(),
-                cell: CellRef::LayoutAbstract(c2),
-                loc: (200, 20).into(),
-                reflect: false,
-                angle: None,
-            },
-            Instance {
-                inst_name: "inst4".into(),
-                cell_name: "IsAbstrakt".into(),
-                cell: CellRef::LayoutAbstract(c2),
-                loc: (400, 40).into(),
-                reflect: false,
-                angle: None,
-            },
-        ],
-        assignments: vec![
-        //     Assign {
-        //     net: "clk".into(),
-        //     at: TrackIntersection {
-        //         layer: 1,
-        //         track: 22,
-        //         at: 22,
-        //         relz: RelZ::Above,
-        //     },
-        // }
-        ],
-        cuts: Vec::new(),
-    });
+    lib.cells.insert(
+        LayoutImpl {
+            name: "HasAbstrakts".into(),
+            top_layer: 3,
+            outline: Outline::rect(500, 50)?,
+            instances: vec![
+                Instance {
+                    inst_name: "inst1".into(),
+                    cell: c2,
+                    loc: (0, 0).into(),
+                    reflect: false,
+                    angle: None,
+                },
+                Instance {
+                    inst_name: "inst2".into(),
+                    cell: c2,
+                    loc: (200, 20).into(),
+                    reflect: false,
+                    angle: None,
+                },
+                Instance {
+                    inst_name: "inst4".into(),
+                    cell: c2,
+                    loc: (400, 40).into(),
+                    reflect: false,
+                    angle: None,
+                },
+            ],
+            assignments: vec![
+            //     Assign {
+            //     net: "clk".into(),
+            //     at: TrackIntersection {
+            //         layer: 1,
+            //         track: 22,
+            //         at: 22,
+            //         relz: RelZ::Above,
+            //     },
+            // }
+            ],
+            cuts: Vec::new(),
+        }
+        .into(),
+    );
     exports(lib)
 }
 
@@ -360,42 +373,44 @@ fn create_lib3() -> Result<(), LayoutError> {
 fn create_lib4() -> Result<(), LayoutError> {
     let mut lib = Library::new("lib4");
 
-    let c2 = lib.abstracts.insert(abstrakt::LayoutAbstract {
-        name: "UnitCell".into(),
-        top_layer: 0,
-        outline: Outline::rect(20, 1)?,
-        ports: vec![
-            abstrakt::Port {
-                name: "inp".into(),
-                kind: abstrakt::PortKind::Edge {
-                    layer: 0,
-                    track: 1,
-                    side: abstrakt::Side::BottomOrLeft,
+    let c2 = lib.cells.insert(
+        abstrakt::LayoutAbstract {
+            name: "UnitCell".into(),
+            top_layer: 0,
+            outline: Outline::rect(20, 1)?,
+            ports: vec![
+                abstrakt::Port {
+                    name: "inp".into(),
+                    kind: abstrakt::PortKind::Edge {
+                        layer: 0,
+                        track: 1,
+                        side: abstrakt::Side::BottomOrLeft,
+                    },
                 },
-            },
-            abstrakt::Port {
-                name: "out".into(),
-                kind: abstrakt::PortKind::Edge {
-                    layer: 0,
-                    track: 5,
-                    side: abstrakt::Side::TopOrRight,
+                abstrakt::Port {
+                    name: "out".into(),
+                    kind: abstrakt::PortKind::Edge {
+                        layer: 0,
+                        track: 5,
+                        side: abstrakt::Side::TopOrRight,
+                    },
                 },
-            },
-        ],
-    });
+            ],
+        }
+        .into(), // Convert to a [CellBag]
+    );
 
     // Create an array of instances
     let instances = (0..9_isize)
         .map(|k| Instance {
             inst_name: format!("inst{}", k),
-            cell_name: "UnitCell".into(),
-            cell: CellRef::LayoutAbstract(c2),
+            cell: c2,
             loc: (21 * k, 0).into(),
             reflect: false,
             angle: None,
         })
         .collect();
-    let c = Cell {
+    let c = LayoutImpl {
         name: "HasUnits".into(),
         top_layer: 3,
         outline: Outline::rect(300, 2)?,
@@ -403,9 +418,7 @@ fn create_lib4() -> Result<(), LayoutError> {
         assignments: Vec::new(),
         cuts: Vec::new(),
     };
-    let c = lib.cells.insert(c);
-
-    // lib.cells.insert(Cell {
+    let _c = lib.cells.insert(c.into());
     exports(lib)
 }
 /// Export [Library] `lib` in several formats
