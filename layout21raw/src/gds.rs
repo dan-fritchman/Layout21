@@ -2,7 +2,24 @@
 //! # GDSII Import & Export Module
 //!
 
-use super::*;
+// Std-Lib
+use std::collections::{HashMap, HashSet};
+use std::convert::TryInto;
+use std::hash::Hash;
+
+// Crates.io
+use slotmap::{new_key_type, SlotMap};
+
+// Local imports
+use crate::{Cell, Dir, Element, Instance, LayerPurpose, Layers, Library, Point, Shape, Unit};
+use crate::{CellKey, LayerKey, TextElement};
+use crate::{ErrorContext, HasErrors, LayoutError, LayoutResult};
+use gds21;
+
+new_key_type! {
+    /// Keys for [Element] entries
+    pub struct ElementKey;
+}
 
 /// # Gds21 Converter
 /// Converts a [raw::Library] to a GDSII library ([gds21::GdsLibrary]).
@@ -13,12 +30,9 @@ pub struct GdsExporter {
 }
 impl GdsExporter {
     pub fn export(lib: Library) -> LayoutResult<gds21::GdsLibrary> {
-        Self { lib }.export_all()
+        Self { lib }.export_lib()
     }
-    fn export_all(self) -> LayoutResult<gds21::GdsLibrary> {
-        if self.lib.libs.len() > 0 {
-            return self.err("No nested libraries to GDS (yet)");
-        }
+    fn export_lib(self) -> LayoutResult<gds21::GdsLibrary> {
         // Create a new Gds Library
         let mut lib = gds21::GdsLibrary::new(&self.lib.name);
         // Set its distance units
@@ -33,7 +47,7 @@ impl GdsExporter {
             .lib
             .cells
             .iter()
-            .map(|c| self.export_cell(c))
+            .map(|(_key, c)| self.export_cell(c))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(lib)
     }
@@ -57,8 +71,13 @@ impl GdsExporter {
     }
     /// Convert an [Instance] to a GDS instance, AKA [gds21::GdsStructRef]
     fn export_instance(&self, inst: &Instance) -> LayoutResult<gds21::GdsStructRef> {
+        let celldef = &self
+            .lib
+            .cells
+            .get(inst.cell.into())
+            .ok_or(format!("Instance {} of Invalid Cell", inst.inst_name))?;
         Ok(gds21::GdsStructRef {
-            name: inst.cell_name.clone(),
+            name: celldef.name.clone(),
             xy: self.export_point(&inst.p0)?,
             strans: None, //FIXME!
             ..Default::default()
@@ -154,29 +173,83 @@ impl GdsExporter {
         let y = pt.y.try_into()?;
         Ok(gds21::GdsPoint::new(x, y))
     }
-    /// Error creation helper
-    fn err<T>(&self, msg: impl Into<String>) -> LayoutResult<T> {
-        Err(LayoutError::Export(msg.into()))
+}
+impl HasErrors for GdsExporter {
+    fn err(&self, msg: impl Into<String>) -> LayoutError {
+        LayoutError::Export {
+            message: msg.into(),
+            stack: Vec::new(), // FIXME! get a stack already! self.ctx_stack.clone(),
+        }
+    }
+}
+
+/// # Gds Dependency-Order
+///
+/// Ideally an iterator, but really just a struct that creates an in-order [Vec] at creation time.
+/// Intended usage: `for s in GdsDepOrder::order(&gds) { /* do stuff */ }`
+#[derive(Debug)]
+pub struct GdsDepOrder<'a> {
+    strukts: HashMap<String, &'a gds21::GdsStruct>,
+    stack: Vec<&'a gds21::GdsStruct>,
+    seen: HashSet<String>,
+}
+impl<'a> GdsDepOrder<'a> {
+    fn order(gds: &'a gds21::GdsLibrary) -> Vec<&'a gds21::GdsStruct> {
+        let mut strukts = HashMap::new();
+        for s in &gds.structs {
+            strukts.insert(s.name.clone(), s);
+        }
+        let mut me = Self {
+            strukts,
+            stack: Vec::new(),
+            seen: HashSet::new(),
+        };
+        for s in &gds.structs {
+            me.push(s)
+        }
+        me.stack
+    }
+    /// Add all of `strukt`'s dependencies, and then `strukt` itself, to the stack
+    fn push(&mut self, strukt: &'a gds21::GdsStruct) {
+        if !self.seen.contains(&strukt.name) {
+            for elem in &strukt.elems {
+                use gds21::GdsElement::*;
+                match elem {
+                    GdsStructRef(ref x) => self.push(self.strukts.get(&x.name).unwrap()),
+                    GdsArrayRef(ref x) => self.push(self.strukts.get(&x.name).unwrap()),
+                    _ => (),
+                };
+            }
+            self.seen.insert(strukt.name.clone());
+            self.stack.push(strukt);
+        }
     }
 }
 /// # GDSII Importer
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct GdsImporter {
     pub layers: Layers,
-    ctx_stack: Vec<ImportContext>,
+    ctx_stack: Vec<ErrorContext>,
     unsupported: Vec<gds21::GdsElement>,
+    cell_keys: HashMap<String, CellKey>,
+    lib: Library,
 }
 impl GdsImporter {
     /// Import a [gds21::GdsLibrary] into a [Library]
     /// FIXME: optionally provide layer definitions
-    pub fn import(lib: gds21::GdsLibrary) -> LayoutResult<Library> {
+    pub fn import(gdslib: &gds21::GdsLibrary, layers: Option<Layers>) -> LayoutResult<Library> {
+        // Create a default [Layers] if none were provided
+        let layers = layers.unwrap_or_default();
+        // Create the importer
         let mut importer = Self {
-            layers: Layers::default(),
-            ctx_stack: vec![ImportContext::Library(lib.name.clone())],
-            unsupported: vec![],
+            layers,
+            ..Default::default()
         };
-        let mut rv = importer.import_lib(&lib)?;
+        // Run the main import method
+        importer.import_lib(&gdslib)?;
+        // And destructure the result from our importer
         let Self {
+            mut lib,
             layers,
             unsupported,
             ..
@@ -188,11 +261,13 @@ impl GdsImporter {
                 unsupported
             );
         }
-        rv.layers = layers;
-        Ok(rv)
+        lib.layers = layers;
+        Ok(lib)
     }
     /// Internal implementation method. Convert all, starting from our top-level [gds21::GdsLibrary].
-    fn import_lib(&mut self, gdslib: &gds21::GdsLibrary) -> LayoutResult<Library> {
+    fn import_lib(&mut self, gdslib: &gds21::GdsLibrary) -> LayoutResult<()> {
+        self.ctx_stack
+            .push(ErrorContext::Library(gdslib.name.clone()));
         // Check our GDS doesn't (somehow) include any unsupported features
         if gdslib.libdirsize.is_some()
             || gdslib.srfname.is_some()
@@ -203,25 +278,25 @@ impl GdsImporter {
             || gdslib.generations.is_some()
             || gdslib.format_type.is_some()
         {
-            return self.err("Unsupported GDSII Feature");
+            return self.fail("Unsupported GDSII Feature");
         }
-        // Create a new [Library]
-        let mut lib = Library::default();
-        // Give it the same name as the GDS
-        lib.name = gdslib.name.clone();
+        // Give our library the same name as the GDS
+        self.lib.name = gdslib.name.clone();
         // Set its distance units
-        lib.units = self.import_units(&gdslib.units)?;
+        self.lib.units = self.import_units(&gdslib.units)?;
+        // Collect references by-name to each [GdsStruct]
+        // for strukt in gdslib.structs.iter() {
+        //     self.strukt_names.insert(strukt.name.clone(), &strukt);
+        // }
         // And convert each of its `structs` into our `cells`
-        lib.cells = gdslib
-            .structs
-            .iter()
-            .map(|x| self.import_cell(x))
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(lib)
+        for strukt in &GdsDepOrder::order(&gdslib) {
+            self.import_and_add(strukt)?
+        }
+        Ok(())
     }
     /// Import our [Unit]s
     fn import_units(&mut self, units: &gds21::GdsUnits) -> LayoutResult<Unit> {
-        self.ctx_stack.push(ImportContext::Units);
+        self.ctx_stack.push(ErrorContext::Units);
         // Peel out the GDS "database unit", the one of its numbers that really matters
         let gdsunit = units.db_unit();
         // FIXME: intermediate/ calculated units. Only our enumerated values are thus far supported
@@ -235,17 +310,34 @@ impl GdsImporter {
         } else if (gdsunit - 1e-6).abs() < 1e-9 {
             Unit::Micro
         } else {
-            return self.err(format!("Unsupported GDSII Unit: {:10.3e}", gdsunit));
+            return self.fail(format!("Unsupported GDSII Unit: {:10.3e}", gdsunit));
         };
         self.ctx_stack.pop();
         Ok(rv)
+    }
+    /// Import and add a cell, if not already defined
+    fn import_and_add(&mut self, strukt: &gds21::GdsStruct) -> LayoutResult<()> {
+        let name = &strukt.name;
+        // Check whether we're already defined, and bail if so
+        match self.cell_keys.get(name) {
+            Some(_) => return Ok(()), // Already done
+            None => (),               // Not yet defined, run the code below
+        }
+        // Do the real work
+        let cell = self.import_cell(strukt)?;
+        // Add it to our library
+        let key = self.lib.cells.insert(cell);
+        // And add the key to our name-map
+        self.cell_keys.insert(name.to_string(), key);
+        Ok(())
     }
     /// Import a GDS Cell ([gds21::GdsStruct]) into a [Cell]
     fn import_cell(&mut self, strukt: &gds21::GdsStruct) -> LayoutResult<Cell> {
         let mut cell = Cell::default();
         let name = strukt.name.clone();
         cell.name = name.clone();
-        self.ctx_stack.push(ImportContext::Cell(name));
+        self.ctx_stack.push(ErrorContext::Cell(name));
+
         // Importing each cell requires at least two passes over its elements.
         // In the first pass we add each [Instance] and geometric element,
         // And keep a list of [gds21::GdsTextElem] on the side.
@@ -277,7 +369,7 @@ impl GdsImporter {
             if let Yes(e) = e {
                 let layernum = match self.layers.get(e.layer) {
                     Some(l) => l.layernum,
-                    None => return self.err("Internal error: element added to invalid layer"),
+                    None => return self.fail("Internal error: element added to invalid layer"),
                 };
                 let ekey = elems.insert(e);
                 if let Some(ref mut bucket) = layers.get_mut(&layernum) {
@@ -315,7 +407,7 @@ impl GdsImporter {
                                     textelem.string.clone(),
                                     textelem.layer
                                 );
-                                // return self.err(format!(
+                                // return self.fail(format!(
                                 //     "GDSII labels shorting nets {} and {} on layer {}",
                                 //     pname,
                                 //     textelem.string.clone(),
@@ -346,10 +438,10 @@ impl GdsImporter {
     }
     /// Import a [gds21::GdsBoundary] into an [Element]
     fn import_boundary(&mut self, x: &gds21::GdsBoundary) -> LayoutResult<Element> {
-        self.ctx_stack.push(ImportContext::Geometry);
+        self.ctx_stack.push(ErrorContext::Geometry);
         let mut pts: Vec<Point> = self.import_point_vec(&x.xy)?;
         if pts[0] != *pts.last().unwrap() {
-            return self.err("GDS Boundary must start and end at the same point");
+            return self.fail("GDS Boundary must start and end at the same point");
         }
         // Pop the redundant last entry
         pts.pop();
@@ -388,7 +480,7 @@ impl GdsImporter {
     }
     /// Import a [gds21::GdsBox] into an [Element]
     fn import_box(&mut self, x: &gds21::GdsBox) -> LayoutResult<Element> {
-        self.ctx_stack.push(ImportContext::Geometry);
+        self.ctx_stack.push(ErrorContext::Geometry);
 
         // GDS stores *five* coordinates per box (for whatever reason).
         // This does not check fox "box validity", and imports the
@@ -413,13 +505,13 @@ impl GdsImporter {
     }
     /// Import a [gds21::GdsPath] into an [Element]
     fn import_path(&mut self, x: &gds21::GdsPath) -> LayoutResult<Element> {
-        self.ctx_stack.push(ImportContext::Geometry);
+        self.ctx_stack.push(ErrorContext::Geometry);
 
         let pts = self.import_point_vec(&x.xy)?;
         let width = if let Some(w) = x.width {
             w as usize
         } else {
-            return self.err("Invalid nonspecifed GDS Path width ");
+            return self.fail("Invalid nonspecifed GDS Path width ");
         };
         // Create the shape
         let inner = Shape::Path { width, pts };
@@ -438,14 +530,19 @@ impl GdsImporter {
     }
     /// Import a [gds21::GdsStructRef] cell/struct-instance into an [Instance]
     fn import_instance(&mut self, sref: &gds21::GdsStructRef) -> LayoutResult<Instance> {
-        let inst_name = "".into(); // FIXME
         let cname = sref.name.clone();
-        let cell = CellRef::Name(cname.clone()); // FIXME
-        self.ctx_stack.push(ImportContext::Instance(cname.clone()));
+        self.ctx_stack.push(ErrorContext::Instance(cname.clone()));
+        // Look up the cell-key, which must be imported by now
+        let cell = self
+            .cell_keys
+            .get(&sref.name)
+            .ok_or(format!("Instance Array of invalid cell {}", cname))?
+            .clone();
+
         let p0 = self.import_point(&sref.xy)?;
+        let inst_name = "".into(); // FIXME
         let mut inst = Instance {
             inst_name,
-            cell_name: cname,
             cell,
             p0,
             reflect: false, // FIXME!
@@ -454,7 +551,7 @@ impl GdsImporter {
         if let Some(strans) = &sref.strans {
             // FIXME: interpretation of the "absolute" settings
             if strans.abs_mag || strans.abs_angle {
-                return self.err("Unsupported GDSII Instance: Absolute");
+                return self.fail("Unsupported GDSII Instance: Absolute");
             }
             if strans.mag.is_some() || strans.angle.is_some() {
                 println!("Warning support for instance orientation in-progress");
@@ -469,8 +566,14 @@ impl GdsImporter {
     fn import_instance_array(&mut self, aref: &gds21::GdsArrayRef) -> LayoutResult<Vec<Instance>> {
         let inst_name = "".to_string(); // FIXME
         let cell_name = aref.name.clone();
-        self.ctx_stack.push(ImportContext::Array(cell_name.clone()));
-        let cell = CellRef::Name(aref.name.clone()); // FIXME
+        self.ctx_stack.push(ErrorContext::Array(cell_name.clone()));
+
+        // Look up the cell-key, which must be imported by now
+        let cell = self
+            .cell_keys
+            .get(&aref.name)
+            .ok_or(format!("Instance Array of invalid cell {}", cell_name))?
+            .clone();
 
         // Convert its three (x,y) coordinates
         let p0 = self.import_point(&aref.xy[0])?;
@@ -478,7 +581,7 @@ impl GdsImporter {
         let p2 = self.import_point(&aref.xy[2])?;
         // Check for (thus far) unsupported non-rectangular arrays
         if p0.y != p1.y || p0.x != p2.x {
-            return self.err("Invalid Non-Rectangular GDS Array");
+            return self.fail("Invalid Non-Rectangular GDS Array");
         }
         // Sort out the inter-element spacing
         let width = p1.x - p0.x;
@@ -492,7 +595,7 @@ impl GdsImporter {
         if let Some(strans) = &aref.strans {
             // FIXME: interpretation of the "absolute" settings
             if strans.abs_mag || strans.abs_angle {
-                return self.err("Unsupported GDSII Instance: Absolute");
+                return self.fail("Unsupported GDSII Instance: Absolute");
             }
             if strans.mag.is_some() || strans.angle.is_some() {
                 println!("Warning support for array orientation in-progress");
@@ -508,7 +611,6 @@ impl GdsImporter {
                 let y = p0.y + iy * ystep;
                 insts.push(Instance {
                     inst_name: inst_name.clone(),
-                    cell_name: cell_name.clone(),
                     cell: cell.clone(),
                     p0: Point::new(x, y),
                     reflect, // FIXME!
@@ -541,11 +643,12 @@ impl GdsImporter {
         let spec = elem.layerspec();
         self.layers.get_or_insert(spec.layer, spec.xtype)
     }
-    /// Error creation helper
-    fn err<T>(&self, msg: impl Into<String>) -> LayoutResult<T> {
-        Err(LayoutError::Import {
-            stack: self.ctx_stack.clone(),
+}
+impl HasErrors for GdsImporter {
+    fn err(&self, msg: impl Into<String>) -> LayoutError {
+        LayoutError::Import {
             message: msg.into(),
-        })
+            stack: self.ctx_stack.clone(),
+        }
     }
 }

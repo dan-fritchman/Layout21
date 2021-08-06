@@ -47,9 +47,10 @@ fn gds_import1() -> LayoutResult<()> {
         }],
         ..Default::default()
     };
-    let lib = GdsImporter::import(gds)?;
+    let lib = GdsImporter::import(&gds, None)?;
     assert_eq!(lib.name, "lib1");
-    let cell = &lib.cells[0];
+    assert_eq!(lib.cells.len(), 1);
+    let cell = &lib.cells.values().next().unwrap();
     assert_eq!(cell.name, "cell1");
     let elem = &cell.elems[0];
     assert_eq!(elem.net, Some("net1".to_string()));
@@ -68,9 +69,10 @@ fn gds_sample1() -> LayoutResult<()> {
     let samp = resource("sample1.gds");
     // let samp = "/Users/dan/dev/ucb/osci/OsciBear/gds/user_analog_project_wrapper.gds";
     let gds = gds21::GdsLibrary::load(&samp)?;
-    let lib = GdsImporter::import(gds)?;
+    let lib = GdsImporter::import(&gds, None)?;
     assert_eq!(lib.name, "dff1_lib");
-    let cell = &lib.cells[0];
+    assert_eq!(lib.cells.len(), 1);
+    let cell = &lib.cells.values().next().unwrap();
     assert_eq!(cell.name, "dff1");
     let p = ProtoExporter::export(lib)?;
     assert!(p.name.is_some());

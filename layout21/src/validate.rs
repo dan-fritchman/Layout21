@@ -1,7 +1,11 @@
 //! # Validators
 //! Integrity checks for [Stack]s, [Layer]s, and the like.
 //!
+
+// Local imports
+use crate::coords::{DbUnits, PrimPitches, LayerPitches, Xy};
 use super::*;
+
 
 /// Helper-function for asserting all sorts of boolean conditions, returning [LayoutResult] and enabling the question-mark operator.
 pub(crate) fn assert(b: bool) -> LayoutResult<()> {

@@ -3,210 +3,27 @@ use std::convert::TryFrom;
 use std::fmt::Debug;
 
 // Crates.io
-use derive_more::{Add, AddAssign, DivAssign, From, MulAssign, Sub, SubAssign, Sum};
-use enum_dispatch::enum_dispatch;
 use num_integer;
 use serde::{Deserialize, Serialize};
 use slotmap::{new_key_type, SlotMap};
 
-// "Raw" Layout Imports
-use layout21raw as raw;
-use raw::{
-    AbstractKey, CellKey, CellRef, CellViewKey, Dir, LayoutError, LayoutResult, Point, Unit,
-};
-
 // Re-exports
+pub use layout21raw as raw;
 pub mod abstrakt;
+pub mod cell;
+pub mod coords;
 pub mod interface;
+pub mod outline;
 pub mod rawconv;
 pub mod validate;
+
+// Local imports
+use coords::{DbUnits, Xy};
+use raw::{Dir, LayoutError, LayoutResult, Point, Unit};
 
 /// Unit Tests Module
 #[cfg(test)]
 mod tests;
-
-/// # Location Integer Type-Alias
-///
-/// Many internal fields are conceptually unsigned integers, but also undergo lots of math.
-/// Rather than converting at each call-site, most are converted to [Int] and value-checked at creation time.
-///
-/// Unsigned integers ([usize]) are generally used for indices, such as where the [Index] trait accepts them.
-type Int = isize;
-
-/// Much of the confusion in a multi-coordinate system such as this
-/// lies in keeping track of which numbers are in which units.
-/// There are three generally useful units of measure here:
-/// * DB Units generally correspond to physical length quantities, e.g. nanometers
-/// * Primitive pitches
-/// * Per-layer pitches, parameterized by a metal-layer index
-#[enum_dispatch]
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub enum UnitSpeced {
-    DbUnits(DbUnits),
-    PrimPitches(PrimPitches),
-    LayerPitches(LayerPitches),
-}
-/// Empty trait, largely for auto-generation of [From] and [Into] implementations.
-#[enum_dispatch(UnitSpeced)]
-pub trait HasUnits: Clone + Copy {}
-
-/// A Scalar Value in Database Units
-#[derive(
-    From,
-    Add,
-    AddAssign,
-    Sub,
-    SubAssign,
-    MulAssign,
-    DivAssign,
-    Sum,
-    Debug,
-    Default,
-    Clone,
-    Copy,
-    Serialize,
-    Deserialize,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-)]
-pub struct DbUnits(Int);
-impl DbUnits {
-    /// Every so often we need the raw number, fine. Use sparingly.
-    #[inline(always)]
-    fn raw(&self) -> Int {
-        self.0
-    }
-}
-impl HasUnits for DbUnits {}
-impl std::ops::Div<DbUnits> for DbUnits {
-    type Output = Int;
-    fn div(self, rhs: DbUnits) -> Self::Output {
-        self.raw() / rhs.raw()
-    }
-}
-impl std::ops::Div<Int> for DbUnits {
-    type Output = Self;
-    fn div(self, rhs: Int) -> Self::Output {
-        Self(self.raw() / rhs)
-    }
-}
-impl std::ops::Rem<DbUnits> for DbUnits {
-    type Output = Int;
-    fn rem(self, rhs: DbUnits) -> Self::Output {
-        self.raw().rem(rhs.raw())
-    }
-}
-impl std::ops::Mul<DbUnits> for DbUnits {
-    type Output = Self;
-    fn mul(self, rhs: DbUnits) -> Self::Output {
-        Self(self.0 & rhs.0)
-    }
-}
-impl std::ops::Mul<Int> for DbUnits {
-    type Output = Self;
-    fn mul(self, rhs: Int) -> Self::Output {
-        Self(self.0 * rhs)
-    }
-}
-impl std::ops::Mul<usize> for DbUnits {
-    type Output = Self;
-    fn mul(self, rhs: usize) -> Self::Output {
-        Self(Int::try_from(rhs).unwrap() * self.0)
-    }
-}
-
-/// A Scalar Value in Primitive-Pitches
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub struct PrimPitches {
-    dir: Dir,
-    num: Int,
-}
-impl HasUnits for PrimPitches {}
-impl std::ops::Add<PrimPitches> for PrimPitches {
-    type Output = PrimPitches;
-    /// Adding primitive-pitch values.
-    /// Panics if the two are not in the same direction.
-    fn add(self, rhs: Self) -> Self::Output {
-        if self.dir != rhs.dir {
-            panic!()
-        }
-        Self {
-            dir: self.dir,
-            num: self.num + rhs.num,
-        }
-    }
-}
-
-/// A Scalar Value in Layer-Pitches
-#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub struct LayerPitches {
-    layer: usize,
-    num: Int,
-}
-impl HasUnits for LayerPitches {}
-
-/// Paired "type" zero-data enum for [UnitSpeced]
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub enum UnitType {
-    DbUnits,
-    PrimPitches,
-    LayerPitches,
-}
-
-/// Common geometric pairing of (x,y) coordinates
-/// Represents points, sizes, rectangles, and anything else that pairs `x` and `y` fields.
-/// *Only* instantiable with [HasUnits] data.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Xy<T: HasUnits> {
-    pub x: T,
-    pub y: T,
-}
-impl<T: HasUnits> Xy<T> {
-    /// Create a new [Xy].
-    fn new(x: T, y: T) -> Xy<T> {
-        Self { x, y }
-    }
-    /// Create a new [Xy] with transposed coordinates.
-    fn transpose(&self) -> Xy<T> {
-        Self {
-            y: self.x,
-            x: self.y,
-        }
-    }
-}
-impl<T: HasUnits> std::ops::Index<Dir> for Xy<T> {
-    type Output = T;
-    fn index(&self, dir: Dir) -> &Self::Output {
-        match dir {
-            Dir::Horiz => &self.x,
-            Dir::Vert => &self.y,
-        }
-    }
-}
-impl From<(Int, Int)> for Xy<DbUnits> {
-    fn from(tup: (Int, Int)) -> Self {
-        Self {
-            x: tup.0.into(),
-            y: tup.1.into(),
-        }
-    }
-}
-impl From<(Int, Int)> for Xy<PrimPitches> {
-    fn from(tup: (Int, Int)) -> Self {
-        Self {
-            x: PrimPitches {
-                dir: Dir::Horiz,
-                num: tup.0.into(),
-            },
-            y: PrimPitches {
-                dir: Dir::Vert,
-                num: tup.1.into(),
-            },
-        }
-    }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TrackEntry {
@@ -469,24 +286,15 @@ impl RelZ {
 pub struct Library {
     /// Library Name
     pub name: String,
-    /// Cell Names
-    pub cell_names: Vec<String>,
-    /// Abstracts
-    pub abstracts: SlotMap<AbstractKey, abstrakt::Abstract>,
-    /// Cell Implementations
-    pub cells: SlotMap<CellKey, Cell>,
-    /// Sub-Libraries
-    pub libs: Vec<Library>,
+    /// Cell Definitions
+    pub cells: SlotMap<cell::CellBagKey, cell::CellBag>,
 }
 impl Library {
     /// Create a new and initially empty [Library]
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
-            cell_names: Vec::new(),
-            abstracts: SlotMap::with_key(),
             cells: SlotMap::with_key(),
-            libs: Vec::new(),
         }
     }
 }
@@ -662,152 +470,7 @@ impl TrackIntersection {
         }
     }
 }
-/// # Layout Cell
-///
-/// A combination of lower-level cell instances and net-assignments to tracks.
-///
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Cell {
-    /// Cell Name
-    pub name: String,
-    /// Top-layer index
-    pub top_layer: usize,
-    /// Outline shape, counted in x and y pitches of `stack`
-    pub outline: Outline,
-    /// Layout Instances
-    pub instances: Vec<Instance>,
-    /// Net-to-track assignments
-    pub assignments: Vec<Assign>,
-    /// Track cuts
-    pub cuts: Vec<TrackIntersection>,
-}
-/// Block Outlines are "Tetris Shaped" rectilinear polygons
-///
-/// These boundaries are closed, consist solely of 90-degree rectangular turns,
-/// and are specified by a counter-clockwise set of points.
-/// "Holes" such as the shapes "O" and "8" and "divots" such as the shapes "U" and "H" are not supported.
-///
-/// Two equal-length vectors `x` and `y` describe an Outline's points.
-/// Counter-clockwise-ness and divot-free-ness requires that:
-/// * (a) `x` values are monotonically non-increasing, and
-/// * (b) `y` values are monotonically non-decreasing
-///
-/// In point-space terms, such an outline has vertices at:
-/// `[(0,0), (x[0], 0), (x[0], y[0]), (x[1], y[0]), ... , (0, y[-1]), (0,0)]`
-/// With the final point at (0, y[-1]), and its connection back to the origin both implied.
-///
-/// Example: a rectangular Outline would require a single entry for each of `x` and `y`,
-/// at the rectangle's vertex opposite the origin in both axes.
-///
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Outline {
-    pub x: Vec<PrimPitches>,
-    pub y: Vec<PrimPitches>,
-}
-impl Outline {
-    /// Outline constructor, with inline checking for validity of `x` & `y` vectors
-    pub fn new(x: &[Int], y: &[Int]) -> LayoutResult<Self> {
-        // Check that x and y are of compatible lengths
-        if x.len() < 1 || x.len() != y.len() {
-            return Err(LayoutError::Tbd);
-        }
-        // Check for:
-        // * x non-increasing-ness,
-        // * y for non-decreasing-ness
-        // * all non-negative values
-        if x[0] < 0 || y[0] < 0 {
-            return Err(LayoutError::Tbd);
-        }
-        for k in 1..x.len() {
-            if x[k] > x[k - 1] {
-                return Err(LayoutError::Tbd);
-            }
-            if y[k] < y[k - 1] {
-                return Err(LayoutError::Tbd);
-            }
-            if x[k] < 0 || y[k] < 0 {
-                return Err(LayoutError::Tbd);
-            }
-        }
-        // Convert into [PrimPitches] united-objects, and return a new Self.
-        let x = x
-            .into_iter()
-            .map(|i| PrimPitches {
-                num: *i,
-                dir: Dir::Horiz,
-            })
-            .collect();
-        let y = y
-            .into_iter()
-            .map(|i| PrimPitches {
-                num: *i,
-                dir: Dir::Vert,
-            })
-            .collect();
-        Ok(Self { x, y })
-    }
-    /// Create a new rectangular outline of dimenions `x` by `y`
-    pub fn rect(x: Int, y: Int) -> LayoutResult<Self> {
-        Self::new(&[x], &[y])
-    }
-    /// Maximum x-coordinate
-    /// (Which is also always the *first* x-coordinate)
-    pub fn xmax(&self) -> PrimPitches {
-        self.x[0]
-    }
-    /// Maximum y-coordinate
-    /// (Which is also always the *last* y-coordinate)
-    pub fn ymax(&self) -> PrimPitches {
-        self.y[self.y.len() - 1]
-    }
-    /// Maximum coordinate in [Dir] `dir`
-    pub fn max(&self, dir: Dir) -> PrimPitches {
-        match dir {
-            Dir::Horiz => self.xmax(),
-            Dir::Vert => self.ymax(),
-        }
-    }
-}
 
-/// # Cell View Enumeration
-/// All of the ways in which a Cell is represented
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum CellView {
-    Interface(interface::Bundle),
-    Abstract(abstrakt::Abstract),
-    Layout(Cell),
-    RawLayout(raw::Cell),
-}
-/// Collection of the Views describing a Cell
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CellViews {
-    name: String,
-    views: SlotMap<CellViewKey, CellView>,
-}
-
-/// Trait for accessing three-dimensional [Outline] data from several views of Layouts
-pub trait HasOutline: Debug {
-    /// Retrieve a reference to the x-y [Outline]
-    fn outline(&self) -> &Outline;
-    /// Retrieve the top z-axis layer
-    fn top_layer(&self) -> usize;
-}
-impl HasOutline for Cell {
-    fn outline(&self) -> &Outline {
-        &self.outline
-    }
-    fn top_layer(&self) -> usize {
-        self.top_layer
-    }
-}
-impl HasOutline for abstrakt::Abstract {
-    fn outline(&self) -> &Outline {
-        &self.outline
-    }
-    fn top_layer(&self) -> usize {
-        self.top_layer
-    }
-}
 /// Indication of whether a layer flips in its periodic axis with every period,
 /// as most standard-cell-style logic gates do.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -826,20 +489,4 @@ pub enum PrimitiveMode {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PrimitiveLayer {
     pub pitches: Xy<DbUnits>,
-}
-
-/// Instance of another Cell
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Instance {
-    /// Instance Name
-    pub inst_name: String,
-    pub cell_name: String,
-    /// Cell Definition Reference
-    pub cell: CellRef,
-    /// Bottom-Left Corner Point
-    pub loc: Xy<PrimPitches>,
-    /// Reflection
-    pub reflect: bool,
-    /// Angle of Rotation (Degrees)
-    pub angle: Option<f64>,
 }

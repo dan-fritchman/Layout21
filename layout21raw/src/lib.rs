@@ -11,13 +11,13 @@
 
 // Std-Lib
 use std::collections::HashMap;
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryFrom;
 use std::hash::Hash;
+use std::ops::Not;
 
 // Crates.io
 use serde::{Deserialize, Serialize};
 use slotmap::{new_key_type, SlotMap};
-use std::ops::Not;
 
 // Local imports
 use gds21;
@@ -32,16 +32,12 @@ mod tests;
 
 // Create key-types for each internal type stored in [SlotMap]s
 new_key_type! {
-    /// Keys for [Element] entries
-    pub struct ElementKey;
     /// Keys for [Layer] entries
     pub struct LayerKey;
     /// Keys for [Cell] entries
     pub struct CellKey;
-    /// Keys for [abstrakt::Abstract] entries
+    /// Keys for [abstrakt::LayoutAbstract] entries
     pub struct AbstractKey;
-    /// Keys for [CellView] entries
-    pub struct CellViewKey;
 }
 /// LayoutError-Specific Result Type
 pub type LayoutResult<T> = Result<T, LayoutError>;
@@ -52,11 +48,14 @@ pub type LayoutResult<T> = Result<T, LayoutError>;
 #[derive(Debug)]
 pub enum LayoutError {
     /// Error Exporting to Foreign Format
-    Export(String),
+    Export {
+        message: String,
+        stack: Vec<ErrorContext>,
+    },
     /// Error Importing from Foreign Format
     Import {
         message: String,
-        stack: Vec<ImportContext>,
+        stack: Vec<ErrorContext>,
     },
     /// Validation of input data
     Validation,
@@ -93,10 +92,29 @@ impl From<gds21::GdsError> for LayoutError {
         Self::Boxed(Box::new(e))
     }
 }
+/// Helper trait for re-use among our many conversion tree-walkers.
+/// Each implementer will generally have some internal state to report upon failure,
+/// which it can inject in the implementation-required `err` method.
+/// The `fail` method, provided by default, simply returns the `err` value.
+pub trait HasErrors {
+    /// Create and return a [LayoutError]
+    fn err(&self, msg: impl Into<String>) -> LayoutError;
+    /// Return failure
+    fn fail<T>(&self, msg: impl Into<String>) -> LayoutResult<T> {
+        Err(self.err(msg))
+    }
+    /// Unwrap the [Option] `opt` if it is [Some], and return our error if not.
+    fn unwrap<T>(&mut self, opt: Option<T>, msg: impl Into<String>) -> LayoutResult<T> {
+        match opt {
+            Some(val) => Ok(val),
+            None => self.fail(msg),
+        }
+    }
+}
 /// Enumerated conversion contexts
 /// Generally used for error reporting
 #[derive(Debug, Clone)]
-pub enum ImportContext {
+pub enum ErrorContext {
     Library(String),
     Cell(String),
     Instance(String),
@@ -186,24 +204,13 @@ impl Not for Dir {
     }
 }
 
-/// # Cell Reference Enumeration
-/// Used for enumerating the different types of things an [Instance] may refer to
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum CellRef {
-    Cell(CellKey),
-    Abstract(AbstractKey),
-    Name(String),
-}
-
 /// Instance of another Cell
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Instance {
     /// Instance Name
     pub inst_name: String,
-    /// Cell Name/ Path
-    pub cell_name: String,
     /// Cell Definition Reference
-    pub cell: CellRef,
+    pub cell: CellKey,
     /// Bottom-Left Corner Point
     pub p0: Point,
     /// Reflection
@@ -276,6 +283,7 @@ impl Layers {
 /// and two "escape hatches", one named and one not.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum LayerPurpose {
+    // First-class enumerated purposes
     Drawing,
     Pin,
     Label,
@@ -368,10 +376,8 @@ pub struct Library {
     pub units: Unit,
     /// Layer Definitions
     pub layers: Layers,
-    /// Sub-Library Definitions
-    pub libs: Vec<Library>,
     /// Cell Definitions
-    pub cells: Vec<Cell>,
+    pub cells: SlotMap<CellKey, Cell>,
 }
 impl Library {
     /// Create a new and empty Library
@@ -379,6 +385,7 @@ impl Library {
         Self {
             name: name.into(),
             units,
+            cells: SlotMap::with_key(),
             ..Default::default()
         }
     }
@@ -559,7 +566,7 @@ impl ProtoExporter {
             .lib
             .cells
             .iter()
-            .map(|c| self.export_cell(c))
+            .map(|(_key, c)| self.export_cell(c))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(lib)
     }
@@ -621,11 +628,16 @@ impl ProtoExporter {
     }
     /// Convert an [Instance] to a [proto::Instance]
     fn export_instance(&self, inst: &Instance) -> LayoutResult<proto::Instance> {
+        let celldef = &self
+            .lib
+            .cells
+            .get(inst.cell.into())
+            .ok_or(format!("Instance {} of Invalid Cell", inst.inst_name))?;
         Ok(proto::Instance {
             name: inst.inst_name.clone(),
             cell_name: Some(proto::QualifiedName {
                 domain: "".into(), // FIXME
-                name: inst.cell_name.clone(),
+                name: celldef.name.to_string(),
             }),
             lower_left: Some(proto::Point::new(inst.p0.x as i64, inst.p0.y as i64)),
             rotation_clockwise_degrees: 0,
@@ -673,6 +685,14 @@ impl ProtoExporter {
                     .collect::<Vec<_>>();
                 Ok(ProtoShape::Path(proto::Path { net, width, points }))
             }
+        }
+    }
+}
+impl HasErrors for ProtoExporter {
+    fn err(&self, msg: impl Into<String>) -> LayoutError {
+        LayoutError::Export {
+            message: msg.into(),
+            stack: Vec::new(), // FIXME! get a stack already! self.ctx_stack.clone(),
         }
     }
 }

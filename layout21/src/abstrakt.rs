@@ -17,7 +17,7 @@ use super::*;
 
 /// Abstract-Layout
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Abstract {
+pub struct LayoutAbstract {
     /// Cell Name
     pub name: String,
     /// Outline in "Tetris-Shapes"

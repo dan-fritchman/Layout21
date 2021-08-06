@@ -288,7 +288,7 @@ fn create_abstract() -> Result<(), LayoutError> {
         //     },
         // },
     ];
-    abstrakt::Abstract {
+    abstrakt::LayoutAbstract {
         name: "abstrack".into(),
         outline,
         top_layer: 3,
@@ -302,7 +302,7 @@ fn create_abstract() -> Result<(), LayoutError> {
 fn create_lib3() -> Result<(), LayoutError> {
     let mut lib = Library::new("lib3");
 
-    let c2 = lib.abstracts.insert(abstrakt::Abstract {
+    let c2 = lib.abstracts.insert(abstrakt::LayoutAbstract {
         name: "IsAbstrakt".into(),
         top_layer: 0,
         outline: Outline::rect(100, 10)?,
@@ -317,7 +317,7 @@ fn create_lib3() -> Result<(), LayoutError> {
             Instance {
                 inst_name: "inst1".into(),
                 cell_name: "IsAbstrakt".into(),
-                cell: CellRef::Abstract(c2),
+                cell: CellRef::LayoutAbstract(c2),
                 loc: (0, 0).into(),
                 reflect: false,
                 angle: None,
@@ -325,7 +325,7 @@ fn create_lib3() -> Result<(), LayoutError> {
             Instance {
                 inst_name: "inst2".into(),
                 cell_name: "IsAbstrakt".into(),
-                cell: CellRef::Abstract(c2),
+                cell: CellRef::LayoutAbstract(c2),
                 loc: (200, 20).into(),
                 reflect: false,
                 angle: None,
@@ -333,7 +333,7 @@ fn create_lib3() -> Result<(), LayoutError> {
             Instance {
                 inst_name: "inst4".into(),
                 cell_name: "IsAbstrakt".into(),
-                cell: CellRef::Abstract(c2),
+                cell: CellRef::LayoutAbstract(c2),
                 loc: (400, 40).into(),
                 reflect: false,
                 angle: None,
@@ -360,7 +360,7 @@ fn create_lib3() -> Result<(), LayoutError> {
 fn create_lib4() -> Result<(), LayoutError> {
     let mut lib = Library::new("lib4");
 
-    let c2 = lib.abstracts.insert(abstrakt::Abstract {
+    let c2 = lib.abstracts.insert(abstrakt::LayoutAbstract {
         name: "UnitCell".into(),
         top_layer: 0,
         outline: Outline::rect(20, 1)?,
@@ -389,8 +389,8 @@ fn create_lib4() -> Result<(), LayoutError> {
         .map(|k| Instance {
             inst_name: format!("inst{}", k),
             cell_name: "UnitCell".into(),
-            cell: CellRef::Abstract(c2),
-            loc: (20 * k, 0).into(),
+            cell: CellRef::LayoutAbstract(c2),
+            loc: (21 * k, 0).into(),
             reflect: false,
             angle: None,
         })
