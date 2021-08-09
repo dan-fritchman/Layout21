@@ -17,7 +17,8 @@
 use serde::{Deserialize, Serialize};
 
 // Local imports
-use crate::{outline, RelZ};
+use crate::outline;
+use crate::stack::RelZ;
 
 /// Abstract-Layout
 #[derive(Debug, Clone, Serialize, Deserialize)]

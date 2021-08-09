@@ -4,9 +4,9 @@
 
 // Local imports
 use crate::coords::DbUnits;
-use crate::raw::{self, LayoutError, LayoutResult};
-use crate::{Assign, Layer, LayerPeriod, PrimitiveLayer, RelZ, Stack, TrackIntersection, Unit};
-use crate::{PrimitiveMode, ViaLayer};
+use crate::raw::{self, LayoutError, LayoutResult, Unit};
+use crate::stack::{Assign, Layer, LayerPeriod, PrimitiveLayer, RelZ, Stack, TrackIntersection};
+use crate::stack::{PrimitiveMode, ViaLayer};
 
 /// Helper-function for asserting all sorts of boolean conditions, returning [LayoutResult] and enabling the question-mark operator.
 pub(crate) fn assert(b: bool) -> LayoutResult<()> {

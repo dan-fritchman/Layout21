@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 use slotmap::new_key_type;
 
 // Local imports
+use crate::stack::{Assign, TrackIntersection};
 use crate::{abstrakt, coords, interface, outline, raw};
-use crate::{Assign, TrackIntersection};
 
 // Create a slotmap key-type for [CellBag]s
 new_key_type! {
@@ -64,7 +64,7 @@ pub struct CellBag {
     pub abstrakt: Option<abstrakt::LayoutAbstract>,
     // Layout Implementation
     pub layout: Option<LayoutImpl>,
-    // Raw Layout Implementation
+    // Raw Layout
     pub raw: Option<raw::Cell>,
 }
 impl From<CellView> for CellBag {
