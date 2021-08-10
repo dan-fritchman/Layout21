@@ -14,7 +14,7 @@ use crate::coords::{DbUnits, HasUnits, PrimPitches, UnitSpeced, Xy};
 use crate::library::Library;
 use crate::outline::{HasOutline, Outline};
 use crate::raw::{self, Dir, HasErrors, LayoutError, LayoutResult, Point};
-use crate::stack::{Stack, Track};
+use crate::stack::{Stack, Track, TrackSegmentType};
 use crate::{abstrakt, cell, validate};
 
 /// A short-lived set of references to an [Instance] and its cell-definition
@@ -221,7 +221,7 @@ impl RawConverter {
             .iter()
             .map(|inst| self.convert_instance(inst).unwrap()) // FIXME: error handling
             .collect();
-        // Aaaand create & return our new [raw::Cell]
+        // Aaaand create our new [raw::Cell]
         Ok(raw::Cell {
             name: cell.name.clone(),
             insts,
@@ -319,13 +319,13 @@ impl RawConverter {
             // Convert primitive-pitch-based blockages to db units
             let start = self.convert_to_db_units(*n1);
             let stop = self.convert_to_db_units(*n2);
-            layer_period.cut(start, stop)?;
+            layer_period.block(start, stop)?;
         }
         // Place all relevant cuts
         let nsig = layer_period.signals.len();
         for cut in temp_period.cuts.iter() {
             // Cut the assigned track
-            let track = &mut layer_period.signals[cut.track & nsig];
+            let track = &mut layer_period.signals[cut.track % nsig];
             track.cut(
                 cut.dist - layer.spec.cutsize / 2,
                 cut.dist + layer.spec.cutsize / 2,
@@ -342,13 +342,9 @@ impl RawConverter {
                 .get(*assn_id)
                 .ok_or(LayoutError::from("Internal error: invalid assignment"))?;
             // Grab a (mutable) reference to the assigned track
-            let track = &mut layer_period.signals[assn.bot.track & nsig];
-            // Find the segment corresponding to the off-axis coordinate
-            let mut segment = track
-                .segment_at(assn.bot.dist)
-                .ok_or(LayoutError::msg("COULDNT FIND SEGMENT"))?;
-            // Assign both track-segments to the net
-            segment.net = Some(assn.net.clone());
+            let track = &mut layer_period.signals[assn.bot.track % nsig];
+            // And set the net at the assignment's location
+            track.set_net(assn.bot.dist, &assn.net)?;
 
             let e = raw::Element {
                 net: None,
@@ -375,13 +371,9 @@ impl RawConverter {
                 .get(*assn_id)
                 .ok_or(LayoutError::from("Internal error: invalid assignment"))?;
             // Grab a (mutable) reference to the assigned track
-            let track = &mut layer_period.signals[assn.top.track & nsig];
-            // Find the segment corresponding to the off-axis coordinate
-            let mut segment = track
-                .segment_at(assn.top.dist)
-                .ok_or(LayoutError::from("Internal error: invalid segment"))?;
-            // Assign both track-segments to the net
-            segment.net = Some(assn.net.clone());
+            let track = &mut layer_period.signals[assn.top.track % nsig];
+            // And set the net at the assignment's location
+            track.set_net(assn.top.dist, &assn.net)?;
         }
         // Convert all TrackSegments to raw Elements
         for t in layer_period.rails.iter() {
@@ -487,30 +479,29 @@ impl RawConverter {
         track: &Track,
         layer: &validate::ValidMetalLayer,
     ) -> LayoutResult<Vec<raw::Element>> {
-        let elems = track
-            .segments
-            .iter()
-            .map(|seg| match track.dir {
-                Dir::Horiz => raw::Element {
-                    net: seg.net.clone(),
-                    layer: self.layerkeys[layer.index],
-                    purpose: raw::LayerPurpose::Drawing,
-                    inner: raw::Shape::Rect {
+        let mut elems = Vec::new();
+        for seg in &track.segments {
+            // Convert wires only, skip blockages and cuts
+            if let TrackSegmentType::Wire { ref net } = seg.tp {
+                let inner = match track.dir {
+                    Dir::Horiz => raw::Shape::Rect {
                         p0: self.convert_point(seg.start, track.start),
                         p1: self.convert_point(seg.stop, track.start + track.width),
                     },
-                },
-                Dir::Vert => raw::Element {
-                    net: seg.net.clone(),
-                    layer: self.layerkeys[layer.index],
-                    purpose: raw::LayerPurpose::Drawing,
-                    inner: raw::Shape::Rect {
+                    Dir::Vert => raw::Shape::Rect {
                         p0: self.convert_point(track.start, seg.start),
                         p1: self.convert_point(track.start + track.width, seg.stop),
                     },
-                },
-            })
-            .collect();
+                };
+                let e = raw::Element {
+                    net: net.clone(),
+                    layer: self.layerkeys[layer.index],
+                    purpose: raw::LayerPurpose::Drawing,
+                    inner,
+                };
+                elems.push(e);
+            }
+        }
         Ok(elems)
     }
     /// Create a [TempCellLayer] for the intersection of `temp_cell` and `layer`

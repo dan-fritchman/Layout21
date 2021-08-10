@@ -42,18 +42,22 @@ fn stack() -> LayoutResult<Stack> {
             },
             Layer {
                 name: "met2".into(),
-                entries: vec![
-                    TrackSpec::gnd(510),
-                    TrackSpec::pat(vec![TrackEntry::gap(410), TrackEntry::sig(50)], 8),
-                    TrackSpec::gap(410),
-                    TrackSpec::pwr(510),
-                ],
+                entries: vec![TrackSpec::sig(140), TrackSpec::gap(320)],
+                // entries: vec![
+                //     TrackSpec::gnd(510),
+                //     TrackSpec::pat(vec![TrackEntry::gap(410), TrackEntry::sig(50)], 8),
+                //     TrackSpec::gap(410),
+                //     TrackSpec::pwr(510),
+                // ],
+                // offset: (-255).into(),
+                // overlap: (510).into(),
+                // flip: FlipMode::EveryOther,
                 dir: Dir::Vert,
                 cutsize: (250).into(),
-                offset: (-255).into(),
-                overlap: (510).into(),
+                offset: (-70).into(),
+                overlap: (0).into(),
                 raw: Some(raw::Layer::from_pairs(69, &metal_purps)?),
-                flip: FlipMode::EveryOther,
+                flip: FlipMode::None,
                 prim: PrimitiveMode::None,
             },
             Layer {
@@ -382,7 +386,7 @@ fn create_lib4() -> Result<(), LayoutError> {
         abstrakt::LayoutAbstract {
             name: "UnitCell".into(),
             top_layer: 0,
-            outline: Outline::rect(20, 1)?,
+            outline: Outline::rect(20, 2)?,
             ports: vec![
                 abstrakt::Port {
                     name: "inp".into(),
@@ -410,18 +414,58 @@ fn create_lib4() -> Result<(), LayoutError> {
         .map(|k| Instance {
             inst_name: format!("inst{}", k),
             cell: c2,
-            loc: (21 * k, 0).into(),
+            loc: (11 + (k % 3) * 23, 2 + 3 * (k / 3)).into(),
             reflect: false,
             angle: None,
         })
         .collect();
+    // Create assignments and cuts
+    let mut assignments = Vec::new();
+    let mut cuts = Vec::new();
+    for k in 0..9_isize {
+        let track = 23 * (k as usize % 3) + 32;
+        let a = Assign {
+            net: format!("dly{}", k),
+            at: TrackIntersection {
+                layer: 1,
+                track,
+                at: 15 + 21 * (k as usize / 3),
+                relz: RelZ::Below,
+            },
+        };
+        assignments.push(a);
+        let a = Assign {
+            net: format!("dly{}", k),
+            at: TrackIntersection {
+                layer: 1,
+                track,
+                at: 19 + 21 * (k as usize / 3),
+                relz: RelZ::Below,
+            },
+        };
+        assignments.push(a);
+        let c = TrackIntersection {
+            layer: 1,
+            track,
+            at: 14 + 21 * (k as usize / 3),
+            relz: RelZ::Below,
+        };
+        cuts.push(c);
+        let c = TrackIntersection {
+            layer: 1,
+            track,
+            at: 21 + 21 * (k as usize / 3),
+            relz: RelZ::Below,
+        };
+        cuts.push(c);
+    }
     let c = LayoutImpl {
         name: "HasUnits".into(),
         top_layer: 3,
-        outline: Outline::rect(300, 2)?,
+        outline: Outline::rect(300, 10)?,
         instances,
-        assignments: Vec::new(),
-        cuts: Vec::new(),
+        assignments,
+        cuts,
     };
     let _c = lib.cells.insert(c.into());
     exports(lib)

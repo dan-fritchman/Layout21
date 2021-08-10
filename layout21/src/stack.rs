@@ -176,7 +176,9 @@ impl Layer {
                             start: cursor,
                             width: d,
                             segments: vec![TrackSegment {
-                                net: Some(railkind.to_string()), // FIXME!
+                                tp: TrackSegmentType::Wire {
+                                    net: Some(railkind.to_string()),
+                                },
                                 start: 0.into(),
                                 stop,
                             }],
@@ -193,7 +195,7 @@ impl Layer {
                             start: cursor,
                             width: d,
                             segments: vec![TrackSegment {
-                                net: None,
+                                tp: TrackSegmentType::Wire { net: None },
                                 start: 0.into(),
                                 stop,
                             }],
@@ -305,49 +307,79 @@ impl Track {
         }
         None
     }
-    /// Cut all of our segments from `start` to `stop`
-    pub fn cut(&mut self, start: DbUnits, stop: DbUnits) -> LayoutResult<()> {
+    /// Set the net of the track-segment at `at` to `net`
+    pub fn set_net(&mut self, at: DbUnits, netname: impl Into<String>) -> LayoutResult<()> {
+        let mut seg = self.segment_at(at);
+        match seg {
+            None => Err(format!("{:?} has no segment at {:?}", self, at).into()),
+            Some(seg) => match seg.tp {
+                TrackSegmentType::Blockage => {
+                    Err(format!("Cannot set net on Blockage at {:?}, {:?}", self, at).into())
+                }
+                TrackSegmentType::Cut => {
+                    Err(format!("Cannot set net on Cut at {:?}, {:?}", self, at).into())
+                }
+                TrackSegmentType::Wire { ref mut net } => {
+                    net.replace(netname.into());
+                    Ok(())
+                }
+            },
+        }
+    }
+    /// Insert a blockage from `start` to `stop`.
+    /// Fails if the region is not a contiguous wire segment.
+    pub fn cut_or_block(
+        &mut self,
+        start: DbUnits,
+        stop: DbUnits,
+        tp: TrackSegmentType,
+    ) -> LayoutResult<()> {
         if self.segments.len() == 0 || stop <= start {
             return Err(LayoutError::msg("Error Cutting Track"));
         }
-        // Find the segment to be cut
-        let mut to_be_removed: Vec<usize> = Vec::new();
-        let mut to_be_inserted: Option<(usize, TrackSegment)> = None;
-        for (idx, seg) in self.segments.iter_mut().enumerate() {
-            if seg.start > stop {
-                // Loop done case
-                break;
-            } else if start > seg.stop {
-                // Uninvolved, carry on
-                continue;
-            } else if start <= seg.start && stop >= seg.stop {
-                // Removal case; cut covers entire segment
-                to_be_removed.push(idx);
-            } else if start > seg.start && start <= seg.stop && stop >= seg.stop {
-                // Stop-side trim case
-                seg.stop = start;
-            } else if start <= seg.start && stop > seg.start && stop < seg.stop {
-                // Start-side trim case
-                seg.start = stop;
-            } else if start > seg.start && stop < seg.stop {
-                // Internal cut case
-                let mut new_seg = seg.clone();
-                new_seg.stop = start;
-                seg.start = stop;
-                to_be_inserted = Some((idx, new_seg));
-            } else {
-                return Err(LayoutError::msg("Internal Error: Track::cut"));
-            }
+        let segidx = self
+            .segments
+            .iter_mut()
+            .position(|seg| seg.stop >= start)
+            .ok_or(LayoutError::msg("Error Cutting Track"))?
+            .clone();
+        let seg = &mut self.segments[segidx];
+        if seg.tp == TrackSegmentType::Cut
+            || seg.tp == TrackSegmentType::Blockage
+            || seg.stop < stop
+        {
+            return Err(LayoutError::msg("Error Cutting Track"));
         }
-        if let Some((idx, seg)) = to_be_inserted {
+        // All clear; time to cut it.
+        let blockage = TrackSegment { tp, start, stop };
+        // In the more-common case in which the cut-end and segment-end *do not* coincide,
+        // create and insert a new segment.
+        let mut to_be_inserted: Vec<(usize, TrackSegment)> = Vec::new();
+        to_be_inserted.push((segidx + 1, blockage));
+        if seg.stop != stop {
+            let newseg = TrackSegment {
+                tp: TrackSegmentType::Wire { net: None },
+                start: stop,
+                stop: seg.stop,
+            };
+            to_be_inserted.push((segidx + 2, newseg));
+        }
+        // Update the existing segment (and importantly, drop its mutable borrow)
+        seg.stop = start;
+        for (idx, seg) in to_be_inserted {
             self.segments.insert(idx, seg);
-        } else {
-            // Remove any fully-cut elements, in reverse order so as to not screw up indices
-            for idx in to_be_removed.iter().rev() {
-                self.segments.remove(*idx);
-            }
         }
         Ok(())
+    }
+    /// Insert a blockage from `start` to `stop`.
+    /// Fails if the region is not a contiguous wire segment.
+    pub fn block(&mut self, start: DbUnits, stop: DbUnits) -> LayoutResult<()> {
+        self.cut_or_block(start, stop, TrackSegmentType::Blockage)
+    }
+    /// Cut from `start` to `stop`.
+    /// Fails if the region is not a contiguous wire segment.
+    pub fn cut(&mut self, start: DbUnits, stop: DbUnits) -> LayoutResult<()> {
+        self.cut_or_block(start, stop, TrackSegmentType::Cut)
     }
     /// Set the stop position for our last [TrackSegment] to `stop`
     pub fn stop(&mut self, stop: DbUnits) -> LayoutResult<()> {
@@ -391,7 +423,6 @@ impl LayerPeriod {
         Ok(())
     }
     /// Cut all [Track]s from `start` to `stop`,
-    /// cutting, shortening, or deleting `segments` along the way
     pub fn cut(&mut self, start: DbUnits, stop: DbUnits) -> LayoutResult<()> {
         for t in self.rails.iter_mut() {
             t.cut(start, stop)?;
@@ -401,16 +432,32 @@ impl LayerPeriod {
         }
         Ok(())
     }
+    /// Block all [Track]s from `start` to `stop`,
+    pub fn block(&mut self, start: DbUnits, stop: DbUnits) -> LayoutResult<()> {
+        for t in self.rails.iter_mut() {
+            t.block(start, stop)?;
+        }
+        for t in self.signals.iter_mut() {
+            t.block(start, stop)?;
+        }
+        Ok(())
+    }
 }
 /// # Segments of un-split, single-net wire on a [Track]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrackSegment {
-    /// Net Name
-    pub net: Option<String>,
+    /// Segment-Type
+    pub tp: TrackSegmentType,
     /// Start Location, in [Stack]'s `units`
     pub start: DbUnits,
     /// End/Stop Location, in [Stack]'s `units`
     pub stop: DbUnits,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum TrackSegmentType {
+    Cut,
+    Blockage,
+    Wire { net: Option<String> },
 }
 /// Intersection Between Adjacent Layers in [Track]-Space
 #[derive(Debug, Clone, Serialize, Deserialize)]
