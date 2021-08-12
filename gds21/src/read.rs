@@ -1,0 +1,818 @@
+//!
+//! # Gds21 Reading & Scanning
+//!
+
+use super::*;
+
+/// Size (in bytes) of the read/decode buffer array
+const READER_BUFSIZE: usize = 65537;
+/// # GdsReader
+/// Helper for parsing and scanning GDS coming from files and similar sources.
+pub struct GdsReader {
+    /// Read/conversion buffer
+    buf: [u8; READER_BUFSIZE], // FIXME: confirm buffer size
+    /// File being read
+    file: Cursor<Mmap>,
+    // Note: past/alternate versions use an API-compatible [BufReader<File>], like so:
+    // file: BufReader<File>,
+    // Both implement the [Read] and [Seek] traits required by most of [GdsReader]'s methods.
+    // The memory-mapping is *much* faster for initial scanning,
+    // as [BufReader] seems to have an extra-slow [Seek] implementation.
+    // This comes at the cost of injecting the memory-un-safety of loading the [Mmap].
+}
+impl GdsReader {
+    /// Create a [GdsReader], opening [File] at path `fname`
+    pub fn open(fname: &str) -> GdsResult<GdsReader> {
+        Self::from_file(File::open(fname)?)
+    }
+    /// Create a [GdsReader] of [File] `file`
+    pub fn from_file(file: File) -> GdsResult<GdsReader> {
+        // This is our one line of `unsafe`, for loading memory-mapped data.
+        let mmap = unsafe { Mmap::map(&file)? };
+        let cursor = Cursor::new(mmap);
+        Ok(Self::new(cursor))
+    }
+    /// Create a [GdsReader] of `file`
+    pub fn new(file: Cursor<Mmap>) -> GdsReader {
+        GdsReader {
+            file,
+            buf: [0; READER_BUFSIZE],
+        }
+    }
+    /// Read the next record-header from our file.
+    /// Returns a [GdsRecordHeader] if successful.
+    fn read_record_header(&mut self) -> GdsResult<GdsRecordHeader> {
+        // Read the 16-bit record-size. (In bytes, including the four header bytes.)
+        let len = match self.file.read_u16::<BigEndian>() {
+            Err(ref e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                return Err(GdsError::Decode); // Unexpected end-of-file without `EndLib`
+            }
+            Err(_) => return Err(GdsError::Decode), // Some other kinda error; raise it.
+            Ok(num) if num < 4 => return Err(GdsError::RecordLen(num as usize)), // Invalid (too short) length; throw Error.
+            Ok(num) if num % 2 != 0 => return Err(GdsError::RecordLen(num as usize)), // Invalid (odd) length; throw Error.
+            Ok(num) => num, // The normal case
+        };
+        let len = len - 4; // Strip out the four header-bytes
+                           // Read and decode its RecordType
+        let record_type = self.file.read_u8()?;
+        let record_type: GdsRecordType =
+            FromPrimitive::from_u8(record_type).ok_or(GdsError::InvalidRecordType(record_type))?;
+        if !record_type.valid() {
+            return Err(GdsError::InvalidRecordType(record_type as u8));
+        }
+        // Read and decode its DataType
+        let data_type = self.file.read_u8()?;
+        let data_type =
+            FromPrimitive::from_u8(data_type).ok_or(GdsError::InvalidDataType(data_type))?;
+        Ok(GdsRecordHeader {
+            rtype: record_type,
+            dtype: data_type,
+            len,
+        })
+    }
+    /// Read the next binary-encoded [GdsRecord].
+    /// Returns a [GdsError] if `file` cursor is not on a record-boundary,
+    /// or if binary decoding otherwise fails.
+    fn read_record(&mut self) -> GdsResult<GdsRecord> {
+        // Read the record header (types and length)
+        let header = self.read_record_header()?;
+        // And read the content
+        self.read_record_content(&header)
+    }
+    fn read_record_content(&mut self, header: &GdsRecordHeader) -> GdsResult<GdsRecord> {
+        // Based on that header-data, decode to a [GdsRecord]
+        use GdsDataType::{BitArray, NoData, Str, F64, I16, I32};
+        let len = header.len;
+        let record: GdsRecord = match (header.rtype, header.dtype, len) {
+            // Library-Level Records
+            (GdsRecordType::Header, I16, 2) => GdsRecord::Header {
+                version: self.read_i16(len)?[0],
+            },
+            (GdsRecordType::BgnLib, I16, 24) => GdsRecord::BgnLib {
+                dates: self.read_i16(len)?,
+            },
+            (GdsRecordType::LibName, Str, _) => GdsRecord::LibName(self.read_str(len)?),
+            (GdsRecordType::Units, F64, 16) => {
+                let v = self.read_f64(len)?;
+                GdsRecord::Units(v[0], v[1])
+            }
+            (GdsRecordType::EndLib, NoData, 0) => GdsRecord::EndLib,
+
+            // Structure (Cell) Level Records
+            (GdsRecordType::BgnStruct, I16, 24) => GdsRecord::BgnStruct {
+                dates: self.read_i16(len)?,
+            },
+            (GdsRecordType::StructName, Str, _) => GdsRecord::StructName(self.read_str(len)?),
+            (GdsRecordType::StructRefName, Str, _) => GdsRecord::StructRefName(self.read_str(len)?),
+            (GdsRecordType::EndStruct, NoData, 0) => GdsRecord::EndStruct,
+
+            // Element-Level Records
+            (GdsRecordType::Boundary, NoData, 0) => GdsRecord::Boundary,
+            (GdsRecordType::Path, NoData, 0) => GdsRecord::Path,
+            (GdsRecordType::StructRef, NoData, 0) => GdsRecord::StructRef,
+            (GdsRecordType::ArrayRef, NoData, 0) => GdsRecord::ArrayRef,
+            (GdsRecordType::Text, NoData, 0) => GdsRecord::Text,
+            (GdsRecordType::Layer, I16, 2) => GdsRecord::Layer(self.read_i16(len)?[0]),
+            (GdsRecordType::DataType, I16, 2) => GdsRecord::DataType(self.read_i16(len)?[0]),
+            (GdsRecordType::Width, I32, 4) => GdsRecord::Width(self.read_i32(len)?[0]),
+            (GdsRecordType::Xy, I32, _) => GdsRecord::Xy(self.read_i32(len)?),
+            (GdsRecordType::EndElement, NoData, 0) => GdsRecord::EndElement,
+
+            // More (less well-categorized here) record-types
+            (GdsRecordType::ColRow, I16, 4) => {
+                let d = self.read_i16(len)?;
+                GdsRecord::ColRow {
+                    cols: d[0],
+                    rows: d[1],
+                }
+            }
+            (GdsRecordType::Node, NoData, 0) => GdsRecord::Node,
+            (GdsRecordType::TextType, I16, 2) => GdsRecord::TextType(self.read_i16(len)?[0]),
+            (GdsRecordType::Presentation, BitArray, 2) => {
+                let bytes = self.read_bytes(len)?;
+                GdsRecord::Presentation(bytes[0], bytes[1])
+            }
+            (GdsRecordType::String, Str, _) => GdsRecord::String(self.read_str(len)?),
+            (GdsRecordType::Strans, BitArray, 2) => {
+                let bytes = self.read_bytes(len)?;
+                GdsRecord::Strans(bytes[0], bytes[1])
+            }
+            (GdsRecordType::Mag, F64, 8) => GdsRecord::Mag(self.read_f64(len)?[0]),
+            (GdsRecordType::Angle, F64, 8) => GdsRecord::Angle(self.read_f64(len)?[0]),
+            (GdsRecordType::RefLibs, Str, _) => GdsRecord::RefLibs(self.read_str(len)?),
+            (GdsRecordType::Fonts, Str, _) => GdsRecord::Fonts(self.read_str(len)?),
+            (GdsRecordType::PathType, I16, 2) => GdsRecord::PathType(self.read_i16(len)?[0]),
+            (GdsRecordType::Generations, I16, 2) => GdsRecord::Generations(self.read_i16(len)?[0]),
+            (GdsRecordType::AttrTable, Str, _) => GdsRecord::AttrTable(self.read_str(len)?),
+            (GdsRecordType::ElemFlags, BitArray, 2) => {
+                let bytes = self.read_bytes(len)?;
+                GdsRecord::ElemFlags(bytes[0], bytes[1])
+            }
+            (GdsRecordType::Nodetype, I16, 2) => GdsRecord::Nodetype(self.read_i16(len)?[0]),
+            (GdsRecordType::PropAttr, I16, 2) => GdsRecord::PropAttr(self.read_i16(len)?[0]),
+            (GdsRecordType::PropValue, Str, _) => GdsRecord::PropValue(self.read_str(len)?),
+            (GdsRecordType::Box, NoData, 0) => GdsRecord::Box,
+            (GdsRecordType::BoxType, I16, 2) => GdsRecord::BoxType(self.read_i16(len)?[0]),
+            (GdsRecordType::Plex, I32, 4) => GdsRecord::Plex(self.read_i32(len)?[0]),
+            (GdsRecordType::BeginExtn, I32, 4) => GdsRecord::BeginExtn(self.read_i32(len)?[0]),
+            (GdsRecordType::EndExtn, I32, 4) => GdsRecord::EndExtn(self.read_i32(len)?[0]),
+            (GdsRecordType::TapeNum, I16, 2) => GdsRecord::TapeNum(self.read_i16(len)?[0]),
+            (GdsRecordType::TapeCode, I16, 12) => GdsRecord::TapeCode(self.read_i16(len)?),
+            (GdsRecordType::Format, I16, 2) => GdsRecord::Format(self.read_i16(len)?[0]),
+            (GdsRecordType::Mask, Str, _) => GdsRecord::Mask(self.read_str(len)?),
+            (GdsRecordType::EndMasks, NoData, 0) => GdsRecord::EndMasks,
+            (GdsRecordType::LibDirSize, I16, 2) => GdsRecord::LibDirSize(self.read_i16(len)?[0]),
+            (GdsRecordType::SrfName, Str, _) => GdsRecord::SrfName(self.read_str(len)?),
+            (GdsRecordType::LibSecur, I16, 2) => GdsRecord::LibSecur(self.read_i16(len)?[0]),
+
+            // Failing to meet any of these clauses means this is an invalid record
+            _ => return Err(GdsError::RecordDecode(header.rtype, header.dtype, len)),
+        };
+        Ok(record)
+    }
+    /// Read `len` bytes and convert to `String`
+    fn read_str(&mut self, len: u16) -> GdsResult<String> {
+        let len: usize = len.into();
+        // ASCII Decode. First load bytes into our buffer.
+        let mut data = &mut self.buf[0..len];
+        self.file.read_exact(data)?;
+        // Strip optional end-of-string chars
+        let len = data.len();
+        if data[len - 1] == 0x00 {
+            data = &mut data[0..len - 1];
+        }
+        // And convert to string
+        let s: String = std::str::from_utf8(&data)?.into();
+        Ok(s)
+    }
+    /// Read `len` bytes
+    fn read_bytes(&mut self, len: u16) -> Result<Vec<u8>, std::io::Error> {
+        let len: usize = len.into();
+        let mut rv: Vec<u8> = vec![0; len];
+        self.file.read_exact(&mut rv[0..len])?;
+        Ok(rv)
+    }
+    /// Read `len/2` i16s from `len` bytes
+    fn read_i16(&mut self, len: u16) -> Result<Vec<i16>, std::io::Error> {
+        let len: usize = len.into();
+        self.file.read_exact(&mut self.buf[0..len])?;
+        let mut rv: Vec<i16> = vec![0; len / 2];
+        self.buf[0..len]
+            .as_ref()
+            .read_i16_into::<BigEndian>(&mut rv)?;
+        Ok(rv)
+    }
+    /// Read `len/4` i32s from `len` bytes
+    fn read_i32(&mut self, len: u16) -> Result<Vec<i32>, std::io::Error> {
+        let len: usize = len.into();
+        self.file.read_exact(&mut self.buf[0..len])?;
+        let mut rv: Vec<i32> = vec![0; len / 4];
+        self.buf[0..len]
+            .as_ref()
+            .read_i32_into::<BigEndian>(&mut rv)?;
+        Ok(rv)
+    }
+    /// Read `len/8` f64s from `len` bytes, decoding GDS's float-format along the way
+    fn read_f64(&mut self, len: u16) -> GdsResult<Vec<f64>> {
+        let len: usize = len.into();
+        // This is more fun, as it requires first grabbing "gds floats",
+        // which we capture as eight-byte Vec<u8>, and then convert to IEEE-standard floats.
+        let mut data = Vec::<f64>::with_capacity(len / 8);
+        for _ in 0..(len / 8) {
+            let bytes = self.read_bytes(8)?;
+            data.push(GdsFloat64::decode(&bytes)?);
+        }
+        Ok(data)
+    }
+}
+/// # GdsStructScan
+/// Typically generated by first-pass file scanning.
+/// Stores a struct name and byte-offsets in its source file.
+#[derive(Debug, Default)]
+pub struct GdsStructScan {
+    /// Struct Name
+    name: String,
+    /// Starting byte offset, at beginning of [BgnStruct]
+    start: u64,
+    /// Ending byte offset, at end of [EndStruct]
+    end: u64,
+}
+/// # GdsScanner
+/// Scans a file for [GdsStruct] definitions,
+/// creating a first-pass list of their names and byte-locations.
+pub struct GdsScanner {
+    /// Reader-helper
+    rdr: GdsReader,
+    /// Next record-header, stored for peeking
+    nxt: GdsRecordHeader,
+}
+impl GdsScanner {
+    /// Create a new GdsReader iterator
+    pub fn new(mut rdr: GdsReader) -> GdsResult<Self> {
+        // Decode the first record to initialize our "peeker"
+        let nxt = rdr.read_record_header()?;
+        Ok(Self { rdr, nxt })
+    }
+    /// Open and scan structs in file `fname`
+    pub fn scan(fname: &str) -> GdsResult<Vec<GdsStructScan>> {
+        let rdr = GdsReader::open(fname)?;
+        let mut me = Self::new(rdr)?;
+        me.scan_lib()
+    }
+    /// Expect / require the next record to be of type `rtype`
+    /// Skips over the remainder of its content, if any.
+    fn expect(&mut self, rtype: GdsRecordType) -> GdsResult<()> {
+        if self.peek().rtype == rtype {
+            // Success. Skip over the record and advance to the next.
+            self.skip()
+        } else {
+            self.fail()
+        }
+    }
+    /// Get the next record's header, asserting it must be of type `rtype`.
+    /// Consuming the remainder of the record is left to the caller.
+    fn get(&mut self, rtype: GdsRecordType) -> GdsResult<&GdsRecordHeader> {
+        if self.peek().rtype == rtype {
+            Ok(self.peek())
+        } else {
+            self.fail()
+        }
+    }
+    /// Advance our iterator and return the next element
+    fn next(&mut self) -> GdsResult<GdsRecordHeader> {
+        if self.peek().rtype == GdsRecordType::EndLib {
+            // Once we reach [EndLib], keep returning it forever
+            return Ok(self.peek().clone());
+        }
+        // Decode a new header and swap it with our `nxt`
+        let mut rv = self.rdr.read_record_header()?;
+        mem::swap(&mut rv, &mut self.nxt);
+        Ok(rv)
+    }
+    /// Skip over the current record's content, if any, and load the next.
+    fn skip(&mut self) -> GdsResult<()> {
+        let len = self.nxt.len.into();
+        self.rdr.file.seek(SeekFrom::Current(len))?;
+        self.next()?;
+        Ok(())
+    }
+    /// Peek at our next record, without advancing
+    #[inline(always)]
+    fn peek(&self) -> &GdsRecordHeader {
+        &self.nxt
+    }
+    /// Scan the GDS for cell/ struct definitions
+    pub fn scan_lib(&mut self) -> GdsResult<Vec<GdsStructScan>> {
+        // Read off header info
+        self.expect(GdsRecordType::Header)?;
+        self.expect(GdsRecordType::BgnLib)?;
+        // Read the Library name
+        let len = self.get(GdsRecordType::LibName)?.len;
+        let _lib_name = self.rdr.read_str(len)?;
+        self.next()?;
+        // More header info
+        self.expect(GdsRecordType::Units)?;
+
+        // Scan all of the structs
+        let mut strukts = Vec::<GdsStructScan>::with_capacity(1024);
+        loop {
+            let GdsRecordHeader { rtype, .. } = self.peek();
+            match rtype {
+                GdsRecordType::EndLib => break,
+                GdsRecordType::BgnStruct => strukts.push(self.scan_struct()?),
+                _ => return self.fail(),
+            }
+        }
+        Ok(strukts)
+    }
+    /// Scan a single struct definition.
+    /// Starts *after* the [BgnStruct] *header* has been read (just above).
+    /// Returns a [GdsStructScan] if successful.
+    fn scan_struct(&mut self) -> GdsResult<GdsStructScan> {
+        // Create our scan-structure, and store the start-position of the struct.
+        // Note this requires backing up the four header bytes.
+        let mut s = GdsStructScan::default();
+        s.start = self.pos() - 4;
+        // Skip over the remainder of the [BeginStruct] header
+        self.skip()?;
+
+        // Read the Struct name
+        let len = self.get(GdsRecordType::StructName)?.len;
+        s.name = self.rdr.read_str(len)?;
+        self.next()?;
+
+        // Scan the struct content. Skip over everything until [EndStruct]
+        loop {
+            let GdsRecordHeader { rtype, .. } = self.peek();
+            match rtype {
+                GdsRecordType::EndStruct => {
+                    // Note the `len` of [EndStruct] is also zero, so we need not adjust the `end` position.
+                    s.end = self.pos();
+                    self.skip()?;
+                    break;
+                }
+                // While *many* record-types are invalid here,
+                // there's at least one we should check for: end-of-library,
+                // Lest we find one and get stuck forever.
+                GdsRecordType::EndLib => return self.fail(),
+                // Everything else: skip and continue
+                _ => self.skip()?,
+            }
+        }
+        Ok(s)
+    }
+    /// Get the current file position
+    fn pos(&mut self) -> u64 {
+        // Note `unwrap` here never panics, as [Cursor.stream_position] *always* returns `Ok`
+        self.rdr.file.stream_position().unwrap()
+    }
+    /// Error generation helper
+    fn err(&mut self) -> GdsError {
+        let pos = self.pos();
+        GdsError::Str(format!(
+            "Scanned Invalid Record {:?} at Byte Position {}",
+            self.nxt.rtype, pos
+        ))
+    }
+    /// Error generation helper
+    fn fail<T>(&mut self) -> GdsResult<T> {
+        Err(self.err())
+    }
+}
+/// # GdsParser
+/// A peekable iterator which loads GdsRecords from file, one at a time,
+/// and converters them into a tree of Gds data structures.
+pub struct GdsParser {
+    /// File being read
+    rdr: GdsReader,
+    /// Next record, stored for peeking
+    nxt: GdsRecord,
+    /// Number of records read
+    numread: usize,
+}
+impl GdsParser {
+    /// Create a new GdsReader iterator for the file at path `fname`
+    pub fn open(fname: &str) -> GdsResult<GdsParser> {
+        let rdr = GdsReader::open(fname)?;
+        Self::new(rdr)
+    }
+    /// Create a new GdsReader iterator
+    pub fn new(mut rdr: GdsReader) -> GdsResult<GdsParser> {
+        // Decode the first record to initialize our "peeker"
+        let nxt = rdr.read_record()?;
+        Ok(GdsParser {
+            rdr,
+            nxt,
+            numread: 1,
+        })
+    }
+    /// Advance our iterator and return the next element
+    fn next(&mut self) -> GdsResult<GdsRecord> {
+        if self.nxt == GdsRecord::EndLib {
+            // Once we reach [EndLib], keep returning it forever
+            return Ok(GdsRecord::EndLib);
+        }
+        // Decode a new Record and swap it with our `nxt`
+        let mut rv = self.rdr.read_record()?;
+        mem::swap(&mut rv, &mut self.nxt);
+        self.numread += 1;
+        Ok(rv)
+    }
+    /// Peek at our next record, without advancing
+    fn peek(&self) -> &GdsRecord {
+        &self.nxt
+    }
+    /// Parse a [GdsLibrary]. Generally the start-state when reading a GDS file.
+    pub fn parse_lib(&mut self) -> GdsResult<GdsLibrary> {
+        let mut lib = GdsLibraryBuilder::default();
+        let mut structs = Vec::<GdsStruct>::with_capacity(1024);
+        // Read the Header and its version data
+        lib = match self.next()? {
+            GdsRecord::Header { version: v } => lib.version(v),
+            _ => return Err(GdsError::Decode),
+        };
+        // Read the begin-lib
+        lib = match self.next()? {
+            GdsRecord::BgnLib { dates: d } => lib.dates(GdsDateTimes::parse(d)?),
+            _ => return Err(GdsError::Decode),
+        };
+        // Iterate over all others
+        loop {
+            let r = self.next()?;
+            lib = match r {
+                GdsRecord::EndLib => break, // End-of-library
+                GdsRecord::LibName(d) => lib.name(d),
+                GdsRecord::Units(d0, d1) => lib.units(GdsUnits(d0, d1)),
+                GdsRecord::BgnStruct { dates } => {
+                    let strukt = GdsStruct::parse(self, dates)?;
+                    structs.push(strukt);
+                    lib
+                }
+                // Spec-valid but unsupported records
+                GdsRecord::LibDirSize(_)
+                | GdsRecord::SrfName(_)
+                | GdsRecord::LibSecur(_)
+                | GdsRecord::RefLibs(_)
+                | GdsRecord::Fonts(_)
+                | GdsRecord::AttrTable(_)
+                | GdsRecord::Generations(_)
+                | GdsRecord::Format(_) => {
+                    return Err(GdsError::Unsupported(Some(r), Some(GdsContext::Library)))
+                }
+                // Invalid
+                _ => return Err(GdsError::RecordContext(r, GdsContext::Library)),
+            };
+        }
+        // Add the Vec of structs, and create the Library from its builder
+        lib = lib.structs(structs);
+        Ok(lib.build()?)
+    }
+    /// JSON-Serialize and write (all) contents of the Iterator to `writer`
+    #[cfg(any(test, feature = "selftest"))]
+    fn write_records(&mut self, writer: &mut impl Write) -> GdsResult<()> {
+        loop {
+            let r = self.next()?;
+            if r == GdsRecord::EndLib {
+                return Ok(());
+            }
+            let entry: (usize, GdsRecord) = (self.numread, r);
+            let s = serde_json::to_string(&entry).unwrap();
+            write!(writer, "\t")?;
+            writer.write_all(s.as_bytes()).unwrap();
+            write!(writer, ",\n")?;
+        }
+    }
+    /// Open a GDS file `gds` and write all GdsRecords to JSON file `json`
+    #[cfg(any(test, feature = "selftest"))]
+    pub fn dump(gds: &str, json: &str) -> GdsResult<()> {
+        // This streams one record at a time, rather than loading all into memory.
+        // Create a ReaderIter from `gds`
+        let mut me = Self::open(gds)?;
+        // Create the JSON file
+        let mut w = BufWriter::new(File::create(json)?);
+        // Write it as a JSON list/sequence; add the opening bracket
+        write!(w, "[\n")?;
+        // Write all the records
+        me.write_records(&mut w)?;
+        // And close the list
+        write!(w, "]\n")?;
+        Ok(())
+    }
+}
+impl GdsProperty {
+    /// Parse from record-iterator `it`
+    /// Numeric attribute `attr` is collected beforehand,
+    /// as its record is the indication to parse an (attr, value) pair.
+    fn parse(it: &mut GdsParser, attr: i16) -> GdsResult<Self> {
+        // `PropAttr` records must *immediately* be followed by `PropValue`,
+        // or parsing/ decoding fails.
+        let value = if let GdsRecord::PropValue(v) = it.next()? {
+            v
+        } else {
+            return Err(GdsError::Decode);
+        };
+        Ok(Self { attr, value })
+    }
+}
+
+impl GdsPath {
+    /// Parse from record-iterator `it`
+    fn parse(it: &mut GdsParser) -> GdsResult<GdsPath> {
+        let mut b = GdsPathBuilder::default();
+        let mut props: Vec<GdsProperty> = Vec::new();
+
+        loop {
+            let r = it.next()?;
+            b = match r {
+                GdsRecord::EndElement => break, // End-of-element
+                GdsRecord::Layer(d) => b.layer(d),
+                GdsRecord::DataType(d) => b.datatype(d),
+                GdsRecord::Xy(d) => b.xy(GdsPoint::parse_vec(&d)?),
+                GdsRecord::Width(d) => b.width(d),
+                GdsRecord::PathType(d) => b.path_type(d),
+                GdsRecord::BeginExtn(d) => b.begin_extn(d),
+                GdsRecord::EndExtn(d) => b.end_extn(d),
+                GdsRecord::Plex(d) => b.plex(GdsPlex(d)),
+                GdsRecord::ElemFlags(d0, d1) => b.elflags(GdsElemFlags(d0, d1)),
+                GdsRecord::PropAttr(attr) => {
+                    props.push(GdsProperty::parse(it, attr)?);
+                    b
+                }
+                // Invalid
+                _ => return Err(GdsError::RecordContext(r, GdsContext::Path)),
+            };
+        }
+        b = b.properties(props);
+        Ok(b.build()?)
+    }
+}
+
+impl GdsArrayRef {
+    fn parse(it: &mut GdsParser) -> GdsResult<GdsArrayRef> {
+        let mut b = GdsArrayRefBuilder::default();
+        let mut props: Vec<GdsProperty> = Vec::new();
+
+        loop {
+            let r = it.next()?;
+            b = match r {
+                GdsRecord::EndElement => break, // End-of-element
+                GdsRecord::StructRefName(d) => b.name(d),
+                GdsRecord::ColRow { rows, cols } => b.rows(rows).cols(cols),
+                GdsRecord::Xy(d) => {
+                    // XY coordinates must be a three-element array.
+                    // First parse a generic [GdsRecord::Xy] to a vector,
+                    // and then convert, checking length in the process.
+                    let v = GdsPoint::parse_vec(&d)?;
+                    let xy: [GdsPoint; 3] = match v.try_into() {
+                        Ok(xy) => xy,
+                        Err(_) => {
+                            return Err(GdsError::Str("Invalid XY for GdsArrayRef".into()));
+                        }
+                    };
+                    b.xy(xy)
+                }
+                GdsRecord::Plex(d) => b.plex(GdsPlex(d)),
+                GdsRecord::ElemFlags(d0, d1) => b.elflags(GdsElemFlags(d0, d1)),
+                GdsRecord::Strans(d0, d1) => b.strans(GdsStrans::parse(it, d0, d1)?),
+                GdsRecord::PropAttr(attr) => {
+                    props.push(GdsProperty::parse(it, attr)?);
+                    b
+                }
+                // Invalid
+                _ => return Err(GdsError::RecordContext(r, GdsContext::ArrayRef)),
+            };
+        }
+        b = b.properties(props);
+        Ok(b.build()?)
+    }
+}
+
+impl GdsTextElem {
+    /// Parse a [GdsTextElem] from an iterator of [GdsRecord]s.
+    /// Assumes the initial `Text` record has already been parsed.
+    fn parse(it: &mut GdsParser) -> GdsResult<GdsTextElem> {
+        let mut b = GdsTextElemBuilder::default();
+        let mut props: Vec<GdsProperty> = Vec::new();
+
+        loop {
+            let r = it.next()?;
+            b = match r {
+                GdsRecord::EndElement => break, // End-of-element
+                GdsRecord::Layer(d) => b.layer(d),
+                GdsRecord::TextType(d) => b.texttype(d),
+                GdsRecord::Xy(d) => b.xy(GdsPoint::parse(&d)?),
+                GdsRecord::String(d) => b.string(d),
+                GdsRecord::Presentation(d0, d1) => b.presentation(GdsPresentation(d0, d1)),
+                GdsRecord::PathType(d) => b.path_type(d),
+                GdsRecord::Width(d) => b.width(d),
+                GdsRecord::Plex(d) => b.plex(GdsPlex(d)),
+                GdsRecord::ElemFlags(d0, d1) => b.elflags(GdsElemFlags(d0, d1)),
+                GdsRecord::Strans(d0, d1) => b.strans(GdsStrans::parse(it, d0, d1)?),
+                GdsRecord::PropAttr(attr) => {
+                    props.push(GdsProperty::parse(it, attr)?);
+                    b
+                }
+                // Invalid
+                _ => return Err(GdsError::RecordContext(r, GdsContext::Text)),
+            };
+        }
+        b = b.properties(props);
+        Ok(b.build()?)
+    }
+}
+
+impl GdsNode {
+    fn parse(it: &mut GdsParser) -> GdsResult<GdsNode> {
+        let mut b = GdsNodeBuilder::default();
+        let mut props: Vec<GdsProperty> = Vec::new();
+
+        loop {
+            let r = it.next()?;
+            b = match r {
+                GdsRecord::EndElement => break, // End-of-element
+                GdsRecord::Layer(d) => b.layer(d),
+                GdsRecord::Nodetype(d) => b.nodetype(d),
+                GdsRecord::Xy(d) => b.xy(GdsPoint::parse_vec(&d)?),
+                GdsRecord::Plex(d) => b.plex(GdsPlex(d)),
+                GdsRecord::ElemFlags(d0, d1) => b.elflags(GdsElemFlags(d0, d1)),
+                GdsRecord::PropAttr(attr) => {
+                    props.push(GdsProperty::parse(it, attr)?);
+                    b
+                }
+                // Invalid
+                _ => return Err(GdsError::RecordContext(r, GdsContext::Node)),
+            };
+        }
+        b = b.properties(props);
+        Ok(b.build()?)
+    }
+}
+
+impl GdsBox {
+    fn parse(it: &mut GdsParser) -> GdsResult<GdsBox> {
+        let mut b = GdsBoxBuilder::default();
+        let mut props: Vec<GdsProperty> = Vec::new();
+
+        loop {
+            let r = it.next()?;
+            b = match r {
+                GdsRecord::EndElement => break, // End-of-element
+                GdsRecord::Layer(d) => b.layer(d),
+                GdsRecord::BoxType(d) => b.boxtype(d),
+                GdsRecord::Xy(d) => {
+                    // XY coordinates must be a five-element array.
+                    // First parse a generic [GdsRecord::Xy] to a vector,
+                    // and then convert, checking length in the process.
+                    let v = GdsPoint::parse_vec(&d)?;
+                    let xy: [GdsPoint; 5] = match v.try_into() {
+                        Ok(xy) => xy,
+                        Err(_) => {
+                            return Err(GdsError::Str("Invalid XY for GdsBox".into()));
+                        }
+                    };
+                    b.xy(xy)
+                }
+                GdsRecord::Plex(d) => b.plex(GdsPlex(d)),
+                GdsRecord::ElemFlags(d0, d1) => b.elflags(GdsElemFlags(d0, d1)),
+                GdsRecord::PropAttr(attr) => {
+                    props.push(GdsProperty::parse(it, attr)?);
+                    b
+                }
+                // Invalid
+                _ => return Err(GdsError::RecordContext(r, GdsContext::Box)),
+            };
+        }
+        b = b.properties(props);
+        Ok(b.build()?)
+    }
+}
+
+impl GdsDateTimes {
+    /// Parse from GDSII's vector of i16's format
+    fn parse(d: Vec<i16>) -> GdsResult<Self> {
+        if d.len() != 12 {
+            return Err(GdsError::Decode);
+        }
+        Ok(Self {
+            modified: NaiveDate::from_ymd(d[0] as i32, d[1] as u32, d[2] as u32).and_hms(
+                d[3] as u32,
+                d[4] as u32,
+                d[5] as u32,
+            ),
+            accessed: NaiveDate::from_ymd(d[6] as i32, d[7] as u32, d[8] as u32).and_hms(
+                d[9] as u32,
+                d[10] as u32,
+                d[11] as u32,
+            ),
+        })
+    }
+}
+impl GdsStruct {
+    /// Parse from record-iterator `it`
+    fn parse(it: &mut GdsParser, dates: Vec<i16>) -> GdsResult<GdsStruct> {
+        let mut strukt = GdsStructBuilder::default();
+        // Parse and store the header information: `dates` and `name`
+        strukt = strukt.dates(GdsDateTimes::parse(dates)?);
+        strukt = match it.next()? {
+            GdsRecord::StructName(d) => strukt.name(d),
+            _ => return Err(GdsError::Decode),
+        };
+        // Parse [GdsElement] records until hitting a [GdsRecord::EndStruct]
+        let mut elems = Vec::<GdsElement>::with_capacity(1024);
+        loop {
+            let r = it.next()?;
+            match r {
+                GdsRecord::EndStruct => break, // End-of-struct
+                GdsRecord::Boundary => elems.push(GdsBoundary::parse(it)?.into()),
+                GdsRecord::Text => elems.push(GdsTextElem::parse(it)?.into()),
+                GdsRecord::Path => elems.push(GdsPath::parse(it)?.into()),
+                GdsRecord::Box => elems.push(GdsBox::parse(it)?.into()),
+                GdsRecord::StructRef => elems.push(GdsStructRef::parse(it)?.into()),
+                GdsRecord::ArrayRef => elems.push(GdsArrayRef::parse(it)?.into()),
+                GdsRecord::Node => elems.push(GdsNode::parse(it)?.into()),
+                // Invalid
+                _ => return Err(GdsError::RecordContext(r, GdsContext::Struct)),
+            };
+        }
+        strukt = strukt.elems(elems);
+        Ok(strukt.build()?)
+    }
+}
+
+impl GdsStrans {
+    /// Parse from records
+    fn parse(it: &mut GdsParser, d0: u8, d1: u8) -> GdsResult<Self> {
+        // Decode the first two bytes
+        let mut s = Self::decode(d0, d1);
+        // And parse optional magnitude & angle
+        loop {
+            match it.peek() {
+                GdsRecord::Mag(d) => {
+                    s.mag = Some(*d);
+                    it.next()?; // Advance the iterator
+                }
+                GdsRecord::Angle(d) => {
+                    s.angle = Some(*d);
+                    it.next()?; // Advance the iterator
+                }
+                _ => break,
+            }
+        }
+        Ok(s)
+    }
+}
+
+impl GdsBoundary {
+    /// Parse from record-iterator `it`
+    fn parse(it: &mut GdsParser) -> GdsResult<GdsBoundary> {
+        let mut b = GdsBoundaryBuilder::default();
+        let mut props: Vec<GdsProperty> = Vec::new();
+
+        loop {
+            let r = it.next()?;
+            b = match r {
+                GdsRecord::EndElement => break, // End-of-element
+                GdsRecord::Layer(d) => b.layer(d),
+                GdsRecord::DataType(d) => b.datatype(d),
+                GdsRecord::Xy(d) => b.xy(GdsPoint::parse_vec(&d)?),
+                GdsRecord::Plex(d) => b.plex(GdsPlex(d)),
+                GdsRecord::ElemFlags(d0, d1) => b.elflags(GdsElemFlags(d0, d1)),
+                GdsRecord::PropAttr(attr) => {
+                    props.push(GdsProperty::parse(it, attr)?);
+                    b
+                }
+                // Invalid
+                _ => return Err(GdsError::RecordContext(r, GdsContext::Boundary)),
+            };
+        }
+        b = b.properties(props);
+        Ok(b.build()?)
+    }
+}
+
+impl GdsStructRef {
+    fn parse(it: &mut GdsParser) -> GdsResult<GdsStructRef> {
+        let mut b = GdsStructRefBuilder::default();
+        let mut props: Vec<GdsProperty> = Vec::new();
+
+        loop {
+            let r = it.next()?;
+            b = match r {
+                GdsRecord::EndElement => break, // End-of-element
+                GdsRecord::StructRefName(d) => b.name(d),
+                GdsRecord::Xy(d) => b.xy(GdsPoint::parse(&d)?),
+                GdsRecord::Plex(d) => b.plex(GdsPlex(d)),
+                GdsRecord::ElemFlags(d0, d1) => b.elflags(GdsElemFlags(d0, d1)),
+                GdsRecord::Strans(d0, d1) => b.strans(GdsStrans::parse(it, d0, d1)?),
+                GdsRecord::PropAttr(attr) => {
+                    props.push(GdsProperty::parse(it, attr)?);
+                    b
+                }
+                // Invalid
+                _ => return Err(GdsError::RecordContext(r, GdsContext::StructRef)),
+            };
+        }
+        b = b.properties(props);
+        Ok(b.build()?)
+    }
+}

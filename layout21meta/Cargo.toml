@@ -1,12 +1,13 @@
 [package]
-name = "layout21meta"
-version = "0.1.0"
 authors = ["Dan Fritchman <dan@fritch.mn>"]
 edition = "2018"
+name = "layout21meta"
+version = "0.1.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-gds21 = { package="gds21", version="0.1.0", path="../gds21", features=["selftest"]  } 
-lef21 = { package="lef21", version="0.1.0", path="../lef21", features=["selftest"]  } 
-
+gds21 = {package = "gds21", version = "0.1.0", path = "../gds21", features = ["selftest"]}
+layout21protos = {package = "layout21protos", version = "0.1.0", path = "../layout21protos"}
+layout21raw = {package = "layout21raw", version = "0.1.0", path = "../layout21raw"}
+lef21 = {package = "lef21", version = "0.1.0", path = "../lef21", features = ["selftest"]}
