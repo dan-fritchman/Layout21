@@ -269,13 +269,6 @@ pub enum GdsRecord {
     SrfName(String),
     LibSecur(i16),
 }
-impl GdsRecord {
-    /// Encode and write in binary form to `writer`
-    /// FIXME: remove once refactored
-    pub fn encode(&self, writer: &mut GdsWriter) -> GdsResult<()> {
-        writer.write_record(self)
-    }
-}
 
 /// # GDSII's Home-Grown Floating-Point Format  
 ///
@@ -793,14 +786,11 @@ pub enum GdsElement {
     GdsNode(GdsNode),
     GdsBox(GdsBox),
 }
-/// Trait for conversion of [GdsElement]s and similar tree-elements to sequences of [GdsRecord]s.  
+/// Empty trait for conversion between each [GdsElement] variant and the associated struct.
 /// Dispatched from the [GdsElement] enum by the `enum_dispatch` macros.
-/// FIXME: deprecation underway; move into GdsWriter
 #[enum_dispatch(GdsElement)]
-pub trait ToRecords {
-    /// Convert to a Vector of [GdsRecord], ordered as dictated by the GDSII spec BNF.
-    fn to_records(&self) -> Vec<GdsRecord>;
-}
+trait GdsElementVariants {}
+
 /// Summary statistics for a [GdsLibrary] or [GdsStruct].
 /// Total numbers of elements of each type.
 #[derive(Debug, Default, Deserialize, Serialize, PartialEq, Add, AddAssign, Sub, SubAssign)]
