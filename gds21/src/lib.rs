@@ -94,6 +94,8 @@ use read::{GdsParser, GdsScanner};
 mod write;
 #[doc(inline)]
 use write::GdsWriter;
+#[cfg(test)]
+mod tests;
 
 ///
 /// # Gds Record Types
@@ -220,13 +222,13 @@ pub struct GdsRecordHeader {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum GdsRecord {
     Header { version: i16 },
-    BgnLib { dates: Vec<i16> },
+    BgnLib { dates: Vec<i16> }, // Note: always length 12
     LibName(String),
     Units(f64, f64),
     EndLib,
-    BgnStruct { dates: Vec<i16> },
-    StructName(String),    // STRNAME
-    StructRefName(String), // SNAME
+    BgnStruct { dates: Vec<i16> }, // Note: always length 12
+    StructName(String),            // STRNAME Record
+    StructRefName(String),         // SNAME Record
     EndStruct,
     Boundary,
     Path,
@@ -280,33 +282,24 @@ pub enum GdsRecord {
 ///
 pub struct GdsFloat64;
 impl GdsFloat64 {
-    /// Decode eight GDSII-float-encoded bytes to `f64`
-    pub fn decode(bytes: &[u8]) -> GdsResult<f64> {
-        if bytes.len() != 8 {
-            return Err(GdsError::Decode); // Bad length
-        }
-        let neg = (bytes[0] & 0x80) != 0; // Sign bit
-        let exp: i32 = (bytes[0] & 0x7F) as i32 - 64; // Exponent 7b
-                                                      // Create the initially integer-valued mantissa
-                                                      // `wrapping_shl` is essentially `<<`; unclear why `u64` prefers the former.
-        let mantissa: u64 = (bytes[1] as u64).wrapping_shl(8 * 6)
-            | (bytes[2] as u64).wrapping_shl(8 * 5)
-            | (bytes[3] as u64).wrapping_shl(8 * 4)
-            | (bytes[4] as u64).wrapping_shl(8 * 3)
-            | (bytes[5] as u64).wrapping_shl(8 * 2)
-            | (bytes[6] as u64).wrapping_shl(8)
-            | (bytes[7] as u64);
+    /// Decode GDSII's eight-byte representation, stored as a `u64`, to IEEE (and Rust)-compatible `f64`
+    pub fn decode(val: u64) -> f64 {
+        // Extract the MSB Sign bit
+        let neg = (val & 0x8000_0000_0000_0000) != 0;
+        // Extract the 7b exponent
+        let exp: i32 = ((val & 0x7F00_0000_0000_0000) >> 8 * 7) as i32 - 64;
+        // Create the initially integer-valued mantissa from the 7 least-significant bytes
+        let mantissa: u64 = val & 0x00FF_FFFF_FFFF_FFFF;
         // And apply its normalization to the range (1/16, 1)
         let mantissa: f64 = mantissa as f64 / 2f64.powi(8 * 7);
         // Combine everything into our overall value
-        let val: f64 = if neg {
+        if neg {
             -1.0 * mantissa * 16f64.powi(exp)
         } else {
             mantissa * 16f64.powi(exp)
-        };
-        Ok(val)
+        }
     }
-    /// Encode `f64` to eight bytes, this time represented as `u64`.
+    /// Encode `f64` to GDSII's eight bytes, stored as `u64`.
     pub fn encode(mut val: f64) -> u64 {
         if val == 0.0 {
             return 0;
@@ -323,8 +316,8 @@ impl GdsFloat64 {
         }
         let mantissa: u64 = (val * 16_f64.powi(14 - exponent)).round() as u64;
         top += (64 + exponent) as u8;
-        let result: u64 = (top as u64).wrapping_shl(56) | (mantissa & 0x00FFFFFFFFFFFFFF);
-        return result;
+        let result: u64 = (top as u64).wrapping_shl(56) | (mantissa & 0x00FF_FFFF_FFFF_FFFF);
+        result
     }
 }
 
@@ -352,17 +345,6 @@ pub struct GdsStrans {
     /// Angle, in degrees counter-clockwise. Defaults to zero if not specified.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub angle: Option<f64>,
-}
-impl GdsStrans {
-    /// Decode boolean fields from bytes
-    fn decode(d0: u8, d1: u8) -> Self {
-        Self {
-            reflected: d0 & 0x80 != 0,
-            abs_mag: d1 & 0x04 != 0,
-            abs_angle: d1 & 0x02 != 0,
-            ..Default::default()
-        }
-    }
 }
 
 /// # Gds Text-Presentation Flags
@@ -1046,6 +1028,7 @@ pub enum GdsContext {
     Path,
     Text,
     Node,
+    Property,
 }
 /// # GdsResult Type-Alias
 pub type GdsResult<T> = Result<T, GdsError>;
@@ -1056,8 +1039,6 @@ pub type GdsResult<T> = Result<T, GdsError>;
 pub enum GdsError {
     /// Invalid binary -> record conversion
     RecordDecode(GdsRecordType, GdsDataType, u16),
-    /// Record in an invalid context
-    RecordContext(GdsRecord, GdsContext),
     /// Invalid record length
     RecordLen(usize),
     /// Invalid data type
@@ -1066,10 +1047,14 @@ pub enum GdsError {
     InvalidRecordType(u8),
     /// Unsupported feature, in the decoded context
     Unsupported(Option<GdsRecord>, Option<GdsContext>),
-    /// Other decoding errors
-    Decode,
-    /// Other encoding errors
-    Encode,
+    /// Parser Errors
+    Parse {
+        msg: String,
+        record: GdsRecord,
+        recordnum: usize,
+        bytepos: u64,
+        ctx: Vec<GdsContext>,
+    },
     /// Boxed (External) Errors
     Boxed(Box<dyn Error>),
     /// Other errors
@@ -1104,7 +1089,6 @@ impl From<&str> for GdsError {
         GdsError::Str(e.to_string())
     }
 }
-
 #[cfg(any(test, feature = "selftest"))]
 /// Check `lib` matches across a write-read round-trip cycle
 pub fn roundtrip(lib: &GdsLibrary) -> GdsResult<()> {
@@ -1124,6 +1108,3 @@ pub fn roundtrip(lib: &GdsLibrary) -> GdsResult<()> {
     assert_eq!(*lib, lib2);
     Ok(())
 }
-
-#[cfg(test)]
-mod tests;

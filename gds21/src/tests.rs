@@ -9,6 +9,27 @@ fn test_dates() -> GdsDateTimes {
     }
 }
 #[test]
+fn floats() -> GdsResult<()> {
+    // Test conversions between normal-human and GDSII floating-point formats
+    let f = GdsFloat64::encode(0.0);
+    assert_eq!(f, 0);
+    let d = GdsFloat64::decode(f);
+    assert_eq!(d, 0.0);
+    let f = GdsFloat64::encode(1.0);
+    let d = GdsFloat64::decode(f);
+    assert_eq!(d, 1.0);
+    let f = GdsFloat64::encode(1e-11);
+    let d = GdsFloat64::decode(f);
+    assert_eq!(d, 1e-11);
+    let f = GdsFloat64::encode(-0.69);
+    let d = GdsFloat64::decode(f);
+    assert_eq!(d, -0.69);
+    let f = GdsFloat64::encode(-33.33e-33);
+    let d = GdsFloat64::decode(f);
+    assert_eq!(d, -33.33e-33);
+    Ok(())
+}
+#[test]
 fn scan() -> GdsResult<()> {
     // First-level scan struct names and byte-locations
     let fname = format!(
