@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 // Local imports
 use crate::coords::{DbUnits, Xy};
-use crate::raw::{self, Dir, LayoutError, LayoutResult, Unit};
+use crate::raw::{self, Dir, LayoutError, LayoutResult, Units};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TrackEntry {
@@ -108,7 +108,7 @@ impl Pattern {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Stack {
     /// Measurement units
-    pub units: Unit,
+    pub units: Units,
     /// Layer used for cell outlines/ boundaries
     pub boundary_layer: Option<raw::Layer>,
     /// Primitive Layer

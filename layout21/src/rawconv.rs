@@ -393,7 +393,7 @@ impl RawConverter {
         // Create shapes for each pin
         for port in abs.ports.iter() {
             // Add its shape
-            use abstrakt::PortKind::{Edge, Zfull, Zlocs};
+            use abstrakt::PortKind::{Edge, ZTopEdge, ZTopInner};
 
             let elem = match &port.kind {
                 Edge {
@@ -430,7 +430,7 @@ impl RawConverter {
                         },
                     }
                 }
-                Zlocs { .. } | Zfull { .. } => todo!(),
+                ZTopEdge { .. } | ZTopInner { .. } => todo!(),
             };
             elems.push(elem);
         }

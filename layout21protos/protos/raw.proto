@@ -8,6 +8,13 @@ message Point {
   int64 y = 2;
 }
 
+// Distance unit enumeration
+enum Units {
+  MICRO = 0;
+  NANO = 1;
+  ANGSTROM = 2;
+}
+
 // # Layer-Purpose Pair 
 // As in many legacy layout systems, layers are described by two numbers:
 // * `number` describes describes a "physical layer". Example enumerated values might include "metal3", "diffusion". 
@@ -17,10 +24,19 @@ message Layer {
   int64 purpose = 2;
 }
 
-// Domain-Qualified Cell Name 
+/// Domain-qualified name, referring outside its own Library 
 message QualifiedName {
   string domain = 1;
   string name = 2;
+}
+
+/// Reference to another Module, 
+/// either defined in this Library (local) or another (external)
+message Reference {
+  oneof to {
+    string local = 1;
+    QualifiedName external = 2;
+  }
 }
 
 // # Rectangle Primitive
@@ -82,13 +98,13 @@ message TextElement {
 // Comprises a named set of geometric elements and [Instance]s of other [Cell]s. 
 message Cell {
   // Cell Name
-  QualifiedName name = 1;
+  string name = 1;
   // Shapes, grouped by layer 
   repeated LayerShapes shapes = 2;
   // Instances of other cells 
   repeated Instance instances = 3;
   // Text Annotations
-  repeated TextElement annotations = 4;
+  repeated TextElement annotations = 4; 
  
   // Author
   string author = 100;
@@ -101,8 +117,8 @@ message Cell {
 message Instance {
   // Instance Name
   string name = 1;
-  // Cell Name
-  QualifiedName cell_name = 3;
+  // Cell Reference
+  Reference cell = 3;
   // Rotation
   int32 rotation_clockwise_degrees = 4;
   // Location
@@ -112,8 +128,10 @@ message Instance {
 // # Layout Library 
 // A collection of cells and asssociated meta-data. 
 message Library {
-  // Library Name 
-  QualifiedName name = 1;
+  // Library Name / Domain 
+  string domain = 1;
   // Cell Definitions
   repeated Cell cells = 2;
+  // Distance Units
+  Units units = 3;
 }

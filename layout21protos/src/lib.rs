@@ -263,22 +263,85 @@ mod tests {
         assert_eq!(x, rt);
     }
     #[test]
+    fn reference_external() {
+        // A good example of where proto+rust get uglier than we'd like
+        // Note the `oneof` fields inside message `Reference` are placed in a `mod` named (lower-case) `reference`
+        let r = Reference {
+            to: Some(reference::To::External(QualifiedName {
+                domain: "cell_domain".into(),
+                name: "cell_name".into(),
+            })),
+        };
+        match r.to {
+            Some(reference::To::External(ref qn)) => {
+                assert_eq!(qn.domain, "cell_domain");
+                assert_eq!(qn.name, "cell_name");
+            }
+            _ => assert!(false),
+        }
+        // Protobuf Serialization Round-Trip
+        let bytes = to_bytes(&r);
+        let rt: Reference = from_bytes(&bytes).unwrap();
+        assert_eq!(r, rt);
+    }
+    #[test]
+    fn units() {
+        // These don't implement [Message], so no round-tripping allowed
+        // Just check we can create them
+        let _r = Units::Micro;
+        let _r = Units::Nano;
+        let _r = Units::Angstrom;
+    }
+    #[test]
+    fn reference_local() {
+        let r = Reference {
+            to: Some(reference::To::Local("here".into())),
+        };
+        match r.to {
+            Some(reference::To::Local(ref name)) => {
+                assert_eq!(name, "here");
+            }
+            _ => assert!(false),
+        }
+        // Protobuf Serialization Round-Trip
+        let bytes = to_bytes(&r);
+        let rt: Reference = from_bytes(&bytes).unwrap();
+        assert_eq!(r, rt);
+    }
+    #[test]
+    fn reference_none() {
+        // Test a reference to `None`; essentially the null Instance-pointer
+        let r = Reference { to: None };
+        match r.to {
+            None => (),
+            _ => assert!(false),
+        }
+        // Protobuf Serialization Round-Trip
+        let bytes = to_bytes(&r);
+        let rt: Reference = from_bytes(&bytes).unwrap();
+        assert_eq!(r, rt);
+    }
+    #[test]
     fn instance() {
         let x = Instance {
             name: "inst_name".into(),
-            cell_name: Some(QualifiedName {
-                domain: "cell_domain".into(),
-                name: "cell_name".into(),
+            cell: Some(Reference {
+                to: Some(reference::To::External(QualifiedName {
+                    domain: "cell_domain".into(),
+                    name: "cell_name".into(),
+                })),
             }),
             rotation_clockwise_degrees: 0,
             lower_left: Some(Point::new(0, 0)),
         };
         assert_eq!(x.name, "inst_name");
         assert_eq!(
-            x.cell_name,
-            Some(QualifiedName {
-                domain: "cell_domain".into(),
-                name: "cell_name".into(),
+            x.cell,
+            Some(Reference {
+                to: Some(reference::To::External(QualifiedName {
+                    domain: "cell_domain".into(),
+                    name: "cell_name".into(),
+                })),
             })
         );
         assert_eq!(x.rotation_clockwise_degrees, 0);
@@ -292,23 +355,14 @@ mod tests {
     #[test]
     fn cell() {
         let x = Cell {
-            name: Some(QualifiedName {
-                domain: "cell_domain".into(),
-                name: "cell_name".into(),
-            }),
+            name: "cell_name".into(),
             shapes: vec![],
             instances: vec![],
             annotations: vec![],
             author: "author".into(),
             copyright: "copyright".into(),
         };
-        assert_eq!(
-            x.name,
-            Some(QualifiedName {
-                domain: "cell_domain".into(),
-                name: "cell_name".into(),
-            })
-        );
+        assert_eq!(x.name, "cell_name");
         assert_eq!(x.shapes, []);
         assert_eq!(x.instances, []);
         assert_eq!(x.annotations, []);
@@ -319,5 +373,20 @@ mod tests {
         let bytes = to_bytes(&x);
         let rt: Cell = from_bytes(&bytes).unwrap();
         assert_eq!(x, rt);
+    }
+    #[test]
+    fn library() {
+        let r = Library {
+            domain: "libdomain".into(),
+            units: Units::Angstrom.into(),
+            cells: Vec::new(),
+        };
+        assert_eq!(r.domain, "libdomain");
+        assert_eq!(r.units, Units::Angstrom.into());
+        assert_eq!(r.cells, vec![]);
+        // Protobuf Serialization Round-Trip
+        let bytes = to_bytes(&r);
+        let rt: Library = from_bytes(&bytes).unwrap();
+        assert_eq!(r, rt);
     }
 }

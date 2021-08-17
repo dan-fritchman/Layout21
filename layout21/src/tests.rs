@@ -3,7 +3,7 @@ use serde::Serialize;
 use super::cell::{Instance, LayoutImpl};
 use super::library::Library;
 use super::outline::Outline;
-use super::raw::{self, Dir, LayoutError, LayoutResult, Unit};
+use super::raw::{self, Dir, LayoutError, LayoutResult, Units};
 use super::stack::*;
 use super::{abstrakt, rawconv, validate};
 
@@ -15,7 +15,7 @@ fn stack() -> LayoutResult<Stack> {
     ];
     let via_purps = [(44, raw::LayerPurpose::Drawing)];
     let stack = Stack {
-        units: Unit::Nano,
+        units: Units::Nano,
         boundary_layer: Some(raw::Layer::from_pairs(
             236,
             &[(0, raw::LayerPurpose::Outline)],
@@ -127,6 +127,22 @@ fn stack() -> LayoutResult<Stack> {
 fn validate_stack() -> LayoutResult<()> {
     let s = stack()?;
     validate::StackValidator::validate(s)?;
+    Ok(())
+}
+/// Create an empy cell
+#[test]
+fn empty_cell() -> Result<(), LayoutError> {
+    let c = LayoutImpl {
+        name: "EmptyCell".into(),
+        top_layer: 4,
+        outline: Outline::rect(50, 5)?,
+        instances: Vec::new(),
+        assignments: Vec::new(),
+        cuts: Vec::new(),
+    };
+    let mut lib = Library::new("EmptyCellLib");
+    let c2 = lib.cells.insert(c.into());
+    exports(lib)?;
     Ok(())
 }
 /// Create a layout-implementation
@@ -296,13 +312,13 @@ fn create_abstract() -> Result<(), LayoutError> {
                 side: abstrakt::Side::TopOrRight,
             },
         },
-        abstrakt::Port {
-            name: "zfull".into(),
-            kind: abstrakt::PortKind::Zfull { track: 3 },
-        },
+        // abstrakt::Port {
+        //     name: "zfull".into(),
+        //     kind: abstrakt::PortKind::Z { track: 3 },
+        // },
         // abstrakt::Port {
         //     name: "zlocs".into(),
-        //     kind: abstrakt::PortKind::Zlocs {
+        //     kind: abstrakt::PortKind::ZTopInner {
         //         locs: vec![Assign {}],
         //     },
         // },
@@ -386,7 +402,7 @@ fn create_lib4() -> Result<(), LayoutError> {
         abstrakt::LayoutAbstract {
             name: "UnitCell".into(),
             top_layer: 0,
-            outline: Outline::rect(20, 2)?,
+            outline: Outline::rect(18, 1)?,
             ports: vec![
                 abstrakt::Port {
                     name: "inp".into(),
@@ -410,51 +426,58 @@ fn create_lib4() -> Result<(), LayoutError> {
     );
 
     // Create an array of instances
-    let instances = (0..9_isize)
-        .map(|k| Instance {
-            inst_name: format!("inst{}", k),
-            cell: c2,
-            loc: (11 + (k % 3) * 23, 2 + 3 * (k / 3)).into(),
-            reflect: false,
-            angle: None,
-        })
-        .collect();
+    let mut instances = Vec::new();
     // Create assignments and cuts
     let mut assignments = Vec::new();
     let mut cuts = Vec::new();
-    for k in 0..9_isize {
-        let track = 23 * (k as usize % 3) + 32;
-        let a = Assign {
-            net: format!("dly{}", k),
-            at: TrackIntersection {
-                layer: 1,
-                track,
-                at: 15 + 21 * (k as usize / 3),
-                relz: RelZ::Below,
-            },
-        };
-        assignments.push(a);
-        let a = Assign {
-            net: format!("dly{}", k),
-            at: TrackIntersection {
-                layer: 1,
-                track,
-                at: 19 + 21 * (k as usize / 3),
-                relz: RelZ::Below,
-            },
-        };
-        assignments.push(a);
+    let m2xpitch = 23;
+    for x in 0..3 {
+        let m2track = (23 * x + 32) as usize;
+        let track = m2track;
+        for y in 0..3 {
+            let botcut = (15 + 21 * y) as usize;
+            let topcut = botcut + 4;
+            let inst = Instance {
+                inst_name: format!("inst{}{}", x, y),
+                cell: c2,
+                loc: (11 + x * 23, 2 + 3 * y).into(),
+                reflect: false,
+                angle: None,
+            };
+            instances.push(inst);
+            let a = Assign {
+                net: format!("dly{}", x),
+                at: TrackIntersection {
+                    layer: 1,
+                    track,
+                    at: botcut,
+                    relz: RelZ::Below,
+                },
+            };
+            assignments.push(a);
+            let a = Assign {
+                net: format!("dly{}", x),
+                at: TrackIntersection {
+                    layer: 1,
+                    track,
+                    at: topcut,
+                    relz: RelZ::Below,
+                },
+            };
+            assignments.push(a);
+            // FIXME: need a third Assign
+        }
         let c = TrackIntersection {
             layer: 1,
             track,
-            at: 14 + 21 * (k as usize / 3),
+            at: 13,
             relz: RelZ::Below,
         };
         cuts.push(c);
         let c = TrackIntersection {
             layer: 1,
             track,
-            at: 21 + 21 * (k as usize / 3),
+            at: 21 * 3,
             relz: RelZ::Below,
         };
         cuts.push(c);

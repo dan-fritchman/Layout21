@@ -4,7 +4,7 @@
 
 // Local imports
 use crate::coords::DbUnits;
-use crate::raw::{self, LayoutError, LayoutResult, Unit};
+use crate::raw::{self, LayoutError, LayoutResult, Units};
 use crate::stack::{Assign, Layer, LayerPeriod, PrimitiveLayer, RelZ, Stack, TrackIntersection};
 use crate::stack::{PrimitiveMode, ViaLayer};
 
@@ -19,7 +19,7 @@ pub(crate) fn assert(b: bool) -> LayoutResult<()> {
 #[derive(Debug)]
 pub(crate) struct ValidStack {
     /// Measurement units
-    pub units: Unit,
+    pub units: Units,
     /// Layer used for cell outlines/ boundaries
     pub boundary_layer: Option<raw::Layer>,
 

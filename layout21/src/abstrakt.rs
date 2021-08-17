@@ -54,19 +54,24 @@ pub enum PortKind {
         track: usize,
         side: Side,
     },
+    /// Ports accessible from bot top *and* top-layer edges
+    /// Note their `layer` field is implicitly defined as the cell's `top_layer`.
+    ZTopEdge {
+        /// Track Index
+        track: usize,
+        /// Side
+        side: Side,
+        /// Location into which the pin extends, inward
+        into: TopLoc,
+    },
     /// Ports which are internal to the cell outline,
     /// but connect from above in the z-stack.
     /// These can be assigned at several locations across their track,
     /// and are presumed to be internally-connected between such locations.
-    Zlocs {
+    ZTopInner {
         /// Locations
         locs: Vec<TopLoc>,
-    },
-    /// Ports which occupy an entire top-level track from edge to edge
-    Zfull { track: usize },
-    // FIXME:
-    // * Sort out cases for "both", i.e. pins on the top-level which also go to X/Y edges
-    // * Primitives may need a different kinda `cross`
+    }, 
 }
 /// A location (track intersection) on our top z-axis layer
 #[derive(Debug, Clone, Serialize, Deserialize)]

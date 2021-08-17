@@ -11,7 +11,7 @@ use std::hash::Hash;
 use slotmap::{new_key_type, SlotMap};
 
 // Local imports
-use crate::{Cell, Dir, Element, Instance, LayerPurpose, Layers, Library, Point, Shape, Unit};
+use crate::{Cell, Dir, Element, Instance, LayerPurpose, Layers, Library, Point, Shape, Units};
 use crate::{CellKey, LayerKey, TextElement};
 use crate::{ErrorContext, HasErrors, LayoutError, LayoutResult};
 use gds21;
@@ -38,9 +38,9 @@ impl GdsExporter {
         // Set its distance units
         // In all cases the GDSII "user units" are set to 1µm.
         lib.units = match self.lib.units {
-            Unit::Micro => gds21::GdsUnits::new(1.0, 1e-6),
-            Unit::Nano => gds21::GdsUnits::new(1e-3, 1e-9),
-            Unit::Angstrom => gds21::GdsUnits::new(1e-4, 1e-10),
+            Units::Micro => gds21::GdsUnits::new(1.0, 1e-6),
+            Units::Nano => gds21::GdsUnits::new(1e-3, 1e-9),
+            Units::Angstrom => gds21::GdsUnits::new(1e-4, 1e-10),
         };
         // And convert each of our `cells` into its `structs`
         lib.structs = self
@@ -284,18 +284,14 @@ impl GdsImporter {
         self.lib.name = gdslib.name.clone();
         // Set its distance units
         self.lib.units = self.import_units(&gdslib.units)?;
-        // Collect references by-name to each [GdsStruct]
-        // for strukt in gdslib.structs.iter() {
-        //     self.strukt_names.insert(strukt.name.clone(), &strukt);
-        // }
         // And convert each of its `structs` into our `cells`
         for strukt in &GdsDepOrder::order(&gdslib) {
             self.import_and_add(strukt)?
         }
         Ok(())
     }
-    /// Import our [Unit]s
-    fn import_units(&mut self, units: &gds21::GdsUnits) -> LayoutResult<Unit> {
+    /// Import our [Units]
+    fn import_units(&mut self, units: &gds21::GdsUnits) -> LayoutResult<Units> {
         self.ctx_stack.push(ErrorContext::Units);
         // Peel out the GDS "database unit", the one of its numbers that really matters
         let gdsunit = units.db_unit();
@@ -304,13 +300,13 @@ impl GdsImporter {
         // but do so with the floating-point number *next to* 1e-9.
         // These files presumably rely on other software "converging" to 1nm, as we do here.
         let rv = if (gdsunit - 1e-10).abs() < 1e-13 {
-            Unit::Angstrom
+            Units::Angstrom
         } else if (gdsunit - 1e-9).abs() < 1e-12 {
-            Unit::Nano
+            Units::Nano
         } else if (gdsunit - 1e-6).abs() < 1e-9 {
-            Unit::Micro
+            Units::Micro
         } else {
-            return self.fail(format!("Unsupported GDSII Unit: {:10.3e}", gdsunit));
+            return self.fail(format!("Unsupported GDSII Units {:10.3e}", gdsunit));
         };
         self.ctx_stack.pop();
         Ok(rv)

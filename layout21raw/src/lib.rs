@@ -21,11 +21,15 @@ use slotmap::{new_key_type, SlotMap};
 
 // Local imports
 use gds21;
-use layout21protos as proto;
+use layout21protos;
 
-// Re-exports
+// Internal modules & re-exports
 pub mod gds;
 pub use gds::{GdsExporter, GdsImporter};
+pub mod proto;
+pub use proto::{ProtoExporter, ProtoImporter};
+pub mod lef;
+pub use lef::{LefExporter, LefImporter};
 
 #[cfg(test)]
 mod tests;
@@ -125,8 +129,8 @@ pub enum ErrorContext {
 }
 
 /// Distance Units Enumeration
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub enum Unit {
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum Units {
     /// Micrometers, or microns for we olde folke
     Micro,
     /// Nanometers
@@ -134,10 +138,10 @@ pub enum Unit {
     /// Angstroms
     Angstrom,
 }
-impl Default for Unit {
+impl Default for Units {
     /// Default units are nanometers
-    fn default() -> Unit {
-        Unit::Nano
+    fn default() -> Units {
+        Units::Nano
     }
 }
 
@@ -305,7 +309,7 @@ impl LayerSpec {
 }
 /// # Per-Layer Datatype Specification
 /// Includes the datatypes used for each category of element on layer `layernum`
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Layer {
     /// Layer Number
     pub layernum: i16,
@@ -373,7 +377,7 @@ pub struct Library {
     /// Library Name
     pub name: String,
     /// Distance Units
-    pub units: Unit,
+    pub units: Units,
     /// Layer Definitions
     pub layers: Layers,
     /// Cell Definitions
@@ -381,7 +385,7 @@ pub struct Library {
 }
 impl Library {
     /// Create a new and empty Library
-    pub fn new(name: impl Into<String>, units: Unit) -> Self {
+    pub fn new(name: impl Into<String>, units: Units) -> Self {
         Self {
             name: name.into(),
             units,
@@ -394,8 +398,8 @@ impl Library {
         GdsExporter::export(self)
     }
     /// Convert to proto-buf
-    pub fn to_proto(self) -> LayoutResult<proto::Library> {
-        ProtoExporter::export(self)
+    pub fn to_proto(&self) -> LayoutResult<layout21protos::Library> {
+        ProtoExporter::export(&self)
     }
 }
 /// Raw-Layout Cell Definition
@@ -417,7 +421,7 @@ pub struct Cell {
 /// and do not describe connectivity or generate pins.
 /// These are purely annotations in the sense of "design notes".
 ///
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TextElement {
     /// String Value
     pub string: String,
@@ -425,7 +429,7 @@ pub struct TextElement {
     pub loc: Point,
 }
 /// # Primitive Geometric Element
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Element {
     /// Net Name
     pub net: Option<String>,
@@ -436,7 +440,7 @@ pub struct Element {
     /// Shape
     pub inner: Shape,
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Shape {
     Rect { p0: Point, p1: Point },
     Poly { pts: Vec<Point> },
@@ -541,164 +545,4 @@ impl Shape {
             }
         }
     }
-}
-/// # ProtoBuf Exporter
-#[derive(Debug)]
-pub struct ProtoExporter {
-    pub lib: Library,
-}
-impl ProtoExporter {
-    pub fn export(lib: Library) -> LayoutResult<proto::Library> {
-        Self { lib }.export_all()
-    }
-    /// Internal implementation method. Convert all, starting from our top-level [Library].
-    fn export_all(&mut self) -> LayoutResult<proto::Library> {
-        // Create a new [proto::Library]
-        let mut lib = proto::Library::default();
-        // FIXME: should these protos have a units field?
-        // Set its library name
-        lib.name = Some(proto::QualifiedName {
-            domain: "".into(),
-            name: self.lib.name.clone(),
-        });
-        // And convert each of our cells
-        lib.cells = self
-            .lib
-            .cells
-            .iter()
-            .map(|(_key, c)| self.export_cell(c))
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(lib)
-    }
-    /// Convert a [Cell] to a [proto::Cell] cell-definition
-    fn export_cell(&self, cell: &Cell) -> LayoutResult<proto::Cell> {
-        // Create the empty/default [proto::Cell]
-        let mut pcell = proto::Cell::default();
-        // Convert our name
-        pcell.name = Some(proto::QualifiedName {
-            domain: "".into(), // FIXME
-            name: cell.name.clone(),
-        });
-        // Convert each [Instance]
-        pcell.instances = cell
-            .insts
-            .iter()
-            .map(|c| self.export_instance(c))
-            .collect::<Result<Vec<_>, _>>()?;
-        // Convert each [Instance]
-        pcell.annotations = cell
-            .annotations
-            .iter()
-            .map(|x| self.export_annotation(x))
-            .collect::<Result<Vec<_>, _>>()?;
-        // Collect up shapes by layer
-        // FIXME: should we store them here this way in the first place? Perhaps.
-        let mut layers: HashMap<(i16, i16), Vec<&Element>> = HashMap::new();
-        for elem in &cell.elems {
-            let layer = self.lib.layers.get(elem.layer).ok_or("Invalid Layer")?;
-            let number = layer.layernum;
-            let purpose = layer
-                .num(&elem.purpose)
-                .ok_or("Invalid Layer Purpose / DataType")?
-                .clone();
-            if layers.contains_key(&(number, purpose)) {
-                layers.get_mut(&(number, purpose)).unwrap().push(elem);
-            } else {
-                layers.insert((number, purpose), vec![elem]);
-            }
-        }
-        // Now turn those into [proto::LayerShape]s
-        for (layernum, elems) in layers {
-            let mut layershape = proto::LayerShapes::default();
-            layershape.layer = Some(proto::Layer {
-                number: layernum.0 as i64,
-                purpose: layernum.1 as i64,
-            });
-            for elem in elems {
-                // Also sort into the proto-schema's by-shape-type vectors
-                match self.export_element(elem)? {
-                    ProtoShape::Rect(r) => layershape.rectangles.push(r),
-                    ProtoShape::Poly(p) => layershape.polygons.push(p),
-                    ProtoShape::Path(p) => layershape.paths.push(p),
-                }
-            }
-            pcell.shapes.push(layershape);
-        }
-        Ok(pcell)
-    }
-    /// Convert an [Instance] to a [proto::Instance]
-    fn export_instance(&self, inst: &Instance) -> LayoutResult<proto::Instance> {
-        let celldef = &self
-            .lib
-            .cells
-            .get(inst.cell.into())
-            .ok_or(format!("Instance {} of Invalid Cell", inst.inst_name))?;
-        Ok(proto::Instance {
-            name: inst.inst_name.clone(),
-            cell_name: Some(proto::QualifiedName {
-                domain: "".into(), // FIXME
-                name: celldef.name.to_string(),
-            }),
-            lower_left: Some(proto::Point::new(inst.p0.x as i64, inst.p0.y as i64)),
-            rotation_clockwise_degrees: 0,
-        })
-    }
-    /// Convert an [Instance] to a [proto::Instance]
-    fn export_annotation(&self, text: &TextElement) -> LayoutResult<proto::TextElement> {
-        Ok(proto::TextElement {
-            string: text.string.clone(),
-            loc: Some(proto::Point::new(text.loc.x as i64, text.loc.y as i64)),
-        })
-    }
-    fn export_element(&self, elem: &Element) -> LayoutResult<ProtoShape> {
-        // Convert unconnected nets to the empty string
-        let net = if let Some(ref net) = elem.net {
-            net.clone()
-        } else {
-            "".into()
-        };
-        match &elem.inner {
-            Shape::Rect { ref p0, ref p1 } => {
-                let minx = p0.x.min(p1.x) as i64;
-                let miny = p0.y.min(p1.y) as i64;
-                let width = p0.x.max(p1.x) as i64 - minx;
-                let height = p0.y.max(p1.y) as i64 - miny;
-                Ok(ProtoShape::Rect(proto::Rectangle {
-                    net,
-                    lower_left: Some(proto::Point::new(minx, miny)),
-                    width,
-                    height,
-                }))
-            }
-            Shape::Poly { ref pts } => {
-                let vertices = pts
-                    .iter()
-                    .map(|p| proto::Point::new(p.x as i64, p.y as i64))
-                    .collect::<Vec<_>>();
-                Ok(ProtoShape::Poly(proto::Polygon { net, vertices }))
-            }
-            Shape::Path { ref width, ref pts } => {
-                let width = i64::try_from(*width)?;
-                let points = pts
-                    .iter()
-                    .map(|p| proto::Point::new(p.x as i64, p.y as i64))
-                    .collect::<Vec<_>>();
-                Ok(ProtoShape::Path(proto::Path { net, width, points }))
-            }
-        }
-    }
-}
-impl HasErrors for ProtoExporter {
-    fn err(&self, msg: impl Into<String>) -> LayoutError {
-        LayoutError::Export {
-            message: msg.into(),
-            stack: Vec::new(), // FIXME! get a stack already! self.ctx_stack.clone(),
-        }
-    }
-}
-/// Helper enumeration for converting to several proto-primitives
-enum ProtoShape {
-    Rect(proto::Rectangle),
-    Poly(proto::Polygon),
-    Path(proto::Path),
 }
