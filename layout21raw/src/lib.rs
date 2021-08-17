@@ -19,18 +19,13 @@ use std::ops::Not;
 use serde::{Deserialize, Serialize};
 use slotmap::{new_key_type, SlotMap};
 
-// Local imports
-use gds21;
-use layout21protos;
-
 // Internal modules & re-exports
+#[cfg(feature = "gds")]
 pub mod gds;
-pub use gds::{GdsExporter, GdsImporter};
-pub mod proto;
-pub use proto::{ProtoExporter, ProtoImporter};
+#[cfg(feature = "lef")]
 pub mod lef;
-pub use lef::{LefExporter, LefImporter};
-
+#[cfg(feature = "proto")]
+pub mod proto;
 #[cfg(test)]
 mod tests;
 
@@ -88,11 +83,6 @@ impl From<&str> for LayoutError {
 }
 impl From<std::num::TryFromIntError> for LayoutError {
     fn from(e: std::num::TryFromIntError) -> Self {
-        Self::Boxed(Box::new(e))
-    }
-}
-impl From<gds21::GdsError> for LayoutError {
-    fn from(e: gds21::GdsError) -> Self {
         Self::Boxed(Box::new(e))
     }
 }
@@ -229,23 +219,44 @@ pub struct Instance {
 pub struct Layers {
     slots: SlotMap<LayerKey, Layer>,
     nums: HashMap<i16, LayerKey>,
+    names: HashMap<String, LayerKey>,
 }
 impl Layers {
-    /// Add a [Layer] to our slot-map and number-map, and
+    /// Add a [Layer] to our slot-map and number-map, and name-map
     pub fn add(&mut self, layer: Layer) -> LayerKey {
+        // FIXME: conflicting numbers and/or names, at least some of which tend to happen, over-write each other.
+        // Sort out the desired behavior here.
         let num = layer.layernum;
+        let name = layer.name.clone();
         let key = self.slots.insert(layer);
         self.nums.insert(num, key.clone());
+        if let Some(s) = name {
+            self.names.insert(s, key.clone());
+        }
         key
     }
-    /// Get a reference to [LayerKey] number `num`
+    /// Get a reference to the [LayerKey] for layer-number `num`
     fn keynum(&self, num: i16) -> Option<&LayerKey> {
         self.nums.get(&num)
+    }
+    /// Get a reference to the [LayerKey] layer-name `name`
+    fn keyname(&self, name: impl Into<String>) -> Option<&LayerKey> {
+        self.names.get(&name.into())
     }
     /// Get a reference to [Layer] number `num`
     pub fn num(&self, num: i16) -> Option<&Layer> {
         let key = self.nums.get(&num)?;
         self.slots.get(*key)
+    }
+    /// Get a reference to [Layer] name `name`
+    pub fn name(&self, name: &str) -> Option<&Layer> {
+        let key = self.names.get(name)?;
+        self.slots.get(*key)
+    }
+    /// Get the name of `layerkey`
+    pub fn get_name(&self, layerkey: LayerKey) -> Option<&String> {
+        let layer = self.slots.get(layerkey)?;
+        layer.name.as_ref()
     }
     /// Get a reference to [Layer] from [LayerKey] `key`
     pub fn get(&self, key: LayerKey) -> Option<&Layer> {
@@ -262,7 +273,7 @@ impl Layers {
         // Get the [LayerKey] for `layernum`, creating the [Layer] if it doesn't exist.
         let key = match self.keynum(layernum) {
             Some(key) => key.clone(),
-            None => self.add(Layer::new(layernum)),
+            None => self.add(Layer::from_num(layernum)),
         };
         // Get that [Layer], so we can get or add a [LayerPurpose]
         let layer = self
@@ -313,26 +324,43 @@ impl LayerSpec {
 pub struct Layer {
     /// Layer Number
     pub layernum: i16,
+    /// Layer Name
+    pub name: Option<String>,
     /// Number => Purpose Lookup
     purps: HashMap<i16, LayerPurpose>,
     /// Purpose => Number Lookup
     nums: HashMap<LayerPurpose, i16>,
 }
 impl Layer {
-    /// Create a new [Layer] with the given `layernum`.
-    pub fn new(num: i16) -> Self {
+    /// Create a new [Layer] with the given `layernum` and `name`
+    pub fn new(layernum: i16, name: impl Into<String>) -> Self {
         Self {
-            layernum: num,
+            layernum,
+            name: Some(name.into()),
+            ..Default::default()
+        }
+    }
+    /// Create a new [Layer] with the given `layernum`.
+    pub fn from_num(layernum: i16) -> Self {
+        Self {
+            layernum,
             ..Default::default()
         }
     }
     /// Create a new [Layer] purpose-numbers `pairs`.
     pub fn from_pairs(layernum: i16, pairs: &[(i16, LayerPurpose)]) -> LayoutResult<Self> {
-        let mut layer = Self::new(layernum);
+        let mut layer = Self::from_num(layernum);
         for (num, purpose) in pairs {
             layer.add_purpose(*num, purpose.clone())?;
         }
         Ok(layer)
+    }
+    /// Add purpose-numbers `pairs`.
+    pub fn add_pairs(&mut self, pairs: &[(i16, LayerPurpose)]) -> LayoutResult<()> {
+        for (num, purpose) in pairs {
+            self.add_purpose(*num, purpose.clone())?;
+        }
+        Ok(())
     }
     /// Add a new [LayerPurpose]
     pub fn add_purpose(&mut self, num: i16, purp: LayerPurpose) -> LayoutResult<()> {
@@ -366,8 +394,18 @@ impl Layer {
 pub struct Abstract {
     /// Cell Name
     pub name: String,
-    /// Primitive Elements
-    pub elems: Vec<Element>,
+    /// Ports
+    pub ports: Vec<AbstractPort>,
+    /// Blockages
+    pub blockages: HashMap<LayerKey, Vec<Shape>>,
+}
+/// # Port Element for [Abstract]s
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AbstractPort {
+    /// Net Name
+    pub net: String,
+    /// Shapes, with paired [Layer] keys
+    pub shapes: HashMap<LayerKey, Vec<Shape>>,
 }
 
 /// # Raw Layout Library  
@@ -382,6 +420,8 @@ pub struct Library {
     pub layers: Layers,
     /// Cell Definitions
     pub cells: SlotMap<CellKey, Cell>,
+    /// Abstract-Layout Definitions
+    pub abstracts: Vec<Abstract>,
 }
 impl Library {
     /// Create a new and empty Library
@@ -393,13 +433,15 @@ impl Library {
             ..Default::default()
         }
     }
-    /// Convert to a GDSII [gds21::GdsLibrary]
-    pub fn to_gds(self) -> LayoutResult<gds21::GdsLibrary> {
-        GdsExporter::export(self)
+    /// Convert to a GDSII Library
+    #[cfg(feature = "gds")]
+    pub fn to_gds(&self) -> LayoutResult<gds::gds21::GdsLibrary> {
+        gds::GdsExporter::export(&self)
     }
-    /// Convert to proto-buf
-    pub fn to_proto(&self) -> LayoutResult<layout21protos::Library> {
-        ProtoExporter::export(&self)
+    /// Convert to ProtoBuf
+    #[cfg(feature = "proto")]
+    pub fn to_proto(&self) -> LayoutResult<proto::proto::Library> {
+        proto::ProtoExporter::export(&self)
     }
 }
 /// Raw-Layout Cell Definition

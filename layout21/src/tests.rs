@@ -498,6 +498,8 @@ fn exports(lib: Library) -> LayoutResult<()> {
     save_yaml(&lib, &resource(&format!("{}.yaml", &lib.name)))?;
     let raw = rawconv::RawConverter::convert(lib, stack()?)?;
     save_yaml(&raw, &resource(&format!("{}.raw.yaml", &raw.name)))?;
+
+    // If available, also export to GDSII
     let gds = raw.to_gds()?;
     save_yaml(&gds, &resource(&format!("{}.gds.yaml", &gds.name)))?;
     gds.save(&resource(&format!("{}.gds", &gds.name)))?;

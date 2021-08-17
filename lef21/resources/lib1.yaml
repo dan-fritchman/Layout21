@@ -1,0 +1,7 @@
+---
+macros:
+  - name: some_name
+version: "5"
+bus_bit_chars:
+  - x
+  - y

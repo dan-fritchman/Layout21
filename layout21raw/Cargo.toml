@@ -5,8 +5,12 @@ name = "layout21raw"
 version = "0.1.0"
 
 [dependencies]
-layout21protos = {package = "layout21protos", version = "0.1.0", path = "../layout21protos"}
-gds21 = {package = "gds21", version = "0.1.0", path = "../gds21"}
+# Local workspace dependencies
+gds21 = {path = "../gds21", optional = true}
+layout21protos = {path = "../layout21protos", optional = true}
+lef21 = {path = "../lef21", optional = true}
+# Crates.io 
+enum_dispatch = "0.3.7"
 num-integer = "0.1"
 num-traits = "0.2"
 serde = {version = "1.0", features = ["derive"]}
@@ -15,4 +19,9 @@ serde_json = "1.0"
 serde_yaml = "0.8"
 slotmap = {version = "1.0", features = ["serde"]}
 toml = "0.5.7"
-enum_dispatch = "0.3.7"
+
+[features]
+default = ["gds", "lef", "proto"]
+gds = ["gds21"]
+lef = ["lef21"]
+proto = ["layout21protos"]

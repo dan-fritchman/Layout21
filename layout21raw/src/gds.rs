@@ -1,5 +1,7 @@
 //!
-//! # GDSII Import & Export Module
+//! # GDSII Conversion Module
+//!
+//! Converts between Layout21's "raw" layout data-model and [gds21] structures.
 //!
 
 // Std-Lib
@@ -14,42 +16,48 @@ use slotmap::{new_key_type, SlotMap};
 use crate::{Cell, Dir, Element, Instance, LayerPurpose, Layers, Library, Point, Shape, Units};
 use crate::{CellKey, LayerKey, TextElement};
 use crate::{ErrorContext, HasErrors, LayoutError, LayoutResult};
-use gds21;
+pub use gds21;
 
 new_key_type! {
     /// Keys for [Element] entries
     pub struct ElementKey;
 }
 
-/// # Gds21 Converter
+impl From<gds21::GdsError> for LayoutError {
+    fn from(e: gds21::GdsError) -> Self {
+        Self::Boxed(Box::new(e))
+    }
+}
+
+/// # Gds21 Exporter
 /// Converts a [raw::Library] to a GDSII library ([gds21::GdsLibrary]).
 /// The sole valid top-level entity for conversion is always a [Library].
 #[derive(Debug)]
-pub struct GdsExporter {
-    pub lib: Library,
+pub struct GdsExporter<'lib> {
+    lib: &'lib Library,
 }
-impl GdsExporter {
-    pub fn export(lib: Library) -> LayoutResult<gds21::GdsLibrary> {
+impl<'lib> GdsExporter<'lib> {
+    pub fn export(lib: &'lib Library) -> LayoutResult<gds21::GdsLibrary> {
         Self { lib }.export_lib()
     }
-    fn export_lib(self) -> LayoutResult<gds21::GdsLibrary> {
+    fn export_lib(&self) -> LayoutResult<gds21::GdsLibrary> {
         // Create a new Gds Library
-        let mut lib = gds21::GdsLibrary::new(&self.lib.name);
+        let mut gdslib = gds21::GdsLibrary::new(&self.lib.name);
         // Set its distance units
         // In all cases the GDSII "user units" are set to 1µm.
-        lib.units = match self.lib.units {
+        gdslib.units = match self.lib.units {
             Units::Micro => gds21::GdsUnits::new(1.0, 1e-6),
             Units::Nano => gds21::GdsUnits::new(1e-3, 1e-9),
             Units::Angstrom => gds21::GdsUnits::new(1e-4, 1e-10),
         };
         // And convert each of our `cells` into its `structs`
-        lib.structs = self
+        gdslib.structs = self
             .lib
             .cells
             .iter()
             .map(|(_key, c)| self.export_cell(c))
             .collect::<Result<Vec<_>, _>>()?;
-        Ok(lib)
+        Ok(gdslib)
     }
     /// Convert a [Cell] to a [gds21::GdsStruct] cell-definition
     fn export_cell(&self, cell: &Cell) -> LayoutResult<gds21::GdsStruct> {
@@ -174,7 +182,7 @@ impl GdsExporter {
         Ok(gds21::GdsPoint::new(x, y))
     }
 }
-impl HasErrors for GdsExporter {
+impl HasErrors for GdsExporter<'_> {
     fn err(&self, msg: impl Into<String>) -> LayoutError {
         LayoutError::Export {
             message: msg.into(),
@@ -647,4 +655,59 @@ impl HasErrors for GdsImporter {
             stack: self.ctx_stack.clone(),
         }
     }
+}
+
+/// Import a GDS Cell with two polygons:
+/// One assigned to a net, and the other not.
+#[cfg(all(test, feature = "gds"))]
+#[test]
+fn gds_import1() -> LayoutResult<()> {
+    use gds21::*;
+    let gds = GdsLibrary {
+        name: "lib1".into(),
+        structs: vec![GdsStruct {
+            name: "cell1".into(),
+            elems: vec![
+                GdsElement::GdsBoundary(GdsBoundary {
+                    layer: 11,
+                    datatype: 22,
+                    xy: GdsPoint::vec(&[(0, 0), (2, 0), (2, 2), (0, 2), (0, 0)]),
+                    ..Default::default()
+                }),
+                GdsElement::GdsTextElem(GdsTextElem {
+                    string: "net1".into(),
+                    layer: 11,    // Same layer as the boundary
+                    texttype: 66, // Could be anything, for now
+                    xy: GdsPoint::new(1, 1),
+                    ..Default::default()
+                }),
+                GdsElement::GdsBoundary(GdsBoundary {
+                    layer: 33,
+                    datatype: 44,
+                    xy: GdsPoint::vec(&[(10, 10), (12, 10), (12, 12), (10, 12), (10, 10)]),
+                    ..Default::default()
+                }),
+                GdsElement::GdsTextElem(GdsTextElem {
+                    string: "net1".into(),
+                    layer: 44, // *Not* Same layer as the boundary
+                    texttype: 66,
+                    xy: GdsPoint::new(11, 11), // Intersects with the boundary
+                    ..Default::default()
+                }),
+            ],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let lib = GdsImporter::import(&gds, None)?;
+    assert_eq!(lib.name, "lib1");
+    assert_eq!(lib.cells.len(), 1);
+    let cell = &lib.cells.values().next().unwrap();
+    assert_eq!(cell.name, "cell1");
+    let elem = &cell.elems[0];
+    assert_eq!(elem.net, Some("net1".to_string()));
+    let elem = &cell.elems[1];
+    assert_eq!(elem.net, None);
+
+    Ok(())
 }
