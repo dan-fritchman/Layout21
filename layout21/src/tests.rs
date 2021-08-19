@@ -43,15 +43,6 @@ fn stack() -> LayoutResult<Stack> {
             Layer {
                 name: "met2".into(),
                 entries: vec![TrackSpec::sig(140), TrackSpec::gap(320)],
-                // entries: vec![
-                //     TrackSpec::gnd(510),
-                //     TrackSpec::pat(vec![TrackEntry::gap(410), TrackEntry::sig(50)], 8),
-                //     TrackSpec::gap(410),
-                //     TrackSpec::pwr(510),
-                // ],
-                // offset: (-255).into(),
-                // overlap: (510).into(),
-                // flip: FlipMode::EveryOther,
                 dir: Dir::Vert,
                 cutsize: (250).into(),
                 offset: (-70).into(),
@@ -398,26 +389,36 @@ fn create_lib3() -> Result<(), LayoutError> {
 fn create_lib4() -> Result<(), LayoutError> {
     let mut lib = Library::new("lib4");
 
+    let unitsize = (18, 1);
+
     let c2 = lib.cells.insert(
         abstrakt::LayoutAbstract {
             name: "UnitCell".into(),
             top_layer: 0,
-            outline: Outline::rect(18, 1)?,
+            outline: Outline::rect(unitsize.0, unitsize.1)?,
             ports: vec![
                 abstrakt::Port {
-                    name: "inp".into(),
-                    kind: abstrakt::PortKind::Edge {
-                        layer: 0,
-                        track: 1,
+                    name: "en".into(),
+                    kind: abstrakt::PortKind::ZTopEdge {
+                        track: 2,
                         side: abstrakt::Side::BottomOrLeft,
+                        into: (5, RelZ::Above),
+                    },
+                },
+                abstrakt::Port {
+                    name: "inp".into(),
+                    kind: abstrakt::PortKind::ZTopEdge {
+                        track: 3,
+                        side: abstrakt::Side::TopOrRight,
+                        into: (11, RelZ::Above),
                     },
                 },
                 abstrakt::Port {
                     name: "out".into(),
-                    kind: abstrakt::PortKind::Edge {
-                        layer: 0,
+                    kind: abstrakt::PortKind::ZTopEdge {
                         track: 5,
                         side: abstrakt::Side::TopOrRight,
+                        into: (11, RelZ::Above),
                     },
                 },
             ],
@@ -425,72 +426,80 @@ fn create_lib4() -> Result<(), LayoutError> {
         .into(), // Convert to a [CellBag]
     );
 
-    // Create an array of instances
-    let mut instances = Vec::new();
-    // Create assignments and cuts
-    let mut assignments = Vec::new();
-    let mut cuts = Vec::new();
-    let m2xpitch = 23;
+    // Create an initially empty layout
+    let mut hasunits = LayoutImpl::new(
+        "HasUnits",                                     // name
+        3,                                              // top_layer
+        Outline::rect(7 * unitsize.0, 7 * unitsize.1)?, // outline
+    );
+    let m2xpitch = 36;
+    let m2botcut = 6;
+    let m2topcut = 7 * 6;
+
+    // For each column
     for x in 0..3 {
-        let m2track = (23 * x + 32) as usize;
+        let m2track = (m2xpitch * (x + 1) - 4) as usize;
         let track = m2track;
+        let m2entrack = (x * m2xpitch) + m2xpitch / 2;
+
+        // For each row
         for y in 0..3 {
-            let botcut = (15 + 21 * y) as usize;
-            let topcut = botcut + 4;
+            let loc = ((2 * x + 1) * unitsize.0, (2 * y + 1) * unitsize.1).into();
             let inst = Instance {
                 inst_name: format!("inst{}{}", x, y),
                 cell: c2,
-                loc: (11 + x * 23, 2 + 3 * y).into(),
+                loc,
                 reflect: false,
                 angle: None,
             };
-            instances.push(inst);
-            let a = Assign {
-                net: format!("dly{}", x),
-                at: TrackIntersection {
-                    layer: 1,
-                    track,
-                    at: botcut,
-                    relz: RelZ::Below,
-                },
-            };
-            assignments.push(a);
-            let a = Assign {
-                net: format!("dly{}", x),
-                at: TrackIntersection {
-                    layer: 1,
-                    track,
-                    at: topcut,
-                    relz: RelZ::Below,
-                },
-            };
-            assignments.push(a);
-            // FIXME: need a third Assign
+            hasunits.instances.push(inst);
+
+            // Assign the input
+            let m1track = (y * 14 + 10) as usize;
+            let m3track = m1track + x as usize;
+            hasunits
+                .net(format!("dly{}", x))
+                .at(1, m2track, m1track, RelZ::Below)
+                .at(2, m3track, m2track, RelZ::Below);
+            if x != 0 {
+                // Cut M3 to the *right* of the input
+                hasunits.cut(2, m3track, m2track + 1, RelZ::Below);
+            } else {
+                // Cut M3 to the *left* of the input
+                hasunits.cut(2, m3track, m2track - 1, RelZ::Below);
+            }
+            // Assign the output
+            let m3track = m1track + ((x + 1) % 3) as usize;
+            let m1track = (y * 14 + 12) as usize;
+            hasunits
+                .net(format!("dly{}", ((x + 1) % 3)))
+                .at(1, m2track + 2, m1track, RelZ::Below)
+                .at(2, m3track, m2track + 2, RelZ::Below);
+            if x != 2 {
+                // Cut M3 to the *left* of the output
+                hasunits.cut(2, m3track, m2track + 1, RelZ::Below);
+            } else {
+                // Cut M3 to the *right* of the output
+                hasunits.cut(2, m3track, m2track + 3, RelZ::Below);
+            }
+
+            // Assign the enable
+            let m1track = (y * 14 + 9) as usize;
+            let m2track = (m2entrack + y) as usize;
+            hasunits
+                .net(format!("en{}{}", x, y))
+                .at(1, m2track, m1track, RelZ::Below);
+            hasunits.cut(1, m2track, m1track + 1, RelZ::Below); // Cut just above
         }
-        let c = TrackIntersection {
-            layer: 1,
-            track,
-            at: 13,
-            relz: RelZ::Below,
-        };
-        cuts.push(c);
-        let c = TrackIntersection {
-            layer: 1,
-            track,
-            at: 21 * 3,
-            relz: RelZ::Below,
-        };
-        cuts.push(c);
+
+        // Make top & bottom M2 cuts
+        hasunits.cut(1, m2track, m2botcut, RelZ::Below);
+        hasunits.cut(1, m2track, m2topcut, RelZ::Below);
+        hasunits.cut(1, m2track + 2, m2botcut, RelZ::Below);
+        hasunits.cut(1, m2track + 2, m2topcut, RelZ::Below);
     }
-    let c = LayoutImpl {
-        name: "HasUnits".into(),
-        top_layer: 3,
-        outline: Outline::rect(300, 10)?,
-        instances,
-        assignments,
-        cuts,
-    };
-    let _c = lib.cells.insert(c.into());
+    // Add it to our library, and export
+    let _ = lib.cells.insert(hasunits.into());
     exports(lib)
 }
 /// Export [Library] `lib` in several formats
@@ -499,7 +508,7 @@ fn exports(lib: Library) -> LayoutResult<()> {
     let raw = rawconv::RawConverter::convert(lib, stack()?)?;
     save_yaml(&raw, &resource(&format!("{}.raw.yaml", &raw.name)))?;
 
-    // If available, also export to GDSII
+    // Export to GDSII
     let gds = raw.to_gds()?;
     save_yaml(&gds, &resource(&format!("{}.gds.yaml", &gds.name)))?;
     gds.save(&resource(&format!("{}.gds", &gds.name)))?;

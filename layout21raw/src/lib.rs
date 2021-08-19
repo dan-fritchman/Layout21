@@ -11,7 +11,7 @@
 
 // Std-Lib
 use std::collections::HashMap;
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 use std::hash::Hash;
 use std::ops::Not;
 
@@ -102,6 +102,13 @@ pub trait HasErrors {
         match opt {
             Some(val) => Ok(val),
             None => self.fail(msg),
+        }
+    }
+    /// Unwrap the [Result] `res`. Return through our failure method if it is [Err].
+    fn ok<T, E>(&self, res: Result<T, E>, msg: impl Into<String>) -> LayoutResult<T> {
+        match res {
+            Ok(val) => Ok(val),
+            Err(_) => self.fail(msg),
         }
     }
 }
@@ -438,10 +445,34 @@ impl Library {
     pub fn to_gds(&self) -> LayoutResult<gds::gds21::GdsLibrary> {
         gds::GdsExporter::export(&self)
     }
+    /// Create from GDSII
+    #[cfg(feature = "gds")]
+    pub fn from_gds(
+        gdslib: &gds::gds21::GdsLibrary,
+        layers: Option<Layers>,
+    ) -> LayoutResult<Library> {
+        gds::GdsImporter::import(&gdslib, layers)
+    }
     /// Convert to ProtoBuf
     #[cfg(feature = "proto")]
     pub fn to_proto(&self) -> LayoutResult<proto::proto::Library> {
         proto::ProtoExporter::export(&self)
+    }
+    /// Create from ProtoBuf, or anything convertible into a Proto Library
+    #[cfg(feature = "proto")]
+    pub fn from_proto<T>(plib: T, layers: Option<Layers>) -> LayoutResult<Library>
+    where
+        // These trait bounds aren't pretty, but more or less say:
+        // * T is convertible into [proto::proto::Library]
+        // * Its conversion's error-type is convertible into [LayoutError]
+        // The "Into" form of the second condition would be something like:
+        // `<T as TryInto<proto::proto::Library>::Error>: Into<LayoutError>`
+        // but doesn't quite work, whereas "constraining" [LayoutError] does.
+        T: TryInto<proto::proto::Library>,
+        LayoutError: From<<T as TryInto<proto::proto::Library>>::Error>,
+    {
+        let plib = plib.try_into()?;
+        proto::ProtoImporter::import(&plib, layers)
     }
 }
 /// Raw-Layout Cell Definition

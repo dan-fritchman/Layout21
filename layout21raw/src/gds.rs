@@ -34,6 +34,7 @@ impl From<gds21::GdsError> for LayoutError {
 /// The sole valid top-level entity for conversion is always a [Library].
 #[derive(Debug)]
 pub struct GdsExporter<'lib> {
+    /// Source [Library]
     lib: &'lib Library,
 }
 impl<'lib> GdsExporter<'lib> {

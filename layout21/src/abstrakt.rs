@@ -62,8 +62,8 @@ pub enum PortKind {
         track: usize,
         /// Side
         side: Side,
-        /// Location into which the pin extends, inward
-        into: TopLoc,
+        /// Location into which the pin extends inward
+        into: (usize, RelZ),
     },
     /// Ports which are internal to the cell outline,
     /// but connect from above in the z-stack.

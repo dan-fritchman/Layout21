@@ -3,6 +3,7 @@
 //!
 
 // Std-Lib Imports
+use std::convert::TryFrom;
 use std::error::Error;
 use std::fs::File;
 use std::io::{BufWriter, Read, Write};
@@ -39,6 +40,13 @@ pub fn to_bytes<T: Message + Sized + Default>(data: &T) -> Vec<u8> {
 /// Decode from byte array/vector
 pub fn from_bytes<T: Message + Sized + Default>(bytes: &[u8]) -> Result<T, prost::DecodeError> {
     T::decode(bytes)
+}
+impl TryFrom<&[u8]> for Library {
+    type Error = prost::DecodeError;
+    /// Decode from byte array/vector
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+        Library::decode(bytes)
+    }
 }
 /// Open from file `fname`
 pub fn open<T: Message + Sized + Default>(fname: &str) -> Result<T, Box<dyn Error>> {

@@ -5,6 +5,7 @@ use std::fmt::Debug;
 use serde::{Deserialize, Serialize};
 
 // Local imports
+use crate::cell::Instance;
 use crate::coords::{DbUnits, Xy};
 use crate::raw::{self, Dir, LayoutError, LayoutResult, Units};
 
@@ -41,7 +42,7 @@ pub enum RailKind {
     Gnd,
 }
 impl RailKind {
-    fn to_string(&self) -> String {
+    pub fn to_string(&self) -> String {
         match self {
             Self::Pwr => "VDD".into(),
             Self::Gnd => "VSS".into(),
@@ -147,11 +148,11 @@ pub struct Layer {
 }
 impl Layer {
     /// Convert this [Layer]'s track-info into a [LayerPeriod]
-    pub(crate) fn to_layer_period(
-        &self,
+    pub(crate) fn to_layer_period<'me, 'lib>(
+        &'me self,
         index: usize,
         stop: impl Into<DbUnits>,
-    ) -> LayoutResult<LayerPeriod> {
+    ) -> LayoutResult<LayerPeriod<'lib>> {
         let stop = stop.into();
         let mut period = LayerPeriod::default();
         period.index = index;
@@ -176,9 +177,7 @@ impl Layer {
                             start: cursor,
                             width: d,
                             segments: vec![TrackSegment {
-                                tp: TrackSegmentType::Wire {
-                                    net: Some(railkind.to_string()),
-                                },
+                                tp: TrackSegmentType::Rail(railkind),
                                 start: 0.into(),
                                 stop,
                             }],
@@ -195,7 +194,7 @@ impl Layer {
                             start: cursor,
                             width: d,
                             segments: vec![TrackSegment {
-                                tp: TrackSegmentType::Wire { net: None },
+                                tp: TrackSegmentType::Wire { src: None },
                                 start: 0.into(),
                                 stop,
                             }],
@@ -269,7 +268,7 @@ impl RelZ {
 }
 
 #[derive(Debug, Clone)]
-pub struct Track {
+pub struct Track<'lib> {
     /// Track Type (Rail, Signal)
     pub ttype: TrackType,
     /// Track Index
@@ -281,9 +280,9 @@ pub struct Track {
     /// Track width
     pub width: DbUnits,
     /// Set of wire-segments, in positional order
-    pub segments: Vec<TrackSegment>,
+    pub segments: Vec<TrackSegment<'lib>>,
 }
-impl Track {
+impl<'lib> Track<'lib> {
     /// Verify a (generally just-created) [Track] is valid
     pub fn validate(self) -> LayoutResult<Self> {
         if self.width < DbUnits(0) {
@@ -291,36 +290,32 @@ impl Track {
         }
         Ok(self)
     }
-    /// Retrieve a (mutable) reference to the segment at cross-dimension `dist`
-    /// Returns None for `dist` outside the segment, or in-between segments
-    pub fn segment_at(&mut self, dist: DbUnits) -> Option<&mut TrackSegment> {
-        if self.segments.len() < 1 {
-            return None;
-        }
-        for seg in self.segments.iter_mut() {
-            if seg.start > dist {
-                return None;
-            }
-            if seg.start <= dist && seg.stop >= dist {
-                return Some(seg);
-            }
-        }
-        None
-    }
     /// Set the net of the track-segment at `at` to `net`
-    pub fn set_net(&mut self, at: DbUnits, netname: impl Into<String>) -> LayoutResult<()> {
-        let mut seg = self.segment_at(at);
+    pub fn set_net(&mut self, at: DbUnits, assn: &'lib Assign) -> TrackResult<()> {
+        // First find the segment to be modified
+        let mut seg = None;
+        for s in self.segments.iter_mut() {
+            if s.start > at {
+                break;
+            }
+            if s.start <= at && s.stop >= at {
+                seg = Some(s);
+                break;
+            }
+        }
         match seg {
-            None => Err(format!("{:?} has no segment at {:?}", self, at).into()),
+            None => Err(TrackError::OutOfBounds(at)),
             Some(seg) => match seg.tp {
-                TrackSegmentType::Blockage => {
-                    Err(format!("Cannot set net on Blockage at {:?}, {:?}", self, at).into())
+                TrackSegmentType::Rail(_) => unreachable!(),
+                TrackSegmentType::Blockage { .. } => {
+                    // FIXME: sort out the desired behaviour here.
+                    // Vias above ZTop instance-pins generally land in this case.
+                    // We could check for their locations? Or just let it go.
+                    Ok(())
                 }
-                TrackSegmentType::Cut => {
-                    Err(format!("Cannot set net on Cut at {:?}, {:?}", self, at).into())
-                }
-                TrackSegmentType::Wire { ref mut net } => {
-                    net.replace(netname.into());
+                TrackSegmentType::Cut { src } => Err(TrackError::CutConflict(src.clone())),
+                TrackSegmentType::Wire { ref mut src, .. } => {
+                    src.replace(assn);
                     Ok(())
                 }
             },
@@ -328,37 +323,39 @@ impl Track {
     }
     /// Insert a blockage from `start` to `stop`.
     /// Fails if the region is not a contiguous wire segment.
-    pub fn cut_or_block(
-        &mut self,
-        start: DbUnits,
-        stop: DbUnits,
-        tp: TrackSegmentType,
-    ) -> LayoutResult<()> {
-        if self.segments.len() == 0 || stop <= start {
-            return Err(LayoutError::msg("Error Cutting Track"));
-        }
+    pub fn cut_or_block(&mut self, blockage: TrackSegment<'lib>) -> TrackResult<()> {
+        // Find the segment where the blockage starts
         let segidx = self
             .segments
             .iter_mut()
-            .position(|seg| seg.stop >= start)
-            .ok_or(LayoutError::msg("Error Cutting Track"))?
+            .position(|seg| seg.stop >= blockage.start)
+            .ok_or(TrackError::OutOfBounds(blockage.start))?
             .clone();
         let seg = &mut self.segments[segidx];
-        if seg.tp == TrackSegmentType::Cut
-            || seg.tp == TrackSegmentType::Blockage
-            || seg.stop < stop
-        {
-            return Err(LayoutError::msg("Error Cutting Track"));
+        // Check for conflicts, and get a copy of our segment-type as we will likely insert a similar segment
+        let tpcopy = match seg.tp {
+            TrackSegmentType::Blockage { src } => Err(TrackError::BlockageConflict(src.clone())),
+            TrackSegmentType::Cut { src } => Err(TrackError::CutConflict(src.clone())),
+            TrackSegmentType::Wire { .. } => Ok(seg.tp.clone()),
+            TrackSegmentType::Rail(_) => Ok(seg.tp.clone()),
+        }?;
+        // Make sure the cut only effects one segment, or fail
+        if seg.stop < blockage.stop {
+            // FIXME this should really be the *next* segment, borrow checking fight
+            return Err(TrackError::Overlap(seg.stop, blockage.stop));
         }
+
         // All clear; time to cut it.
-        let blockage = TrackSegment { tp, start, stop };
         // In the more-common case in which the cut-end and segment-end *do not* coincide,
         // create and insert a new segment.
+        // De-structure the dimensional parts of `blockage`
+        let start = blockage.start;
+        let stop = blockage.stop;
         let mut to_be_inserted: Vec<(usize, TrackSegment)> = Vec::new();
         to_be_inserted.push((segidx + 1, blockage));
         if seg.stop != stop {
             let newseg = TrackSegment {
-                tp: TrackSegmentType::Wire { net: None },
+                tp: tpcopy,
                 start: stop,
                 stop: seg.stop,
             };
@@ -373,13 +370,28 @@ impl Track {
     }
     /// Insert a blockage from `start` to `stop`.
     /// Fails if the region is not a contiguous wire segment.
-    pub fn block(&mut self, start: DbUnits, stop: DbUnits) -> LayoutResult<()> {
-        self.cut_or_block(start, stop, TrackSegmentType::Blockage)
+    pub fn block(&mut self, start: DbUnits, stop: DbUnits, src: &'lib Instance) -> TrackResult<()> {
+        let seg = TrackSegment {
+            start,
+            stop,
+            tp: TrackSegmentType::Blockage { src },
+        };
+        self.cut_or_block(seg)
     }
     /// Cut from `start` to `stop`.
     /// Fails if the region is not a contiguous wire segment.
-    pub fn cut(&mut self, start: DbUnits, stop: DbUnits) -> LayoutResult<()> {
-        self.cut_or_block(start, stop, TrackSegmentType::Cut)
+    pub fn cut(
+        &mut self,
+        start: DbUnits,
+        stop: DbUnits,
+        src: &'lib TrackIntersection,
+    ) -> TrackResult<()> {
+        let seg = TrackSegment {
+            start,
+            stop,
+            tp: TrackSegmentType::Cut { src },
+        };
+        self.cut_or_block(seg)
     }
     /// Set the stop position for our last [TrackSegment] to `stop`
     pub fn stop(&mut self, stop: DbUnits) -> LayoutResult<()> {
@@ -396,12 +408,12 @@ impl Track {
 /// Stores each as a [Track] struct, which moves to a (start, width) size-format,
 /// and includes a vector of track-segments for cutting and assigning nets.
 #[derive(Debug, Clone, Default)]
-pub struct LayerPeriod {
+pub struct LayerPeriod<'lib> {
     pub index: usize,
-    pub signals: Vec<Track>,
-    pub rails: Vec<Track>,
+    pub signals: Vec<Track<'lib>>,
+    pub rails: Vec<Track<'lib>>,
 }
-impl LayerPeriod {
+impl<'lib> LayerPeriod<'lib> {
     /// Shift the period by `dist` in its periodic direction
     pub fn offset(&mut self, dist: DbUnits) -> LayoutResult<()> {
         for t in self.rails.iter_mut() {
@@ -423,41 +435,47 @@ impl LayerPeriod {
         Ok(())
     }
     /// Cut all [Track]s from `start` to `stop`,
-    pub fn cut(&mut self, start: DbUnits, stop: DbUnits) -> LayoutResult<()> {
+    pub fn cut(
+        &mut self,
+        start: DbUnits,
+        stop: DbUnits,
+        src: &'lib TrackIntersection,
+    ) -> TrackResult<()> {
         for t in self.rails.iter_mut() {
-            t.cut(start, stop)?;
+            t.cut(start, stop, src)?;
         }
         for t in self.signals.iter_mut() {
-            t.cut(start, stop)?;
+            t.cut(start, stop, src)?;
         }
         Ok(())
     }
     /// Block all [Track]s from `start` to `stop`,
-    pub fn block(&mut self, start: DbUnits, stop: DbUnits) -> LayoutResult<()> {
+    pub fn block(&mut self, start: DbUnits, stop: DbUnits, src: &'lib Instance) -> TrackResult<()> {
         for t in self.rails.iter_mut() {
-            t.block(start, stop)?;
+            t.block(start, stop, src)?;
         }
         for t in self.signals.iter_mut() {
-            t.block(start, stop)?;
+            t.block(start, stop, src)?;
         }
         Ok(())
     }
 }
 /// # Segments of un-split, single-net wire on a [Track]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TrackSegment {
+#[derive(Debug, Clone)]
+pub struct TrackSegment<'lib> {
     /// Segment-Type
-    pub tp: TrackSegmentType,
+    pub tp: TrackSegmentType<'lib>,
     /// Start Location, in [Stack]'s `units`
     pub start: DbUnits,
     /// End/Stop Location, in [Stack]'s `units`
     pub stop: DbUnits,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum TrackSegmentType {
-    Cut,
-    Blockage,
-    Wire { net: Option<String> },
+#[derive(Debug, Clone)]
+pub enum TrackSegmentType<'lib> {
+    Cut { src: &'lib TrackIntersection },
+    Blockage { src: &'lib Instance },
+    Wire { src: Option<&'lib Assign> },
+    Rail(RailKind),
 }
 /// Intersection Between Adjacent Layers in [Track]-Space
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -505,3 +523,12 @@ pub enum PrimitiveMode {
 pub struct PrimitiveLayer {
     pub pitches: Xy<DbUnits>,
 }
+
+#[derive(Debug)]
+pub enum TrackError {
+    OutOfBounds(DbUnits),
+    Overlap(DbUnits, DbUnits),
+    CutConflict(TrackIntersection),
+    BlockageConflict(Instance),
+}
+pub type TrackResult<T> = Result<T, TrackError>;

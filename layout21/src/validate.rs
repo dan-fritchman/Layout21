@@ -3,39 +3,23 @@
 //!
 
 // Local imports
-use crate::coords::DbUnits;
-use crate::raw::{self, LayoutError, LayoutResult, Units};
+use crate::coords::{DbUnits, Xy};
+use crate::raw::{self, Dir, LayoutError, LayoutResult, Units};
 use crate::stack::{Assign, Layer, LayerPeriod, PrimitiveLayer, RelZ, Stack, TrackIntersection};
 use crate::stack::{PrimitiveMode, ViaLayer};
 
 /// Helper-function for asserting all sorts of boolean conditions, returning [LayoutResult] and enabling the question-mark operator.
-pub(crate) fn assert(b: bool) -> LayoutResult<()> {
+pub fn assert(b: bool) -> LayoutResult<()> {
     match b {
         true => Ok(()),
         false => Err(LayoutError::Validation),
     }
 }
-/// Derived data for a [Stack], after it has gone through some validation steps.
-#[derive(Debug)]
-pub(crate) struct ValidStack {
-    /// Measurement units
-    pub units: Units,
-    /// Layer used for cell outlines/ boundaries
-    pub boundary_layer: Option<raw::Layer>,
 
-    /// Primitive layer
-    pub prim: PrimitiveLayer,
-    /// Set of via layers
-    pub vias: Vec<ViaLayer>,
-    /// Metal Layers
-    pub(crate) metals: Vec<ValidMetalLayer>,
-    /// Pitches per metal layer, one each for those in `stack`
-    pub(crate) pitches: Vec<DbUnits>,
-}
 #[derive(Debug)]
-pub(crate) struct StackValidator;
+pub struct StackValidator;
 impl StackValidator {
-    pub(crate) fn validate(stack: Stack) -> LayoutResult<ValidStack> {
+    pub fn validate<'lib>(stack: Stack) -> LayoutResult<ValidStack<'lib>> {
         let Stack {
             units,
             boundary_layer,
@@ -49,11 +33,15 @@ impl StackValidator {
         assert(prim.pitches.y.raw() > 0)?;
 
         // Validate each metal layer
-        let metals = layers
-            .into_iter()
-            .enumerate()
-            .map(|(num, layer)| ValidMetalLayer::validate(layer, num, &prim))
-            .collect::<Result<Vec<_>, _>>()?;
+        let mut metals = Vec::new();
+        for (num, layer) in layers.into_iter().enumerate() {
+            metals.push(ValidMetalLayer::validate(layer, num, &prim)?);
+        }
+        // let metals = layers
+        //     .into_iter()
+        //     .enumerate()
+        //     .map(move |(num, layer)| ValidMetalLayer::validate(layer, num, &prim))
+        //     .collect::<Result<Vec<_>, _>>()?;
         // Calculate pitches as the *least-common multiple* of same-direction layers below each layer
         let mut pitches = vec![DbUnits(0); metals.len()];
         for (num, metal) in metals.iter().enumerate() {
@@ -77,26 +65,43 @@ impl StackValidator {
         })
     }
 }
+/// Derived data for a [Stack], after it has gone through some validation steps.
 #[derive(Debug)]
-pub(crate) struct ValidMetalLayer {
+pub struct ValidStack<'lib> {
+    /// Measurement units
+    pub units: Units,
+    /// Layer used for cell outlines/ boundaries
+    pub boundary_layer: Option<raw::Layer>,
+
+    /// Primitive layer
+    pub prim: PrimitiveLayer,
+    /// Set of via layers
+    pub vias: Vec<ViaLayer>,
+    /// Metal Layers
+    pub metals: Vec<ValidMetalLayer<'lib>>,
+    /// Pitches per metal layer, one each for those in `stack`
+    pub pitches: Vec<DbUnits>,
+}
+#[derive(Debug)]
+pub struct ValidMetalLayer<'lib> {
     /// Original Layer Spec
-    pub(crate) spec: Layer,
+    pub spec: Layer,
 
     // Derived data
     /// Index in layers array
-    pub(crate) index: usize,
+    pub index: usize,
     /// Derived single-period template
-    pub(crate) period: LayerPeriod,
+    pub period: LayerPeriod<'lib>,
     /// Pitch in db-units
-    pub(crate) pitch: DbUnits,
+    pub pitch: DbUnits,
 }
-impl ValidMetalLayer {
+impl<'lib> ValidMetalLayer<'lib> {
     /// Perform validation on a [Layer], return a corresponding [ValidMetalLayer]
-    pub(crate) fn validate(
+    pub fn validate<'prim>(
         layer: Layer,
         index: usize,
-        prim: &PrimitiveLayer,
-    ) -> LayoutResult<ValidMetalLayer> {
+        prim: &'prim PrimitiveLayer,
+    ) -> LayoutResult<ValidMetalLayer<'lib>> {
         // Check for non-zero widths of all entries
         for entry in layer.entries().iter() {
             assert(entry.width.raw() > 0)?;
@@ -137,18 +142,33 @@ impl ValidMetalLayer {
         Ok((cursor, cursor + track.width))
     }
 }
-/// Location on a [Track], including the db-unit cross-dimension
+
 #[derive(Debug, Clone)]
-pub(crate) struct ValidTrackLoc {
+pub struct ValidLayerAndTrack {
     pub layer: usize,
     pub track: usize,
-    pub dist: DbUnits,
 }
-impl ValidTrackLoc {
-    /// Validate a [TrackIntersection], and convert the cross-dimension into db-units
-    pub(crate) fn validate(i: &TrackIntersection, stack: &ValidStack) -> LayoutResult<Self> {
+impl ValidLayerAndTrack {
+    pub fn validate(i: &TrackIntersection, stack: &ValidStack) -> LayoutResult<ValidLayerAndTrack> {
+        let track = i.track;
+        let layer = i.layer;
         // Check that we won't reach outside the stack, and grab the secondary layer
         assert(i.layer < stack.metals.len())?;
+        Ok(ValidLayerAndTrack { track, layer })
+    }
+}
+/// Location on a [Track], including the db-unit cross-dimension
+#[derive(Debug, Clone)]
+pub struct ValidCut<'lib> {
+    pub layer: usize,
+    pub track: usize,
+    pub xy: Xy<DbUnits>,
+    pub src: &'lib TrackIntersection,
+}
+impl<'lib> ValidCut<'lib> {
+    /// Validate a [TrackIntersection], and convert the cross-dimension into db-units
+    pub fn validate(i: &'lib TrackIntersection, stack: &'lib ValidStack) -> LayoutResult<Self> {
+        let ValidLayerAndTrack { layer, track } = ValidLayerAndTrack::validate(i, stack)?;
         let other = if i.relz == RelZ::Below {
             assert(i.layer >= 1)?;
             i.layer - 1
@@ -156,37 +176,88 @@ impl ValidTrackLoc {
             assert(i.layer < stack.metals.len() - 1)?;
             i.layer + 1
         };
+
+        // Find the center of our track, initially assuming it runs vertically
+        let x = stack.metals[i.layer].center(i.track)?;
         // And find the center of the `other` track
-        Ok(ValidTrackLoc {
-            layer: i.layer,
-            track: i.track,
-            dist: stack.metals[other].center(i.at)?,
+        let y = stack.metals[other].center(i.at)?;
+        let mut xy = Xy::new(x, y);
+        if stack.metals[i.layer].spec.dir == Dir::Horiz {
+            xy = xy.transpose();
+        }
+        Ok(ValidCut {
+            layer,
+            track,
+            xy,
+            src: i,
         })
     }
 }
-/// Intersection between two validated [ValidTrackLoc],
-/// including the invariant that `top` is one layer above `bot`.
+
+/// Location on a [Track], including the db-unit cross-dimension
 #[derive(Debug, Clone)]
-pub(crate) struct ValidAssign {
-    pub net: String,
-    pub top: ValidTrackLoc,
-    pub bot: ValidTrackLoc,
+pub struct ValidAssignLoc<'lib> {
+    pub top: ValidLayerAndTrack,
+    pub bot: ValidLayerAndTrack,
+    pub xy: Xy<DbUnits>,
+    pub src: &'lib TrackIntersection,
 }
-impl ValidAssign {
-    /// Validate a [TrackIntersection], and convert into top/bottom coordinates
-    pub(crate) fn validate(assn: &Assign, stack: &ValidStack) -> LayoutResult<Self> {
-        // Name "validation": just empty-string checking, at least for now
-        assert(assn.net.len() > 0)?;
-        let net = assn.net.clone();
+impl<'lib> ValidAssignLoc<'lib> {
+    /// Validate a [TrackIntersection], and convert the cross-dimension into db-units
+    pub fn validate(i: &'lib TrackIntersection, stack: &'lib ValidStack) -> LayoutResult<Self> {
         // Validate the location and its transpose
-        let loc1 = ValidTrackLoc::validate(&assn.at, stack)?;
-        let loc2 = ValidTrackLoc::validate(&assn.at.transpose(), stack)?;
+        let loc1 = ValidLayerAndTrack::validate(i, stack)?;
+        let loc2 = ValidLayerAndTrack::validate(&i.transpose(), stack)?;
         // Finally arrange the two by top/bottom
-        let (top, bot) = if assn.at.relz == RelZ::Below {
+        let (top, bot) = if i.relz == RelZ::Below {
             (loc1, loc2)
         } else {
             (loc2, loc1)
         };
-        Ok(Self { net, top, bot })
+        let other = if i.relz == RelZ::Below {
+            assert(i.layer >= 1)?;
+            i.layer - 1
+        } else {
+            assert(i.layer < stack.metals.len() - 1)?;
+            i.layer + 1
+        };
+
+        // Find the center of our track, initially assuming it runs vertically
+        let x = stack.metals[i.layer].center(i.track)?;
+        // And find the center of the `other` track
+        let y = stack.metals[other].center(i.at)?;
+        let mut xy = Xy::new(x, y);
+        if stack.metals[i.layer].spec.dir == Dir::Horiz {
+            xy = xy.transpose();
+        }
+        Ok(ValidAssignLoc {
+            top,
+            bot,
+            xy,
+            src: i,
+        })
+    }
+}
+
+/// Intersection between two validated [ValidAssignLoc],
+/// including the invariant that `top` is one layer above `bot`.
+#[derive(Debug, Clone)]
+pub struct ValidAssign<'lib> {
+    pub net: String,
+    pub loc: ValidAssignLoc<'lib>,
+    pub src: &'lib Assign,
+}
+impl<'lib> ValidAssign<'lib> {
+    /// Validate a [TrackIntersection], and convert into top/bottom coordinates
+    pub fn validate(assn: &'lib Assign, stack: &'lib ValidStack) -> LayoutResult<Self> {
+        // Name "validation": just empty-string checking, at least for now
+        assert(assn.net.len() > 0)?;
+        let net = assn.net.clone();
+        let loc = ValidAssignLoc::validate(&assn.at, stack)?;
+        Ok(Self {
+            net,
+            loc,
+            src: assn,
+        })
     }
 }

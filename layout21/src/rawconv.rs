@@ -14,14 +14,14 @@ use crate::coords::{DbUnits, HasUnits, PrimPitches, UnitSpeced, Xy};
 use crate::library::Library;
 use crate::outline::{HasOutline, Outline};
 use crate::raw::{self, Dir, HasErrors, LayoutError, LayoutResult, Point};
-use crate::stack::{Stack, Track, TrackSegmentType};
+use crate::stack::{LayerPeriod, RelZ, Stack, Track, TrackError, TrackSegmentType};
 use crate::{abstrakt, cell, validate};
 
 /// A short-lived set of references to an [Instance] and its cell-definition
 #[derive(Debug, Clone)]
-struct TempInstance<'a> {
-    inst: &'a Instance,
-    def: &'a (dyn HasOutline + 'static),
+struct TempInstance<'lib> {
+    inst: &'lib Instance,
+    def: &'lib (dyn HasOutline + 'static),
 }
 // Create key-types for each internal type stored in [SlotMap]s
 new_key_type! {
@@ -30,17 +30,17 @@ new_key_type! {
 }
 /// A short-lived Cell, largely organized by layer
 #[derive(Debug, Clone)]
-struct TempCell<'a> {
+struct TempCell<'lib> {
     /// Reference to the source [Cell]
-    cell: &'a LayoutImpl,
+    cell: &'lib LayoutImpl,
     /// Reference to the source [Library]
-    lib: &'a Library,
+    lib: &'lib Library,
     /// Instances and references to their definitions
-    instances: Vec<TempInstance<'a>>,
+    instances: Vec<TempInstance<'lib>>,
     /// Cuts, arranged by Layer
-    cuts: Vec<Vec<validate::ValidTrackLoc>>,
+    cuts: Vec<Vec<validate::ValidCut<'lib>>>,
     /// Validated Assignments
-    assignments: SlotMap<AssignKey, validate::ValidAssign>,
+    assignments: SlotMap<AssignKey, validate::ValidAssign<'lib>>,
     /// Assignments, arranged by Layer
     top_assns: Vec<Vec<AssignKey>>,
     /// Assignments, arranged by Layer
@@ -48,13 +48,13 @@ struct TempCell<'a> {
 }
 /// Temporary arrangement of data for a [Layer] within a [Cell]
 #[derive(Debug, Clone)]
-struct TempCellLayer<'a> {
+struct TempCellLayer<'lib> {
     /// Reference to the validated metal layer
-    layer: &'a validate::ValidMetalLayer,
+    layer: &'lib validate::ValidMetalLayer<'lib>,
     /// Reference to the parent cell
-    cell: &'a TempCell<'a>,
+    cell: &'lib TempCell<'lib>,
     /// Instances which intersect with this layer and period
-    instances: Vec<&'a TempInstance<'a>>,
+    instances: Vec<&'lib TempInstance<'lib>>,
     /// Pitch per layer-period
     pitch: DbUnits,
     /// Number of layer-periods
@@ -66,13 +66,13 @@ struct TempCellLayer<'a> {
 /// Short-Lived structure of the stuff relevant for converting a single LayerPeriod,
 /// on a single Layer, in a single Cell.
 #[derive(Debug, Clone)]
-struct TempPeriod<'a> {
+struct TempPeriod<'lib> {
     periodnum: usize,
-    cell: &'a TempCell<'a>,
-    layer: &'a TempCellLayer<'a>,
+    cell: &'lib TempCell<'lib>,
+    layer: &'lib TempCellLayer<'lib>,
     /// Instance Blockages
-    blockages: Vec<(PrimPitches, PrimPitches)>,
-    cuts: Vec<&'a validate::ValidTrackLoc>,
+    blockages: Vec<(PrimPitches, PrimPitches, &'lib Instance)>,
+    cuts: Vec<&'lib validate::ValidCut<'lib>>,
     top_assns: Vec<AssignKey>,
     bot_assns: Vec<AssignKey>,
 }
@@ -81,13 +81,13 @@ struct TempPeriod<'a> {
 ///
 /// Ideally an iterator, but really just a struct that creates an in-order [Vec] at creation time.
 #[derive(Debug)]
-pub struct DepOrder<'a> {
-    lib: &'a Library,
+pub struct DepOrder<'lib> {
+    lib: &'lib Library,
     stack: Vec<cell::CellBagKey>,
     seen: HashSet<cell::CellBagKey>,
 }
-impl<'a> DepOrder<'a> {
-    fn order(lib: &'a Library) -> Vec<cell::CellBagKey> {
+impl<'lib> DepOrder<'lib> {
+    fn order(lib: &'lib Library) -> Vec<cell::CellBagKey> {
         let mut me = Self {
             lib,
             stack: Vec::new(),
@@ -115,16 +115,16 @@ impl<'a> DepOrder<'a> {
 }
 
 /// # Converter from [Library] and constituent elements to [raw::Library]
-pub struct RawConverter {
+pub struct RawConverter<'lib> {
     pub(crate) lib: Library,
-    pub(crate) stack: validate::ValidStack,
+    pub(crate) stack: validate::ValidStack<'lib>,
     pub(crate) rawlayers: raw::Layers,
     pub(crate) layerkeys: Vec<raw::LayerKey>,
     pub(crate) boundary_layer: raw::LayerKey,
     /// Mapping from our cell-definition keys to the raw-library keys
     pub(crate) rawcells: HashMap<cell::CellBagKey, raw::CellKey>,
 }
-impl RawConverter {
+impl<'lib> RawConverter<'lib> {
     /// Convert [Library] `lib` to a [raw::Library]
     /// Consumes `lib` in the process
     pub fn convert(lib: Library, stack: Stack) -> LayoutResult<raw::Library> {
@@ -271,9 +271,9 @@ impl RawConverter {
             })
             .collect::<Result<Vec<_>, _>>()?;
         // Validate `cuts`, and arrange them by layer
-        let mut cuts: Vec<Vec<validate::ValidTrackLoc>> = vec![vec![]; cell.top_layer()];
+        let mut cuts: Vec<Vec<validate::ValidCut>> = vec![vec![]; cell.top_layer()];
         for cut in cell.cuts.iter() {
-            let c = validate::ValidTrackLoc::validate(cut, &self.stack)?;
+            let c = validate::ValidCut::validate(cut, &self.stack)?;
             cuts[c.layer].push(c);
             // FIXME: cell validation should also check that this lies within our outline. probably do this earlier
         }
@@ -283,8 +283,8 @@ impl RawConverter {
         let mut assignments = SlotMap::with_key();
         for assn in cell.assignments.iter() {
             let v = validate::ValidAssign::validate(assn, &self.stack)?;
-            let bot = v.bot.layer;
-            let top = v.top.layer;
+            let bot = v.loc.bot.layer;
+            let top = v.loc.top.layer;
             let k = assignments.insert(v);
             bot_assns[bot].push(k);
             top_assns[top].push(k);
@@ -315,66 +315,75 @@ impl RawConverter {
             .spec
             .to_layer_period(temp_period.periodnum, temp_period.layer.span.0)?;
         // Insert blockages on each track
-        for (n1, n2) in temp_period.blockages.iter() {
+        for (n1, n2, inst) in temp_period.blockages.iter() {
             // Convert primitive-pitch-based blockages to db units
-            let start = self.convert_to_db_units(*n1);
-            let stop = self.convert_to_db_units(*n2);
-            layer_period.block(start, stop)?;
+            let start = self.db_units(*n1);
+            let stop = self.db_units(*n2);
+            let res = layer_period.block(start, stop, inst);
+            self.ok(
+                res,
+                format!(
+                    "Could not insert blockage on Layer {:?}, period {} from {:?} to {:?}",
+                    layer, temp_period.periodnum, start, stop
+                ),
+            )?;
         }
         // Place all relevant cuts
         let nsig = layer_period.signals.len();
         for cut in temp_period.cuts.iter() {
             // Cut the assigned track
             let track = &mut layer_period.signals[cut.track % nsig];
-            track.cut(
-                cut.dist - layer.spec.cutsize / 2,
-                cut.dist + layer.spec.cutsize / 2,
+            let dist = cut.xy[layer.spec.dir];
+            let res = track.cut(
+                dist - layer.spec.cutsize / 2, // start
+                dist + layer.spec.cutsize / 2, // stop
+                cut.src,                       // src
+            );
+            self.ok(
+                res,
+                format!("Could not make track-cut {:?} in {:?}", cut, temp_period),
             )?;
         }
         // Handle Net Assignments
         // Start with those for which we're the lower of the two layers.
         // These will also be where we add vias
         let via_layer = &self.stack.vias[layer.index];
-        for assn_id in temp_period.bot_assns.iter() {
-            let assn = temp_period
-                .cell
-                .assignments
-                .get(*assn_id)
-                .ok_or(LayoutError::from("Internal error: invalid assignment"))?;
-            // Grab a (mutable) reference to the assigned track
-            let track = &mut layer_period.signals[assn.bot.track % nsig];
-            // And set the net at the assignment's location
-            track.set_net(assn.bot.dist, &assn.net)?;
 
+        for assn_id in temp_period.bot_assns.iter() {
+            let assn = self.unwrap(
+                temp_period.cell.assignments.get(*assn_id),
+                "Internal error: invalid assignment",
+            )?;
+            self.assign_track(layer, &mut layer_period, assn, false)?;
+
+            // Create the via element
             let e = raw::Element {
                 net: None,
-                layer: self.layerkeys[layer.index],
+                layer: self.layerkeys[layer.index], // FIXME: via_layer?
                 purpose: raw::LayerPurpose::Drawing,
                 inner: raw::Shape::Rect {
                     p0: self.convert_point(
-                        assn.bot.dist - via_layer.size.x / 2,
-                        assn.top.dist - via_layer.size.y / 2,
+                        assn.loc.xy.x - via_layer.size.x / 2,
+                        assn.loc.xy.y - via_layer.size.y / 2,
                     ),
                     p1: self.convert_point(
-                        assn.bot.dist + via_layer.size.x / 2,
-                        assn.top.dist + via_layer.size.y / 2,
+                        assn.loc.xy.x + via_layer.size.x / 2,
+                        assn.loc.xy.y + via_layer.size.y / 2,
                     ),
                 },
             };
             elems.push(e);
         }
+
         // Assign all the segments for which we're the top layer
         for assn_id in temp_period.top_assns.iter() {
-            let assn = temp_period
-                .cell
-                .assignments
-                .get(*assn_id)
-                .ok_or(LayoutError::from("Internal error: invalid assignment"))?;
-            // Grab a (mutable) reference to the assigned track
-            let track = &mut layer_period.signals[assn.top.track % nsig];
-            // And set the net at the assignment's location
-            track.set_net(assn.top.dist, &assn.net)?;
+            let assn = self.unwrap(
+                temp_period.cell.assignments.get(*assn_id),
+                "Internal error: invalid assignment",
+            )?;
+            self.assign_track(layer, &mut layer_period, assn, true)?;
         }
+
         // Convert all TrackSegments to raw Elements
         for t in layer_period.rails.iter() {
             elems.extend(self.convert_track(t, &layer)?);
@@ -383,6 +392,47 @@ impl RawConverter {
             elems.extend(self.convert_track(t, &layer)?);
         }
         Ok(elems)
+    }
+    /// Set the net corresponding to `assn` on layer `layer`.
+    ///
+    /// The type signature, particularly lifetimes, aren't pretty.
+    /// <'f> is the short "function lifetime" of the argument references
+    pub fn assign_track<'f>(
+        &self,
+        layer: &'f validate::ValidMetalLayer<'lib>,
+        layer_period: &'f mut LayerPeriod<'lib>,
+        assn: &'f validate::ValidAssign<'lib>,
+        top: bool, // Boolean indication of whether to assign `top` or `bot`. FIXME: not our favorite.
+    ) -> LayoutResult<()> {
+        // Grab a (mutable) reference to the assigned track
+        let nsig = layer_period.signals.len();
+        let track = if top {
+            assn.loc.top.track
+        } else {
+            assn.loc.bot.track
+        };
+        let track = &mut layer_period.signals[track % nsig];
+        // And set the net at the assignment's location
+        match track.set_net(assn.loc.xy[layer.spec.dir], &assn.src) {
+            Ok(()) => Ok(()),
+            Err(TrackError::BlockageConflict(x)) => self.fail(format!(
+                "Assignment {:?} conflicts with Instance Blockage for {:?}",
+                assn.src, x
+            )),
+            Err(TrackError::CutConflict(x)) => self.fail(format!(
+                "Assignment {:?} conflicts with Cut at {:?}",
+                assn.src, x
+            )),
+            Err(TrackError::OutOfBounds(dist)) => self.fail(format!(
+                "{:?} out-of-bounds at distance {:?}",
+                assn.src, dist
+            )),
+            Err(TrackError::Overlap(d0, d1)) => self.fail(format!(
+                "{:?} trying to cut across segments at ({:?}, {:?})",
+                assn.src, d0, d1
+            )),
+        }?;
+        Ok(())
     }
     /// Convert an [Abstract]
     /// FIXME: make these [raw::LayoutAbstract] instead
@@ -407,7 +457,7 @@ impl RawConverter {
                         abstrakt::Side::BottomOrLeft => (DbUnits(0), DbUnits(100)),
                         abstrakt::Side::TopOrRight => {
                             // FIXME: this assumes rectangular outlines; will take some more work for polygons.
-                            let outside = self.convert_to_db_units(abs.outline().max(layer.dir));
+                            let outside = self.db_units(abs.outline().max(layer.dir));
                             (outside - DbUnits(100), outside)
                         }
                     };
@@ -430,7 +480,43 @@ impl RawConverter {
                         },
                     }
                 }
-                ZTopEdge { .. } | ZTopInner { .. } => todo!(),
+                ZTopEdge { track, side, into } => {
+                    let layer = &self.stack.metals[abs.top_layer].spec;
+                    let other_layer_index = match into.1 {
+                        RelZ::Above => abs.top_layer + 1,
+                        RelZ::Below => abs.top_layer - 1,
+                    };
+                    let other_layer = &self.stack.metals[other_layer_index];
+                    let other_layer_center = other_layer.center(into.0)?;
+                    // First get the "infinite dimension" coordinate from the edge
+                    let infdims: (DbUnits, DbUnits) = match side {
+                        abstrakt::Side::BottomOrLeft => (DbUnits(0), other_layer_center),
+                        abstrakt::Side::TopOrRight => {
+                            // FIXME: this assumes rectangular outlines; will take some more work for polygons.
+                            let outside = self.db_units(abs.outline().max(layer.dir));
+                            (other_layer_center, outside)
+                        }
+                    };
+                    // Now get the "periodic dimension" from our layer-center
+                    let perdims: (DbUnits, DbUnits) = self.track_span(abs.top_layer, *track)?;
+                    // Presuming we're horizontal, points are here:
+                    let mut pts = [Xy::new(infdims.0, perdims.0), Xy::new(infdims.1, perdims.1)];
+                    // And if vertical, just transpose them
+                    if layer.dir == Dir::Vert {
+                        pts[0] = pts[0].transpose();
+                        pts[1] = pts[1].transpose();
+                    }
+                    raw::Element {
+                        net: Some(port.name.clone()),
+                        layer: self.layerkeys[abs.top_layer],
+                        purpose: raw::LayerPurpose::Drawing,
+                        inner: raw::Shape::Rect {
+                            p0: self.convert_xy(&pts[0]),
+                            p1: self.convert_xy(&pts[1]),
+                        },
+                    }
+                }
+                ZTopInner { .. } => todo!(),
             };
             elems.push(elem);
         }
@@ -458,9 +544,9 @@ impl RawConverter {
         let mut xp: isize;
         let mut yp: isize = 0;
         for i in 0..outline.x.len() {
-            xp = self.convert_to_db_units(outline.x[i]).raw();
+            xp = self.db_units(outline.x[i]).raw();
             pts.push(Point::new(xp, yp));
-            yp = self.convert_to_db_units(outline.y[i]).raw();
+            yp = self.db_units(outline.y[i]).raw();
             pts.push(Point::new(xp, yp));
         }
         // Add the final implied Point at (x, y[-1])
@@ -481,26 +567,32 @@ impl RawConverter {
     ) -> LayoutResult<Vec<raw::Element>> {
         let mut elems = Vec::new();
         for seg in &track.segments {
-            // Convert wires only, skip blockages and cuts
-            if let TrackSegmentType::Wire { ref net } = seg.tp {
-                let inner = match track.dir {
-                    Dir::Horiz => raw::Shape::Rect {
-                        p0: self.convert_point(seg.start, track.start),
-                        p1: self.convert_point(seg.stop, track.start + track.width),
-                    },
-                    Dir::Vert => raw::Shape::Rect {
-                        p0: self.convert_point(track.start, seg.start),
-                        p1: self.convert_point(track.start + track.width, seg.stop),
-                    },
-                };
-                let e = raw::Element {
-                    net: net.clone(),
-                    layer: self.layerkeys[layer.index],
-                    purpose: raw::LayerPurpose::Drawing,
-                    inner,
-                };
-                elems.push(e);
-            }
+            // Convert wires and rails, skip blockages and cuts
+            use TrackSegmentType::*;
+            let net: Option<String> = match seg.tp {
+                Wire { src } => src.map(|src| src.net.clone()),
+                Rail(rk) => Some(rk.to_string()),
+                Cut { .. } | Blockage { .. } => continue,
+            };
+            // Convert the inner shape
+            let inner = match track.dir {
+                Dir::Horiz => raw::Shape::Rect {
+                    p0: self.convert_point(seg.start, track.start),
+                    p1: self.convert_point(seg.stop, track.start + track.width),
+                },
+                Dir::Vert => raw::Shape::Rect {
+                    p0: self.convert_point(track.start, seg.start),
+                    p1: self.convert_point(track.start + track.width, seg.stop),
+                },
+            };
+            // And pack it up as a [raw::Element]
+            let e = raw::Element {
+                net,
+                layer: self.layerkeys[layer.index],
+                purpose: raw::LayerPurpose::Drawing,
+                inner,
+            };
+            elems.push(e);
         }
         Ok(elems)
     }
@@ -520,8 +612,8 @@ impl RawConverter {
         // Sort out which direction we're working across
         let cell = temp_cell.cell;
         // Convert to database units
-        let x = self.convert_to_db_units(cell.outline.x[0]); // FIXME: rectangles implied here
-        let y = self.convert_to_db_units(cell.outline.y[0]);
+        let x = self.db_units(cell.outline.x[0]); // FIXME: rectangles implied here
+        let y = self.db_units(cell.outline.y[0]);
         let (span, breadth) = match layer.spec.dir {
             Dir::Horiz => (x, y),
             Dir::Vert => (y, x),
@@ -558,14 +650,20 @@ impl RawConverter {
             .instances
             .iter()
             .filter(|i| self.instance_intersects(i, layer, periodnum))
-            .map(|i| (i.inst.loc[dir], i.inst.loc[dir] + i.def.outline().max(dir)))
+            .map(|i| {
+                (
+                    i.inst.loc[dir],                            // start
+                    i.inst.loc[dir] + i.def.outline().max(dir), // stop
+                    i.inst,                                     // inst
+                )
+            })
             .collect();
 
         // Grab indices of the relevant tracks for this period
         let nsig = temp_layer.layer.period.signals.len();
         let relevant_track_nums = (periodnum * nsig, (periodnum + 1) * nsig);
         // Filter cuts down to those in this period
-        let cuts: Vec<&validate::ValidTrackLoc> = cell.cuts[temp_layer.layer.index]
+        let cuts: Vec<&validate::ValidCut> = cell.cuts[temp_layer.layer.index]
             .iter()
             .filter(|cut| cut.track >= relevant_track_nums.0 && cut.track < relevant_track_nums.1)
             .collect();
@@ -578,7 +676,8 @@ impl RawConverter {
                     .get(**id)
                     .ok_or(LayoutError::from("Internal error: invalid assignment"))
                     .unwrap();
-                assn.top.track >= relevant_track_nums.0 && assn.top.track < relevant_track_nums.1
+                assn.loc.top.track >= relevant_track_nums.0
+                    && assn.loc.top.track < relevant_track_nums.1
             })
             .copied()
             .collect();
@@ -590,7 +689,8 @@ impl RawConverter {
                     .get(**id)
                     .ok_or(LayoutError::from("Internal error: invalid assignment"))
                     .unwrap();
-                assn.bot.track >= relevant_track_nums.0 && assn.bot.track < relevant_track_nums.1
+                assn.loc.bot.track >= relevant_track_nums.0
+                    && assn.loc.bot.track < relevant_track_nums.1
             })
             .copied()
             .collect();
@@ -614,13 +714,13 @@ impl RawConverter {
     ) -> bool {
         // Grab the instance's [DbUnits] span, in the layer's periodic direction
         let dir = !layer.spec.dir;
-        let inst_min = self.convert_to_db_units(inst.inst.loc[dir]);
-        let inst_max = inst_min + self.convert_to_db_units(inst.def.outline().max(dir));
+        let inst_min = self.db_units(inst.inst.loc[dir]);
+        let inst_max = inst_min + self.db_units(inst.def.outline().max(dir));
         // And return the boolean intersection. "Touching" edge-to-edge is *not* considered an intersection.
         return inst_max > layer.pitch * periodnum && inst_min < layer.pitch * (periodnum + 1);
     }
     /// Convert any [UnitSpeced]-convertible distances into [DbUnits]
-    fn convert_to_db_units(&self, pt: impl Into<UnitSpeced>) -> DbUnits {
+    fn db_units(&self, pt: impl Into<UnitSpeced>) -> DbUnits {
         let pt: UnitSpeced = pt.into();
         match pt {
             UnitSpeced::DbUnits(u) => u, // Return as-is
@@ -637,8 +737,8 @@ impl RawConverter {
     }
     /// Convert an [Xy] into a [raw::Point]
     fn convert_xy<T: HasUnits + Into<UnitSpeced>>(&self, xy: &Xy<T>) -> raw::Point {
-        let x = self.convert_to_db_units(xy.x);
-        let y = self.convert_to_db_units(xy.y);
+        let x = self.db_units(xy.x);
+        let y = self.db_units(xy.y);
         self.convert_point(x, y)
     }
     /// Convert a two-tuple of [DbUnits] into a [raw::Point]
@@ -646,7 +746,7 @@ impl RawConverter {
         raw::Point::new(x.0, y.0)
     }
 }
-impl HasErrors for RawConverter {
+impl HasErrors for RawConverter<'_> {
     fn err(&self, msg: impl Into<String>) -> LayoutError {
         LayoutError::Export {
             message: msg.into(),

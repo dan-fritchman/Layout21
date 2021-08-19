@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use slotmap::new_key_type;
 
 // Local imports
-use crate::stack::{Assign, TrackIntersection};
+use crate::stack::{Assign, RelZ, TrackIntersection};
 use crate::{abstrakt, coords, interface, outline, raw};
 
 // Create a slotmap key-type for [CellBag]s
@@ -38,6 +38,70 @@ pub struct LayoutImpl {
     pub assignments: Vec<Assign>,
     /// Track cuts
     pub cuts: Vec<TrackIntersection>,
+}
+impl LayoutImpl {
+    /// Create a new [LayoutImpl]
+    pub fn new(name: impl Into<String>, top_layer: usize, outline: outline::Outline) -> LayoutImpl {
+        let name = name.into();
+        LayoutImpl {
+            name,
+            top_layer,
+            outline,
+            instances: Vec::new(),
+            assignments: Vec::new(),
+            cuts: Vec::new(),
+        }
+    }
+    /// Assign a net at the given coordinates.
+    pub fn assign(
+        &mut self,
+        net: impl Into<String>,
+        layer: usize,
+        track: usize,
+        at: usize,
+        relz: RelZ,
+    ) {
+        let net = net.into();
+        self.assignments.push(Assign {
+            net,
+            at: TrackIntersection {
+                layer,
+                track,
+                at,
+                relz,
+            },
+        })
+    }
+    /// Add a cut at the specified coordinates.
+    pub fn cut(&mut self, layer: usize, track: usize, at: usize, relz: RelZ) {
+        self.cuts.push(TrackIntersection {
+            layer,
+            track,
+            at,
+            relz,
+        })
+    }
+    /// Get a temporary handle for net assignments
+    pub fn net<'h>(&'h mut self, net: impl Into<String>) -> NetHandle<'h> {
+        let name = net.into();
+        NetHandle { name, parent: self }
+    }
+}
+/// A short-term handle for chaining multiple assignments to a net
+/// Typically used as: `mycell.net("name").at(/* args */).at(/* more args */)`
+/// Takes an exclusive reference to its parent [LayoutImpl],
+/// so generally must be dropped quickly to avoid locking it up.
+pub struct NetHandle<'h> {
+    name: String,
+    parent: &'h mut LayoutImpl,
+}
+impl<'h> NetHandle<'h> {
+    /// Assign our net at the given coordinates.
+    /// Consumes and returns `self` to enable chaining.
+    pub fn at(self, layer: usize, track: usize, at: usize, relz: RelZ) -> Self {
+        self.parent.assign(&self.name, layer, track, at, relz);
+        self
+    }
 }
 /// # Cell View Enumeration
 /// All of the ways in which a Cell is represented
@@ -66,6 +130,37 @@ pub struct CellBag {
     pub layout: Option<LayoutImpl>,
     // Raw Layout
     pub raw: Option<raw::Cell>,
+}
+impl CellBag {
+    /// Add [CellView] `view` to our appropriate type-based field.
+    /// Over-writes are
+    fn add_view(&mut self, view: impl Into<CellView>) {
+        let view = view.into();
+        match view {
+            CellView::Interface(x) => {
+                self.interface.replace(x);
+            }
+            CellView::LayoutAbstract(x) => {
+                self.abstrakt.replace(x);
+            }
+            CellView::LayoutImpl(x) => {
+                self.layout.replace(x);
+            }
+            CellView::RawLayoutImpl(x) => {
+                self.raw.replace(x);
+            }
+        }
+    }
+    /// Create from a list of [CellView]s and a name.
+    fn from_views(name: impl Into<String>, views: Vec<CellView>) -> Self {
+        // Initialize a default, empty [CellBag]
+        let mut me = Self::default();
+        me.name = name.into();
+        for view in views {
+            me.add_view(view);
+        }
+        me
+    }
 }
 impl From<CellView> for CellBag {
     fn from(src: CellView) -> Self {
