@@ -5,7 +5,7 @@ members = [
   "lef21",
   "layout21protos",
   "layout21raw",
-  "layout21",
+  "layout21tetris",
   "layout21meta",
   "layout21macros",
 ]
