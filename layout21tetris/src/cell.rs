@@ -11,20 +11,15 @@ use serde::{Deserialize, Serialize};
 use slotmap::new_key_type;
 
 // Local imports
+use crate::raw::{LayoutError, LayoutResult};
 use crate::stack::{Assign, RelZ, TrackIntersection};
-use crate::{abstrakt, coords, interface, outline, raw};
-
-// Create a slotmap key-type for [CellBag]s
-new_key_type! {
-    /// Keys for [CellBag] entries
-    pub struct CellBagKey;
-}
+use crate::{abstrakt, coords, interface, library, outline, raw, Ptr};
 
 /// # Layout Cell Implementation
 ///
 /// A combination of lower-level cell instances and net-assignments to tracks.
 ///
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct LayoutImpl {
     /// Cell Name
     pub name: String,
@@ -103,22 +98,28 @@ impl<'h> NetHandle<'h> {
         self
     }
 }
+/// "Pointer" to a raw (lib, cell) combination
+#[derive(Debug, Clone)]
+pub struct RawLayoutPtr {
+    lib: Ptr<raw::Library>,
+    cell: Ptr<raw::Cell>,
+}
 /// # Cell View Enumeration
 /// All of the ways in which a Cell is represented
 #[enum_dispatch]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub enum CellView {
     Interface(interface::Bundle),
     LayoutAbstract(abstrakt::LayoutAbstract),
     LayoutImpl(LayoutImpl),
-    RawLayoutImpl(raw::Cell),
+    RawLayoutPtr(RawLayoutPtr),
 }
 /// Empty trait, largely for auto-generation of [From] and [Into] implementations.
 #[enum_dispatch(CellView)]
 trait CellViewable {}
 
 /// Collection of the Views describing a Cell
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone)]
 pub struct CellBag {
     // Cell Name
     pub name: String,
@@ -129,7 +130,7 @@ pub struct CellBag {
     // Layout Implementation
     pub layout: Option<LayoutImpl>,
     // Raw Layout
-    pub raw: Option<raw::Cell>,
+    pub raw: Option<RawLayoutPtr>,
 }
 impl CellBag {
     /// Add [CellView] `view` to our appropriate type-based field.
@@ -146,7 +147,7 @@ impl CellBag {
             CellView::LayoutImpl(x) => {
                 self.layout.replace(x);
             }
-            CellView::RawLayoutImpl(x) => {
+            CellView::RawLayoutPtr(x) => {
                 self.raw.replace(x);
             }
         }
@@ -161,6 +162,31 @@ impl CellBag {
         }
         me
     }
+    /// Return whichever view highest-prioritorily dictates the outline
+    pub fn outline(&self) -> LayoutResult<&outline::Outline> {
+        // We take the "most abstract" view for the outline
+        // (although if there are more than one, they better be the same...
+        // FIXME: this should be a validation step.)
+        // Overall this method probably should move to a "validated" cell in which each view is assured consistent.
+        if let Some(ref x) = self.abstrakt {
+            Ok(&x.outline)
+        } else if let Some(ref x) = self.layout {
+            Ok(&x.outline)
+        } else {
+            Err(LayoutError::Tbd)
+        }
+    }
+    /// Return whichever view highest-prioritorily dictates the top-layer
+    pub fn top_layer(&self) -> LayoutResult<usize> {
+        // FIXME: same commentary as `outline` above
+        if let Some(ref x) = self.abstrakt {
+            Ok(x.top_layer)
+        } else if let Some(ref x) = self.layout {
+            Ok(x.top_layer)
+        } else {
+            Err(LayoutError::Tbd)
+        }
+    }
 }
 impl From<CellView> for CellBag {
     fn from(src: CellView) -> Self {
@@ -168,7 +194,7 @@ impl From<CellView> for CellBag {
             CellView::Interface(x) => x.into(),
             CellView::LayoutAbstract(x) => x.into(),
             CellView::LayoutImpl(x) => x.into(),
-            CellView::RawLayoutImpl(x) => x.into(),
+            CellView::RawLayoutPtr(x) => x.into(),
         }
     }
 }
@@ -199,10 +225,10 @@ impl From<LayoutImpl> for CellBag {
         }
     }
 }
-impl From<raw::Cell> for CellBag {
-    fn from(src: raw::Cell) -> Self {
+impl From<RawLayoutPtr> for CellBag {
+    fn from(src: RawLayoutPtr) -> Self {
         Self {
-            name: src.name.clone(),
+            name: "".into(), // FIXME!
             raw: Some(src),
             ..Default::default()
         }
@@ -210,12 +236,12 @@ impl From<raw::Cell> for CellBag {
 }
 
 /// Instance of another Cell
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Instance {
     /// Instance Name
     pub inst_name: String,
     /// Cell Definition Reference
-    pub cell: CellBagKey,
+    pub cell: Ptr<CellBag>,
     /// Location, in primitive pitches
     pub loc: coords::Xy<coords::PrimPitches>,
     /// Reflection

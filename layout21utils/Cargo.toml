@@ -1,22 +1,14 @@
 [package]
 authors = ["Dan Fritchman <dan@fritch.mn>"]
-description = "Library Exchange Format (LEF) Integrated Circuit Layout Parser & Writer"
+description = "Layout21 Internal Utility Crate"
 edition = "2018"
 license = "BSD-3-Clause"
-name = "lef21"
+name = "layout21utils"
 repository = "https://github.com/dan-fritchman/Layout21"
 version = "0.1.0"
 workspace = "../"
 
 [dependencies]
-# Local workspace dependencies
-layout21utils = {path = "../layout21utils"}
-# External dependencies
-derive_builder = "0.9.0"
-enum_dispatch = "0.3.1"
-num-derive = "0.3"
-num-traits = "0.2"
-rust_decimal = {version = "1.14.3"}
 serde = {version = "1.0", features = ["derive"]}
 serde_derive = "1.0.88"
 serde_json = "1.0"

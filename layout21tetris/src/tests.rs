@@ -1,3 +1,6 @@
+#[allow(unused_imports)]
+use std::io::prelude::*;
+
 use serde::Serialize;
 
 use super::cell::{Instance, LayoutImpl};
@@ -6,6 +9,7 @@ use super::outline::Outline;
 use super::raw::{self, Dir, LayoutError, LayoutResult, Units};
 use super::stack::*;
 use super::{abstrakt, rawconv, validate};
+
 
 /// Create a [Stack] used by a number of tests
 fn stack() -> LayoutResult<Stack> {
@@ -346,21 +350,21 @@ fn create_lib3() -> Result<(), LayoutError> {
             instances: vec![
                 Instance {
                     inst_name: "inst1".into(),
-                    cell: c2,
+                    cell: c2.clone(),
                     loc: (0, 0).into(),
                     reflect: false,
                     angle: None,
                 },
                 Instance {
                     inst_name: "inst2".into(),
-                    cell: c2,
+                    cell: c2.clone(),
                     loc: (200, 20).into(),
                     reflect: false,
                     angle: None,
                 },
                 Instance {
                     inst_name: "inst4".into(),
-                    cell: c2,
+                    cell: c2.clone(),
                     loc: (400, 40).into(),
                     reflect: false,
                     angle: None,
@@ -447,7 +451,7 @@ fn create_lib4() -> Result<(), LayoutError> {
             let loc = ((2 * x + 1) * unitsize.0, (2 * y + 1) * unitsize.1).into();
             let inst = Instance {
                 inst_name: format!("inst{}{}", x, y),
-                cell: c2,
+                cell: c2.clone(),
                 loc,
                 reflect: false,
                 angle: None,
@@ -502,9 +506,11 @@ fn create_lib4() -> Result<(), LayoutError> {
     let _ = lib.cells.insert(hasunits.into());
     exports(lib)
 }
+
+
 /// Export [Library] `lib` in several formats
 fn exports(lib: Library) -> LayoutResult<()> {
-    save_yaml(&lib, &resource(&format!("{}.yaml", &lib.name)))?;
+    // FIXME: whether to remove altogether save_yaml(&lib, &resource(&format!("{}.yaml", &lib.name)))?;
     let raw = rawconv::RawConverter::convert(lib, stack()?)?;
     save_yaml(&raw, &resource(&format!("{}.raw.yaml", &raw.name)))?;
 
@@ -514,8 +520,7 @@ fn exports(lib: Library) -> LayoutResult<()> {
     gds.save(&resource(&format!("{}.gds", &gds.name)))?;
     Ok(())
 }
-#[allow(unused_imports)]
-use std::io::prelude::*;
+
 #[test]
 fn stack_to_yaml() -> LayoutResult<()> {
     save_yaml(&stack()?, &resource("stack.yaml"))

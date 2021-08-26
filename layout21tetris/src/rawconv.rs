@@ -12,17 +12,12 @@ use slotmap::{new_key_type, SlotMap};
 use crate::cell::{Instance, LayoutImpl};
 use crate::coords::{DbUnits, HasUnits, PrimPitches, UnitSpeced, Xy};
 use crate::library::Library;
-use crate::outline::{HasOutline, Outline};
+use crate::outline::Outline;
 use crate::raw::{self, Dir, HasErrors, LayoutError, LayoutResult, Point};
 use crate::stack::{LayerPeriod, RelZ, Stack, Track, TrackError, TrackSegmentType};
+use crate::Ptr;
 use crate::{abstrakt, cell, validate};
 
-/// A short-lived set of references to an [Instance] and its cell-definition
-#[derive(Debug, Clone)]
-struct TempInstance<'lib> {
-    inst: &'lib Instance,
-    def: &'lib (dyn HasOutline + 'static),
-}
 // Create key-types for each internal type stored in [SlotMap]s
 new_key_type! {
     /// Keys for [ValidAssign] entries
@@ -36,7 +31,7 @@ struct TempCell<'lib> {
     /// Reference to the source [Library]
     lib: &'lib Library,
     /// Instances and references to their definitions
-    instances: Vec<TempInstance<'lib>>,
+    instances: Vec<&'lib Instance>,
     /// Cuts, arranged by Layer
     cuts: Vec<Vec<validate::ValidCut<'lib>>>,
     /// Validated Assignments
@@ -54,7 +49,7 @@ struct TempCellLayer<'lib> {
     /// Reference to the parent cell
     cell: &'lib TempCell<'lib>,
     /// Instances which intersect with this layer and period
-    instances: Vec<&'lib TempInstance<'lib>>,
+    instances: Vec<&'lib Instance>,
     /// Pitch per layer-period
     pitch: DbUnits,
     /// Number of layer-periods
@@ -83,33 +78,37 @@ struct TempPeriod<'lib> {
 #[derive(Debug)]
 pub struct DepOrder<'lib> {
     lib: &'lib Library,
-    stack: Vec<cell::CellBagKey>,
-    seen: HashSet<cell::CellBagKey>,
+    stack: Vec<Ptr<cell::CellBag>>,
+    seen: HashSet<String>,
 }
 impl<'lib> DepOrder<'lib> {
-    fn order(lib: &'lib Library) -> Vec<cell::CellBagKey> {
+    fn order(lib: &'lib Library) -> Vec<Ptr<cell::CellBag>> {
+        // FIXME: now that this uses `name` as the `seen`-set,
+        // move to check for uniqueness of names *before* running it.
         let mut me = Self {
             lib,
             stack: Vec::new(),
             seen: HashSet::new(),
         };
-        for key in me.lib.cells.keys() {
-            me.push(key)
+        for cell in me.lib.cells.as_slice() {
+            me.push(cell);
         }
         me.stack
     }
-    fn push(&mut self, key: cell::CellBagKey) {
-        if !self.seen.contains(&key) {
-            let cell = &self.lib.cells[key];
+    fn push(&mut self, ptr: &Ptr<cell::CellBag>) {
+        use std::borrow::Borrow;
+        let guard = ptr.read().unwrap(); // FIXME: error case
+        let cell = guard.borrow();
+        if !self.seen.contains(&cell.name) {
             // If the cell has an implementation, visit its [Instance]s before inserting it
             if let Some(layout) = &cell.layout {
                 for inst in &layout.instances {
-                    self.push(inst.cell);
+                    self.push(&inst.cell);
                 }
             }
             // And insert the cell (key) itself
-            self.seen.insert(key);
-            self.stack.push(key);
+            self.seen.insert(cell.name.clone());
+            self.stack.push(Ptr::clone(ptr));
         }
     }
 }
@@ -121,8 +120,8 @@ pub struct RawConverter<'lib> {
     pub(crate) rawlayers: raw::Layers,
     pub(crate) layerkeys: Vec<raw::LayerKey>,
     pub(crate) boundary_layer: raw::LayerKey,
-    /// Mapping from our cell-definition keys to the raw-library keys
-    pub(crate) rawcells: HashMap<cell::CellBagKey, raw::CellKey>,
+    /// Create a slotmap-key per source cell, largely to provide hashable keys for `rawcells`
+    pub(crate) rawcells: HashMap<Ptr<cell::CellBag>, raw::CellKey>,
 }
 impl<'lib> RawConverter<'lib> {
     /// Convert [Library] `lib` to a [raw::Library]
@@ -166,11 +165,12 @@ impl<'lib> RawConverter<'lib> {
         let mut rawlib = raw::Library::new(&self.lib.name, self.stack.units);
         rawlib.layers = self.rawlayers.clone();
         // Convert each defined [Cell] to a [raw::Cell]
-        for srckey in DepOrder::order(&self.lib).iter() {
-            let srccell = &self.lib.cells[*srckey];
-            let rawcell = self.convert_cell(srccell)?;
+        for srcptr in DepOrder::order(&self.lib).iter() {
+            use std::borrow::Borrow;
+            let srccell = self.ok(srcptr.read(), format!("FIXME"))?;
+            let rawcell = self.convert_cell(srccell.borrow())?;
             let rawkey = rawlib.cells.insert(rawcell);
-            self.rawcells.insert(*srckey, rawkey);
+            self.rawcells.insert(Ptr::clone(srcptr), rawkey);
         }
         Ok(rawlib)
     }
@@ -179,7 +179,8 @@ impl<'lib> RawConverter<'lib> {
     /// generally the "most specific" available view.
     fn convert_cell(&self, cell: &cell::CellBag) -> LayoutResult<raw::Cell> {
         if let Some(ref x) = cell.raw {
-            Ok(x.clone())
+            unimplemented!();
+            // Ok(x.clone())
         } else if let Some(ref x) = cell.layout {
             self.convert_layout_impl(x)
         } else if let Some(ref x) = cell.abstrakt {
@@ -192,38 +193,38 @@ impl<'lib> RawConverter<'lib> {
         }
     }
     /// Convert to a raw layout cell
-    fn convert_layout_impl(&self, cell: &LayoutImpl) -> LayoutResult<raw::Cell> {
-        if cell.outline.x.len() > 1 {
+    fn convert_layout_impl(&self, layout: &LayoutImpl) -> LayoutResult<raw::Cell> {
+        if layout.outline.x.len() > 1 {
             return Err(LayoutError::Str(
                 "Non-rectangular outline; conversions not supported (yet)".into(),
             ));
         };
         let mut elems: Vec<raw::Element> = Vec::new();
         // Re-organize the cell into the format most helpful here
-        let temp_cell = self.temp_cell(cell)?;
+        let temp_cell = self.temp_cell(layout)?;
         // Convert a layer at a time, starting from bottom
-        for layernum in 0..cell.top_layer {
+        for layernum in 0..layout.top_layer {
             // Organize the cell/layer combo into temporary conversion format
-            let temp_layer = self.temp_cell_layer(&temp_cell, &self.stack.metals[layernum]);
+            let temp_layer = self.temp_cell_layer(&temp_cell, &self.stack.metals[layernum])?;
             // Convert each "layer period" one at a time
             for periodnum in 0..temp_layer.nperiods {
                 // Again, re-organize into the relevant objects for this "layer period"
-                let temp_period = self.temp_cell_layer_period(&temp_layer, periodnum);
+                let temp_period = self.temp_cell_layer_period(&temp_layer, periodnum)?;
                 // And finally start doing stuff!
                 elems.extend(self.convert_cell_layer_period(&temp_period)?);
             }
         }
         // Convert our [Outline] into a polygon
-        elems.push(self.convert_outline(cell)?);
+        elems.push(self.convert_outline(&layout.outline)?);
         // Convert our [Instance]s
-        let insts = cell
+        let insts = layout
             .instances
             .iter()
             .map(|inst| self.convert_instance(inst).unwrap()) // FIXME: error handling
             .collect();
         // Aaaand create our new [raw::Cell]
         Ok(raw::Cell {
-            name: cell.name.clone(),
+            name: layout.name.clone(),
             insts,
             elems,
             ..Default::default()
@@ -247,41 +248,25 @@ impl<'lib> RawConverter<'lib> {
         })
     }
     /// Create a [TempCell], organizing [Cell] data in more-convenient fashion for conversion
-    fn temp_cell<'a>(&'a self, cell: &'a LayoutImpl) -> LayoutResult<TempCell<'a>> {
-        // Create one of these for each of our instances
-        let instances: Vec<TempInstance> = cell
+    fn temp_cell<'a>(&'a self, layout: &'a LayoutImpl) -> LayoutResult<TempCell<'a>> {
+        // Collect references to its instances
+        let instances: Vec<&Instance> = layout
             .instances
             .iter()
-            .map(|inst| {
-                let cell = self.lib.cells.get(inst.cell);
-                let cell = self.unwrap(
-                    cell,
-                    format!("Undefined Cell for Instance {}", inst.inst_name),
-                )?;
-                // We take the "most abstract" view for the outline
-                // (although if there are more than one, they better be the same...
-                // FIXME: this should be a validation step.)
-                if let Some(ref x) = cell.abstrakt {
-                    Ok(TempInstance { inst, def: x })
-                } else if let Some(ref x) = cell.layout {
-                    Ok(TempInstance { inst, def: x })
-                } else {
-                    self.fail(format!("Undefined Cell for Instance {}", inst.inst_name))
-                }
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+            // .map(|inst| &inst)
+            .collect();
         // Validate `cuts`, and arrange them by layer
-        let mut cuts: Vec<Vec<validate::ValidCut>> = vec![vec![]; cell.top_layer()];
-        for cut in cell.cuts.iter() {
+        let mut cuts: Vec<Vec<validate::ValidCut>> = vec![vec![]; layout.top_layer];
+        for cut in layout.cuts.iter() {
             let c = validate::ValidCut::validate(cut, &self.stack)?;
             cuts[c.layer].push(c);
             // FIXME: cell validation should also check that this lies within our outline. probably do this earlier
         }
         // Validate all the cell's assignments, and arrange references by layer
-        let mut bot_assns = vec![vec![]; cell.top_layer()];
-        let mut top_assns = vec![vec![]; cell.top_layer()];
+        let mut bot_assns = vec![vec![]; layout.top_layer];
+        let mut top_assns = vec![vec![]; layout.top_layer];
         let mut assignments = SlotMap::with_key();
-        for assn in cell.assignments.iter() {
+        for assn in layout.assignments.iter() {
             let v = validate::ValidAssign::validate(assn, &self.stack)?;
             let bot = v.loc.bot.layer;
             let top = v.loc.top.layer;
@@ -291,7 +276,7 @@ impl<'lib> RawConverter<'lib> {
         }
         // And create our (temporary) cell data!
         Ok(TempCell {
-            cell,
+            cell: layout,
             lib: &self.lib,
             instances,
             assignments,
@@ -439,7 +424,7 @@ impl<'lib> RawConverter<'lib> {
     pub fn convert_abstract(&self, abs: &abstrakt::LayoutAbstract) -> LayoutResult<raw::Cell> {
         let mut elems = Vec::with_capacity(abs.ports.len() + 1);
         // Create our [Outline]s boundary
-        elems.push(self.convert_outline(abs)?);
+        elems.push(self.convert_outline(&abs.outline)?);
         // Create shapes for each pin
         for port in abs.ports.iter() {
             // Add its shape
@@ -457,7 +442,7 @@ impl<'lib> RawConverter<'lib> {
                         abstrakt::Side::BottomOrLeft => (DbUnits(0), DbUnits(100)),
                         abstrakt::Side::TopOrRight => {
                             // FIXME: this assumes rectangular outlines; will take some more work for polygons.
-                            let outside = self.db_units(abs.outline().max(layer.dir));
+                            let outside = self.db_units(abs.outline.max(layer.dir));
                             (outside - DbUnits(100), outside)
                         }
                     };
@@ -493,7 +478,7 @@ impl<'lib> RawConverter<'lib> {
                         abstrakt::Side::BottomOrLeft => (DbUnits(0), other_layer_center),
                         abstrakt::Side::TopOrRight => {
                             // FIXME: this assumes rectangular outlines; will take some more work for polygons.
-                            let outside = self.db_units(abs.outline().max(layer.dir));
+                            let outside = self.db_units(abs.outline.max(layer.dir));
                             (other_layer_center, outside)
                         }
                     };
@@ -537,8 +522,7 @@ impl<'lib> RawConverter<'lib> {
         layer.span(track_index)
     }
     /// Convert an [Outline] to a [raw::Element] polygon
-    pub fn convert_outline(&self, cell: &impl HasOutline) -> LayoutResult<raw::Element> {
-        let outline: &Outline = cell.outline();
+    pub fn convert_outline(&self, outline: &Outline) -> LayoutResult<raw::Element> {
         // Create an array of Outline-Points
         let mut pts = vec![Point { x: 0, y: 0 }];
         let mut xp: isize;
@@ -601,13 +585,15 @@ impl<'lib> RawConverter<'lib> {
         &self,
         temp_cell: &'a TempCell,
         layer: &'a validate::ValidMetalLayer,
-    ) -> TempCellLayer<'a> {
+    ) -> LayoutResult<TempCellLayer<'a>> {
         // Sort out which of the cell's [Instance]s come up to this layer
-        let instances: Vec<&TempInstance> = temp_cell
-            .instances
-            .iter()
-            .filter(|i| i.def.top_layer() >= layer.index)
-            .collect();
+        let mut instances = Vec::with_capacity(temp_cell.instances.len());
+        for inst in &temp_cell.instances {
+            let cell = inst.cell.read()?;
+            if cell.top_layer()? >= layer.index {
+                instances.push(*inst);
+            }
+        }
 
         // Sort out which direction we're working across
         let cell = temp_cell.cell;
@@ -624,40 +610,37 @@ impl<'lib> RawConverter<'lib> {
             panic!("HOWD WE GET THIS BAD LAYER?!?!");
         }
         let nperiods = usize::try_from(breadth / layer.pitch).unwrap(); // FIXME: errors
-
-        TempCellLayer {
+        Ok(TempCellLayer {
             layer,
             cell: temp_cell,
             instances,
             nperiods,
             pitch: layer.pitch,
             span,
-        }
+        })
     }
     /// Create the [TempPeriod] at the intersection of `temp_layer` and `periodnum`
     fn temp_cell_layer_period<'a>(
         &self,
         temp_layer: &'a TempCellLayer,
         periodnum: usize,
-    ) -> TempPeriod<'a> {
+    ) -> LayoutResult<TempPeriod<'a>> {
         let cell = temp_layer.cell;
         let layer = temp_layer.layer;
         let dir = layer.spec.dir;
 
         // For each row, decide which instances intersect
         // Convert these into blockage-areas for the tracks
-        let blockages = temp_layer
-            .instances
-            .iter()
-            .filter(|i| self.instance_intersects(i, layer, periodnum))
-            .map(|i| {
-                (
-                    i.inst.loc[dir],                            // start
-                    i.inst.loc[dir] + i.def.outline().max(dir), // stop
-                    i.inst,                                     // inst
-                )
-            })
-            .collect();
+        let mut blockages = Vec::with_capacity(temp_layer.instances.len());
+        for inst in &temp_layer.instances {
+            if self.instance_intersects(inst, layer, periodnum)? {
+                // Create the blockage
+                let cell = inst.cell.read()?;
+                let start = inst.loc[dir];
+                let stop = start + cell.outline()?.max(dir);
+                blockages.push((start, stop, *inst));
+            }
+        }
 
         // Grab indices of the relevant tracks for this period
         let nsig = temp_layer.layer.period.signals.len();
@@ -695,7 +678,7 @@ impl<'lib> RawConverter<'lib> {
             .copied()
             .collect();
 
-        TempPeriod {
+        Ok(TempPeriod {
             periodnum,
             cell,
             layer: temp_layer,
@@ -703,21 +686,22 @@ impl<'lib> RawConverter<'lib> {
             cuts,
             top_assns,
             bot_assns,
-        }
+        })
     }
     /// Boolean indication of whether `inst` intersects `layer` at `periodnum`
     fn instance_intersects(
         &self,
-        inst: &TempInstance,
+        inst: &Instance,
         layer: &validate::ValidMetalLayer,
         periodnum: usize,
-    ) -> bool {
+    ) -> LayoutResult<bool> {
         // Grab the instance's [DbUnits] span, in the layer's periodic direction
         let dir = !layer.spec.dir;
-        let inst_min = self.db_units(inst.inst.loc[dir]);
-        let inst_max = inst_min + self.db_units(inst.def.outline().max(dir));
+        let inst_min = self.db_units(inst.loc[dir]);
+        let cell = inst.cell.read()?;
+        let inst_max = inst_min + self.db_units(cell.outline()?.max(dir));
         // And return the boolean intersection. "Touching" edge-to-edge is *not* considered an intersection.
-        return inst_max > layer.pitch * periodnum && inst_min < layer.pitch * (periodnum + 1);
+        Ok(inst_max > layer.pitch * periodnum && inst_min < layer.pitch * (periodnum + 1))
     }
     /// Convert any [UnitSpeced]-convertible distances into [DbUnits]
     fn db_units(&self, pt: impl Into<UnitSpeced>) -> DbUnits {

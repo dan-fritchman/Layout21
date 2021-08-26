@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 // Local imports
 use crate::coords::{Int, PrimPitches};
 use crate::raw::{Dir, LayoutError, LayoutResult};
-use crate::{abstrakt, cell};
 
 /// Block Outlines are "Tetris Shaped" rectilinear polygons
 ///
@@ -94,29 +93,5 @@ impl Outline {
             Dir::Horiz => self.xmax(),
             Dir::Vert => self.ymax(),
         }
-    }
-}
-
-/// Trait for accessing three-dimensional [Outline] data from several views of Layouts
-pub trait HasOutline: Debug {
-    /// Retrieve a reference to the x-y [Outline]
-    fn outline(&self) -> &Outline;
-    /// Retrieve the top z-axis layer
-    fn top_layer(&self) -> usize;
-}
-impl HasOutline for cell::LayoutImpl {
-    fn outline(&self) -> &Outline {
-        &self.outline
-    }
-    fn top_layer(&self) -> usize {
-        self.top_layer
-    }
-}
-impl HasOutline for abstrakt::LayoutAbstract {
-    fn outline(&self) -> &Outline {
-        &self.outline
-    }
-    fn top_layer(&self) -> usize {
-        self.top_layer
     }
 }

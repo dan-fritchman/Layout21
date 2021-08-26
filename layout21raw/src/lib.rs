@@ -86,6 +86,11 @@ impl From<std::num::TryFromIntError> for LayoutError {
         Self::Boxed(Box::new(e))
     }
 }
+impl<T> From<std::sync::PoisonError<T>> for LayoutError {
+    fn from(_e: std::sync::PoisonError<T>) -> Self {
+        Self::Tbd // FIXME!
+    }
+}
 /// Helper trait for re-use among our many conversion tree-walkers.
 /// Each implementer will generally have some internal state to report upon failure,
 /// which it can inject in the implementation-required `err` method.
