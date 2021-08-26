@@ -8,6 +8,7 @@ version = "0.1.0"
 # Local workspace dependencies
 gds21 = {path = "../gds21", optional = true}
 layout21protos = {path = "../layout21protos", optional = true}
+layout21utils = {path = "../layout21utils"}
 lef21 = {path = "../lef21", optional = true}
 # Crates.io 
 enum_dispatch = "0.3.7"

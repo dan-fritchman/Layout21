@@ -58,9 +58,7 @@
                     "kind": "lib"
                 }
             },
-            "args": [
-                "lib4"
-            ],
+            "args": [],
             "cwd": "${workspaceFolder}"
         },
         {

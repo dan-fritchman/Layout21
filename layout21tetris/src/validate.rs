@@ -7,6 +7,7 @@ use crate::coords::{DbUnits, Xy};
 use crate::raw::{self, Dir, LayoutError, LayoutResult, Units};
 use crate::stack::{Assign, Layer, LayerPeriod, PrimitiveLayer, RelZ, Stack, TrackIntersection};
 use crate::stack::{PrimitiveMode, ViaLayer};
+use crate::utils::Ptr;
 
 /// Helper-function for asserting all sorts of boolean conditions, returning [LayoutResult] and enabling the question-mark operator.
 pub fn assert(b: bool) -> LayoutResult<()> {
@@ -26,6 +27,7 @@ impl StackValidator {
             vias,
             layers,
             prim,
+            rawlayers,
             ..
         } = stack;
         // Validate the primitive layer
@@ -37,11 +39,6 @@ impl StackValidator {
         for (num, layer) in layers.into_iter().enumerate() {
             metals.push(ValidMetalLayer::validate(layer, num, &prim)?);
         }
-        // let metals = layers
-        //     .into_iter()
-        //     .enumerate()
-        //     .map(move |(num, layer)| ValidMetalLayer::validate(layer, num, &prim))
-        //     .collect::<Result<Vec<_>, _>>()?;
         // Calculate pitches as the *least-common multiple* of same-direction layers below each layer
         let mut pitches = vec![DbUnits(0); metals.len()];
         for (num, metal) in metals.iter().enumerate() {
@@ -57,11 +54,12 @@ impl StackValidator {
         // Stack checks out! Return its derived data
         Ok(ValidStack {
             units,
-            boundary_layer,
             vias,
             pitches,
             metals,
             prim,
+            rawlayers,
+            boundary_layer,
         })
     }
 }
@@ -70,9 +68,6 @@ impl StackValidator {
 pub struct ValidStack<'lib> {
     /// Measurement units
     pub units: Units,
-    /// Layer used for cell outlines/ boundaries
-    pub boundary_layer: Option<raw::Layer>,
-
     /// Primitive layer
     pub prim: PrimitiveLayer,
     /// Set of via layers
@@ -81,6 +76,11 @@ pub struct ValidStack<'lib> {
     pub metals: Vec<ValidMetalLayer<'lib>>,
     /// Pitches per metal layer, one each for those in `stack`
     pub pitches: Vec<DbUnits>,
+
+    /// [raw::Layer] Mappings
+    pub rawlayers: Option<Ptr<raw::Layers>>,
+    /// Layer used for cell outlines/ boundaries
+    pub boundary_layer: Option<raw::LayerKey>,
 }
 #[derive(Debug)]
 pub struct ValidMetalLayer<'lib> {
@@ -94,6 +94,8 @@ pub struct ValidMetalLayer<'lib> {
     pub period: LayerPeriod<'lib>,
     /// Pitch in db-units
     pub pitch: DbUnits,
+    /// Raw layer-key
+    pub raw: Option<raw::LayerKey>,
 }
 impl<'lib> ValidMetalLayer<'lib> {
     /// Perform validation on a [Layer], return a corresponding [ValidMetalLayer]
@@ -120,6 +122,7 @@ impl<'lib> ValidMetalLayer<'lib> {
         // This is frequently used for calculating track locations
         let period = layer.to_layer_period(0, 0)?;
         Ok(ValidMetalLayer {
+            raw: layer.raw.clone(),
             spec: layer,
             index,
             period,

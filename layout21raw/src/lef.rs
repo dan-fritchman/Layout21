@@ -109,7 +109,7 @@ impl<'lib> LefExporter<'lib> {
         self.ctx_stack.push(ErrorContext::Geometry);
         let mut layer_geom = lef21::LefLayerGeometries::default();
         // Set its layer (name)
-        layer_geom.layer_name = self.export_layer(layerkey)?.to_string();
+        layer_geom.layer_name = self.export_layer(layerkey)?;
         // Export each shape
         for shape in shapes {
             layer_geom.geometries.push(self.export_shape(shape)?);
@@ -119,11 +119,13 @@ impl<'lib> LefExporter<'lib> {
     }
     /// Export a [Layer] from its [LayerKey].
     /// Lef layers are just string identifiers, returned here as-is.
-    fn export_layer(&self, layerkey: LayerKey) -> LayoutResult<&String> {
-        self.unwrap(
-            self.lib.layers.get_name(layerkey),
+    fn export_layer(&self, layerkey: LayerKey) -> LayoutResult<String> {
+        let layers = self.lib.layers.read()?;
+        let name = self.unwrap(
+            layers.get_name(layerkey),
             format!("Invalid un-named layer for LEF export"),
-        )
+        )?;
+        Ok(name.to_string())
     }
     /// Export a [Shape] to a [lef21::LefGeometry]
     fn export_shape(&self, shape: &Shape) -> LayoutResult<lef21::LefGeometry> {
@@ -170,6 +172,7 @@ pub struct LefImporter;
 #[cfg(test)]
 #[test]
 fn test_lef1() -> LayoutResult<()> {
+    use crate::utils::Ptr;
     let layers = crate::tests::layers()?;
     let a = Abstract {
         name: "to_lef1".into(),
@@ -199,7 +202,7 @@ fn test_lef1() -> LayoutResult<()> {
     };
     let lib = Library {
         name: "to_lef_lib1".into(),
-        layers,
+        layers: Ptr::new(layers),
         abstracts: vec![a],
         ..Default::default()
     };

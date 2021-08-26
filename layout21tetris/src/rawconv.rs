@@ -1,4 +1,6 @@
+//!
 //! # Raw-Layout Conversion Module
+//!
 
 // Std-lib
 use std::collections::{HashMap, HashSet};
@@ -15,7 +17,7 @@ use crate::library::Library;
 use crate::outline::Outline;
 use crate::raw::{self, Dir, HasErrors, LayoutError, LayoutResult, Point};
 use crate::stack::{LayerPeriod, RelZ, Stack, Track, TrackError, TrackSegmentType};
-use crate::Ptr;
+use crate::utils::Ptr;
 use crate::{abstrakt, cell, validate};
 
 // Create key-types for each internal type stored in [SlotMap]s
@@ -79,112 +81,132 @@ struct TempPeriod<'lib> {
 pub struct DepOrder<'lib> {
     lib: &'lib Library,
     stack: Vec<Ptr<cell::CellBag>>,
-    seen: HashSet<String>,
+    seen: HashSet<Ptr<cell::CellBag>>, // FIXME: should be able to use [Ptr]
 }
 impl<'lib> DepOrder<'lib> {
     fn order(lib: &'lib Library) -> Vec<Ptr<cell::CellBag>> {
         // FIXME: now that this uses `name` as the `seen`-set,
         // move to check for uniqueness of names *before* running it.
-        let mut me = Self {
+        let mut myself = Self {
             lib,
             stack: Vec::new(),
             seen: HashSet::new(),
         };
-        for cell in me.lib.cells.as_slice() {
-            me.push(cell);
+        for cell in myself.lib.cells.as_slice() {
+            myself.push(cell);
         }
-        me.stack
+        myself.stack
     }
     fn push(&mut self, ptr: &Ptr<cell::CellBag>) {
-        use std::borrow::Borrow;
-        let guard = ptr.read().unwrap(); // FIXME: error case
-        let cell = guard.borrow();
-        if !self.seen.contains(&cell.name) {
+        // If the Cell hasn't already been visited, depth-first search it
+        if !self.seen.contains(&ptr) {
+            // Read the cell-pointer
+            let cell = ptr.read().unwrap();
             // If the cell has an implementation, visit its [Instance]s before inserting it
             if let Some(layout) = &cell.layout {
                 for inst in &layout.instances {
                     self.push(&inst.cell);
                 }
             }
-            // And insert the cell (key) itself
-            self.seen.insert(cell.name.clone());
+            // And insert the cell (pointer) itself
+            self.seen.insert(Ptr::clone(ptr));
             self.stack.push(Ptr::clone(ptr));
         }
     }
 }
 
 /// # Converter from [Library] and constituent elements to [raw::Library]
-pub struct RawConverter<'lib> {
-    pub(crate) lib: Library,
-    pub(crate) stack: validate::ValidStack<'lib>,
-    pub(crate) rawlayers: raw::Layers,
-    pub(crate) layerkeys: Vec<raw::LayerKey>,
-    pub(crate) boundary_layer: raw::LayerKey,
-    /// Create a slotmap-key per source cell, largely to provide hashable keys for `rawcells`
-    pub(crate) rawcells: HashMap<Ptr<cell::CellBag>, raw::CellKey>,
+pub struct RawExporter<'lib> {
+    /// Source [Library]
+    lib: Library,
+    /// Source (validated) [Stack]
+    stack: validate::ValidStack<'lib>,
+    /// HashMap from source [CellBag] to exported [CellKey],
+    /// largely for lookup during conversion of [Instance]s
+    rawcells: HashMap<Ptr<cell::CellBag>, raw::CellKey>,
 }
-impl<'lib> RawConverter<'lib> {
-    /// Convert [Library] `lib` to a [raw::Library]
-    /// Consumes `lib` in the process
-    pub fn convert(lib: Library, stack: Stack) -> LayoutResult<raw::Library> {
+impl<'lib> RawExporter<'lib> {
+    /// Convert the combination of a [Library] `lib` and [Stack] `stack` to a [raw::Library].
+    /// Both `lib` and `stack` are consumed in the process.
+    pub fn convert(lib: Library, stack: Stack) -> LayoutResult<Ptr<raw::Library>> {
+        // FIXME: validate the library too
         let stack = validate::StackValidator::validate(stack)?;
-        let (mut rawlayers, layerkeys) = Self::convert_layers(&stack)?;
-        // Conversion requires our [Stack] specify a `boundary_layer`. If not, fail.
-        let boundary_layer = (stack.boundary_layer).as_ref().ok_or(LayoutError::msg(
-            "Cannot Convert Abstract to Raw without Boundary Layer",
-        ))?;
-        let boundary_layer = rawlayers.add(boundary_layer.clone());
-        Self {
+
+        let mut myself = Self {
             lib,
             stack,
-            rawlayers,
-            layerkeys,
-            boundary_layer,
             rawcells: HashMap::new(),
-        }
-        .convert_lib()
+        };
+        myself.convert_stack()?;
+        myself.convert_lib()
     }
-    /// Convert our [Stack] to [raw::Layers]
-    fn convert_layers(
-        stack: &validate::ValidStack,
-    ) -> LayoutResult<(raw::Layers, Vec<raw::LayerKey>)> {
-        let mut rawlayers = raw::Layers::default();
-        let mut layerkeys = Vec::new();
-        for layer in stack.metals.iter() {
-            let rawlayer = match &layer.spec.raw {
-                Some(r) => r.clone(), // FIXME: stop cloning
-                None => return Err("Error exporting: no raw layer defined".into()),
-            };
-            let key = rawlayers.add(rawlayer);
-            layerkeys.push(key);
+    /// "Convert" our [Stack]. Really just checks a few properties are valid.
+    fn convert_stack(&self) -> LayoutResult<()> {
+        // Require our [Stack] specify both:
+        // (a) set of [raw::Layers], and
+        // (b) a boundary layer
+        // Both these fields are frequently `unwrap`ed hereafter.
+        if !self.stack.rawlayers.is_some() {
+            return self.fail("Raw export failed: no [raw::Layers] specified");
         }
-        Ok((rawlayers, layerkeys))
+        if !self.stack.boundary_layer.is_some() {
+            return self.fail("Raw export failed: no [raw::Layers] specified");
+        }
+        Ok(())
     }
     /// Convert everything in our [Library]
-    fn convert_lib(&mut self) -> LayoutResult<raw::Library> {
-        let mut rawlib = raw::Library::new(&self.lib.name, self.stack.units);
-        rawlib.layers = self.rawlayers.clone();
+    fn convert_lib(&mut self) -> LayoutResult<Ptr<raw::Library>> {
+        // Get our starter raw-lib, either anew or from any we've imported
+        let rawlibptr = if self.lib.rawlibs.len() == 0 {
+            // Create a new [raw::Library]
+            let mut rawlib = raw::Library::new(&self.lib.name, self.stack.units);
+            rawlib.layers = Ptr::clone(self.stack.rawlayers.as_ref().unwrap());
+            Ok(Ptr::new(rawlib))
+        } else if self.lib.rawlibs.len() == 1 {
+            // Pop the sole raw-library, and use it as a starting point
+            let rawlibptr = self.lib.rawlibs.pop().unwrap();
+            let mut rawlib = rawlibptr.write()?;
+            rawlib.name = self.lib.name.to_string();
+            if rawlib.units != self.stack.units {
+                // Check that the units match, or fail
+                return self.fail(format!(
+                    "NotImplemented: varying units between raw and tetris libraries: {:?} vs {:?}",
+                    rawlib.units, self.stack.units,
+                ));
+            }
+            drop(rawlib);
+            Ok(rawlibptr)
+        } else {
+            // Multiple raw-libraries will require some merging
+            // Probably not difficult, but not done yet either.
+            self.fail("NotImplemented: with multiple [raw::Library")
+        }?;
+        // Get write-access to the raw-lib
+        let mut rawlib = rawlibptr.write()?;
         // Convert each defined [Cell] to a [raw::Cell]
         for srcptr in DepOrder::order(&self.lib).iter() {
-            use std::borrow::Borrow;
-            let srccell = self.ok(srcptr.read(), format!("FIXME"))?;
-            let rawcell = self.convert_cell(srccell.borrow())?;
-            let rawkey = rawlib.cells.insert(rawcell);
+            let rawkey = self.convert_cell(&*srcptr.read()?, &mut rawlib.cells)?;
             self.rawcells.insert(Ptr::clone(srcptr), rawkey);
         }
-        Ok(rawlib)
+        drop(rawlib);
+        Ok(rawlibptr)
     }
-    /// Convert a [CellBag] to a [raw::Cell]
+    /// Convert a [CellBag] to a [raw::Cell] and add to `rawcells`.
     /// In reality only one of the cell-views is converted,
     /// generally the "most specific" available view.
-    fn convert_cell(&self, cell: &cell::CellBag) -> LayoutResult<raw::Cell> {
+    fn convert_cell(
+        &self,
+        cell: &cell::CellBag,
+        rawcells: &mut SlotMap<raw::CellKey, raw::Cell>,
+    ) -> LayoutResult<raw::CellKey> {
         if let Some(ref x) = cell.raw {
-            unimplemented!();
-            // Ok(x.clone())
+            // Raw definitions store the "key" pointer
+            // Just return a copy of it
+            Ok(x.cell.clone())
         } else if let Some(ref x) = cell.layout {
-            self.convert_layout_impl(x)
+            Ok(rawcells.insert(self.convert_layout_impl(x)?))
         } else if let Some(ref x) = cell.abstrakt {
-            self.convert_abstract(x)
+            Ok(rawcells.insert(self.convert_abstract(x)?))
         } else {
             self.fail(format!(
                 "No Abstract or Implementation found for cell {}",
@@ -343,8 +365,8 @@ impl<'lib> RawConverter<'lib> {
 
             // Create the via element
             let e = raw::Element {
-                net: None,
-                layer: self.layerkeys[layer.index], // FIXME: via_layer?
+                net: None, // FIXME: add net labels to these vias
+                layer: via_layer.raw.unwrap(),
                 purpose: raw::LayerPurpose::Drawing,
                 inner: raw::Shape::Rect {
                     p0: self.convert_point(
@@ -457,7 +479,7 @@ impl<'lib> RawConverter<'lib> {
                     }
                     raw::Element {
                         net: Some(port.name.clone()),
-                        layer: self.layerkeys[*layer_index],
+                        layer: self.stack.metals[*layer_index].raw.unwrap(),
                         purpose: raw::LayerPurpose::Drawing,
                         inner: raw::Shape::Rect {
                             p0: self.convert_xy(&pts[0]),
@@ -493,7 +515,7 @@ impl<'lib> RawConverter<'lib> {
                     }
                     raw::Element {
                         net: Some(port.name.clone()),
-                        layer: self.layerkeys[abs.top_layer],
+                        layer: self.stack.metals[abs.top_layer].raw.unwrap(),
                         purpose: raw::LayerPurpose::Drawing,
                         inner: raw::Shape::Rect {
                             p0: self.convert_xy(&pts[0]),
@@ -538,7 +560,7 @@ impl<'lib> RawConverter<'lib> {
         // Create the [raw::Element]
         Ok(raw::Element {
             net: None,
-            layer: self.boundary_layer,
+            layer: self.stack.boundary_layer.unwrap(),
             purpose: raw::LayerPurpose::Outline,
             inner: raw::Shape::Poly { pts },
         })
@@ -572,7 +594,7 @@ impl<'lib> RawConverter<'lib> {
             // And pack it up as a [raw::Element]
             let e = raw::Element {
                 net,
-                layer: self.layerkeys[layer.index],
+                layer: self.stack.metals[layer.index].raw.unwrap(),
                 purpose: raw::LayerPurpose::Drawing,
                 inner,
             };
@@ -730,7 +752,7 @@ impl<'lib> RawConverter<'lib> {
         raw::Point::new(x.0, y.0)
     }
 }
-impl HasErrors for RawConverter<'_> {
+impl HasErrors for RawExporter<'_> {
     fn err(&self, msg: impl Into<String>) -> LayoutError {
         LayoutError::Export {
             message: msg.into(),

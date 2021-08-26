@@ -20,37 +20,25 @@ pub fn layers() -> LayoutResult<Layers> {
 
     // Create metal layers
     let metal_purps = [(20, LayerPurpose::Drawing), (5, LayerPurpose::Label)];
-    let mut l = Layer::new(68, "met1");
-    l.add_pairs(&metal_purps)?;
-    layers.add(l);
-    let mut l = Layer::new(69, "met2");
-    l.add_pairs(&metal_purps)?;
-    layers.add(l);
-    let mut l = Layer::new(70, "met3");
-    l.add_pairs(&metal_purps)?;
-    layers.add(l);
-    let mut l = Layer::new(71, "met4");
-    l.add_pairs(&metal_purps)?;
-    layers.add(l);
+    layers.add(Layer::new(68, "met1").add_pairs(&metal_purps)?);
+    layers.add(Layer::new(69, "met2").add_pairs(&metal_purps)?);
+    layers.add(Layer::new(70, "met3").add_pairs(&metal_purps)?);
+    layers.add(Layer::new(71, "met4").add_pairs(&metal_purps)?);
     // Create the via layers
     // Note that while these use the same *GDS* layer number, they are separate [Layer] objects here.
     // (Because, well, they really are.)
     let via_purps = [(44, LayerPurpose::Drawing)];
-    let mut l = Layer::new(67, "mcon");
-    l.add_pairs(&via_purps)?;
-    layers.add(l);
-    let mut l = Layer::new(68, "via");
-    l.add_pairs(&via_purps)?;
-    layers.add(l);
-    let mut l = Layer::new(69, "via2");
-    l.add_pairs(&via_purps)?;
-    layers.add(l);
-    let mut l = Layer::new(70, "via3");
-    l.add_pairs(&via_purps)?;
-    layers.add(l);
-    let mut l = Layer::new(71, "via4");
-    l.add_pairs(&via_purps)?;
-    layers.add(l);
+    layers.add(Layer::new(67, "mcon").add_pairs(&via_purps)?);
+    layers.add(Layer::new(68, "via").add_pairs(&via_purps)?);
+    layers.add(Layer::new(69, "via2").add_pairs(&via_purps)?);
+    layers.add(Layer::new(70, "via3").add_pairs(&via_purps)?);
+    layers.add(Layer::new(71, "via4").add_pairs(&via_purps)?);
+
+    // Add a base-layer
+    layers.add(
+        Layer::new(64, "nwell")
+            .add_pairs(&[(44, LayerPurpose::Drawing), (5, LayerPurpose::Label)])?,
+    );
     Ok(layers)
 }
 #[test]

@@ -1,3 +1,4 @@
+//!
 //! # Cell Definition
 //!
 //! Defines the [Cell] type, which represents a multi-viewed piece of reusable hardware.
@@ -7,13 +8,12 @@
 
 // Crates.io
 use enum_dispatch::enum_dispatch;
-use serde::{Deserialize, Serialize};
-use slotmap::new_key_type;
 
 // Local imports
 use crate::raw::{LayoutError, LayoutResult};
 use crate::stack::{Assign, RelZ, TrackIntersection};
-use crate::{abstrakt, coords, interface, library, outline, raw, Ptr};
+use crate::utils::Ptr;
+use crate::{abstrakt, coords, interface, outline, raw};
 
 /// # Layout Cell Implementation
 ///
@@ -101,8 +101,8 @@ impl<'h> NetHandle<'h> {
 /// "Pointer" to a raw (lib, cell) combination
 #[derive(Debug, Clone)]
 pub struct RawLayoutPtr {
-    lib: Ptr<raw::Library>,
-    cell: Ptr<raw::Cell>,
+    pub lib: Ptr<raw::Library>,
+    pub cell: raw::CellKey,
 }
 /// # Cell View Enumeration
 /// All of the ways in which a Cell is represented
@@ -135,7 +135,7 @@ pub struct CellBag {
 impl CellBag {
     /// Add [CellView] `view` to our appropriate type-based field.
     /// Over-writes are
-    fn add_view(&mut self, view: impl Into<CellView>) {
+    pub fn add_view(&mut self, view: impl Into<CellView>) {
         let view = view.into();
         match view {
             CellView::Interface(x) => {
@@ -153,7 +153,7 @@ impl CellBag {
         }
     }
     /// Create from a list of [CellView]s and a name.
-    fn from_views(name: impl Into<String>, views: Vec<CellView>) -> Self {
+    pub fn from_views(name: impl Into<String>, views: Vec<CellView>) -> Self {
         // Initialize a default, empty [CellBag]
         let mut me = Self::default();
         me.name = name.into();

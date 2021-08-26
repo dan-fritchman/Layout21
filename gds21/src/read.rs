@@ -809,8 +809,8 @@ impl GdsParser {
         Err(self.err(msg))
     }
     /// JSON-Serialize and write (all) contents of the Iterator to `writer`
-    #[cfg(any(test, feature = "selftest"))]
-    fn write_records(&mut self, writer: &mut impl Write) -> GdsResult<()> {
+    #[cfg(test)]
+    pub fn write_records(&mut self, writer: &mut impl Write) -> GdsResult<()> {
         loop {
             let r = self.next()?;
             if r == GdsRecord::EndLib {
@@ -824,7 +824,7 @@ impl GdsParser {
         }
     }
     /// Open a GDS file `gds` and write all GdsRecords to JSON file `json`
-    #[cfg(any(test, feature = "selftest"))]
+    #[cfg(test)]
     pub fn dump(gds: &str, json: &str) -> GdsResult<()> {
         // This streams one record at a time, rather than loading all into memory.
         // Create a ReaderIter from `gds`

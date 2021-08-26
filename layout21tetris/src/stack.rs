@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::cell::Instance;
 use crate::coords::{DbUnits, Xy};
 use crate::raw::{self, Dir, LayoutError, LayoutResult, Units};
+use crate::utils::Ptr;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TrackEntry {
@@ -106,18 +107,20 @@ impl Pattern {
 /// # Stack
 ///
 /// The z-stack, primarily including metal, via, and primitive layers
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Stack {
     /// Measurement units
     pub units: Units,
-    /// Layer used for cell outlines/ boundaries
-    pub boundary_layer: Option<raw::Layer>,
     /// Primitive Layer
     pub prim: PrimitiveLayer,
     /// Set of metal layers
     pub layers: Vec<Layer>,
     /// Set of via layers
     pub vias: Vec<ViaLayer>,
+    /// [raw::Layer] Mappings
+    pub rawlayers: Option<Ptr<raw::Layers>>,
+    /// Layer used for cell outlines/ boundaries
+    pub boundary_layer: Option<raw::LayerKey>,
 }
 /// # Layer
 ///
@@ -139,12 +142,12 @@ pub struct Layer {
     pub offset: DbUnits,
     /// Overlap between periods
     pub overlap: DbUnits,
-    /// Layer(s) for streaming exports
-    pub raw: Option<raw::Layer>,
     /// Setting for period-by-period flipping
     pub flip: FlipMode,
     /// Primitive-layer relationship
     pub prim: PrimitiveMode,
+    /// [raw::Layer] for exports
+    pub raw: Option<raw::LayerKey>,
 }
 impl Layer {
     /// Convert this [Layer]'s track-info into a [LayerPeriod]
@@ -242,7 +245,7 @@ pub struct ViaLayer {
     /// Via size
     pub size: Xy<DbUnits>,
     /// Stream-out layer numbers
-    pub raw: Option<raw::Layer>,
+    pub raw: Option<raw::LayerKey>,
 }
 /// Assignment of a net onto a track-intersection
 #[derive(Debug, Clone, Serialize, Deserialize)]

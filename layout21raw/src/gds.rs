@@ -6,13 +6,14 @@
 
 // Std-Lib
 use std::collections::{HashMap, HashSet};
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 use std::hash::Hash;
 
 // Crates.io
 use slotmap::{new_key_type, SlotMap};
 
 // Local imports
+use crate::utils::Ptr;
 use crate::{Cell, Dir, Element, Instance, LayerPurpose, Layers, Library, Point, Shape, Units};
 use crate::{CellKey, LayerKey, TextElement};
 use crate::{ErrorContext, HasErrors, LayoutError, LayoutResult};
@@ -104,11 +105,14 @@ impl<'lib> GdsExporter<'lib> {
     /// So an N-sided polygon is described by a 2*(N+1)-entry vector.
     ///
     pub fn export_element(&self, elem: &Element) -> LayoutResult<Vec<gds21::GdsElement>> {
-        let layer = self
-            .lib
-            .layers
-            .get(elem.layer)
-            .ok_or(LayoutError::msg("Layer Not Defined"))?;
+        let layers = self.lib.layers.read()?;
+        let layer = self.unwrap(
+            layers.get(elem.layer),
+            format!(
+                "Layer {:?} Not Defined in Library {} with {:?}",
+                elem.layer, self.lib.name, layers
+            ),
+        )?;
         let datatype = layer
             .num(&elem.purpose)
             .ok_or(LayoutError::msg(format!(
@@ -117,13 +121,21 @@ impl<'lib> GdsExporter<'lib> {
             )))?
             .clone();
 
-        let xy: Vec<gds21::GdsPoint> = match &elem.inner {
+        let gds_elem: gds21::GdsElement = match &elem.inner {
             Shape::Rect { p0, p1 } => {
                 let x0 = p0.x.try_into()?;
                 let y0 = p0.y.try_into()?;
                 let x1 = p1.x.try_into()?;
                 let y1 = p1.y.try_into()?;
-                gds21::GdsPoint::vec(&[(x0, y0), (x1, y0), (x1, y1), (x0, y1), (x0, y0)])
+                let xy = gds21::GdsPoint::vec(&[(x0, y0), (x1, y0), (x1, y1), (x0, y1), (x0, y0)]);
+                // Both rect and polygon map to [GdsBoundary], although [GdsBox] is also suitable here.
+                gds21::GdsBoundary {
+                    layer: layer.layernum,
+                    datatype,
+                    xy,
+                    ..Default::default()
+                }
+                .into()
             }
             Shape::Poly { pts } => {
                 // Flatten our points-vec, converting to 32-bit along the way
@@ -133,24 +145,40 @@ impl<'lib> GdsExporter<'lib> {
                 }
                 // Add the origin a second time, to "close" the polygon
                 xy.push(self.export_point(&pts[0])?);
-                xy
+                gds21::GdsBoundary {
+                    layer: layer.layernum,
+                    datatype,
+                    xy,
+                    ..Default::default()
+                }
+                .into()
             }
-            Shape::Path { .. } => todo!(),
+            Shape::Path { pts, width } => {
+                // Flatten our points-vec, converting to 32-bit along the way
+                let mut xy = Vec::new();
+                for p in pts.iter() {
+                    xy.push(self.export_point(p)?);
+                }
+                // Add the origin a second time, to "close" the polygon
+                xy.push(self.export_point(&pts[0])?);
+                gds21::GdsPath {
+                    layer: layer.layernum,
+                    datatype,
+                    width: Some(i32::try_from(*width)?),
+                    xy,
+                    ..Default::default()
+                }
+                .into()
+            }
         };
         // Initialize our vector of elements with the shape
-        let mut gds_elems = vec![gds21::GdsBoundary {
-            layer: layer.layernum,
-            datatype,
-            xy,
-            ..Default::default()
-        }
-        .into()];
+        let mut gds_elems = vec![gds_elem];
         // If there's an assigned net, create a corresponding text-element
         if let Some(name) = &elem.net {
-            let texttype = layer
-                .num(&LayerPurpose::Label)
-                .ok_or(LayoutError::msg("Text Layer Not Defined"))?
-                .clone();
+            let texttype = self.unwrap(
+                layer.num(&LayerPurpose::Label),
+                format!("Text Layer Not Defined for {:?}", layer),
+            )?;
 
             // Text is placed in the shape's (at least rough) center
             let loc = elem.inner.center();
@@ -237,7 +265,7 @@ impl<'a> GdsDepOrder<'a> {
 /// # GDSII Importer
 #[derive(Debug, Default)]
 pub struct GdsImporter {
-    pub layers: Layers,
+    pub layers: Ptr<Layers>,
     ctx_stack: Vec<ErrorContext>,
     unsupported: Vec<gds21::GdsElement>,
     cell_keys: HashMap<String, CellKey>,
@@ -246,9 +274,15 @@ pub struct GdsImporter {
 impl GdsImporter {
     /// Import a [gds21::GdsLibrary] into a [Library]
     /// FIXME: optionally provide layer definitions
-    pub fn import(gdslib: &gds21::GdsLibrary, layers: Option<Layers>) -> LayoutResult<Library> {
+    pub fn import(
+        gdslib: &gds21::GdsLibrary,
+        layers: Option<Ptr<Layers>>,
+    ) -> LayoutResult<Library> {
         // Create a default [Layers] if none were provided
-        let layers = layers.unwrap_or_default();
+        let layers = match layers {
+            Some(l) => l,
+            None => Ptr::new(Layers::default()),
+        };
         // Create the importer
         let mut importer = Self {
             layers,
@@ -372,7 +406,8 @@ impl GdsImporter {
             };
             // If we got a new element, add it to our per-layer hash
             if let Yes(e) = e {
-                let layernum = match self.layers.get(e.layer) {
+                let selflayers = self.layers.read()?;
+                let layernum = match selflayers.get(e.layer) {
                     Some(l) => l.layernum,
                     None => return self.fail("Internal error: element added to invalid layer"),
                 };
@@ -646,7 +681,8 @@ impl GdsImporter {
         elem: &impl gds21::HasLayer,
     ) -> LayoutResult<(LayerKey, LayerPurpose)> {
         let spec = elem.layerspec();
-        self.layers.get_or_insert(spec.layer, spec.xtype)
+        let mut layers = self.layers.write()?;
+        layers.get_or_insert(spec.layer, spec.xtype)
     }
 }
 impl HasErrors for GdsImporter {

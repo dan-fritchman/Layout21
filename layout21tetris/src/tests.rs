@@ -3,27 +3,36 @@ use std::io::prelude::*;
 
 use serde::Serialize;
 
-use super::cell::{Instance, LayoutImpl};
+use super::cell::{self, Instance, LayoutImpl};
 use super::library::Library;
 use super::outline::Outline;
 use super::raw::{self, Dir, LayoutError, LayoutResult, Units};
 use super::stack::*;
 use super::{abstrakt, rawconv, validate};
-
+use crate::utils::Ptr;
 
 /// Create a [Stack] used by a number of tests
 fn stack() -> LayoutResult<Stack> {
+    let mut rawlayers = raw::Layers::default();
+    rawlayers.add(raw::Layer::new(64, "nwell").add_pairs(&[
+        (44, raw::LayerPurpose::Drawing),
+        (5, raw::LayerPurpose::Label),
+    ])?);
     let metal_purps = [
         (20, raw::LayerPurpose::Drawing),
         (5, raw::LayerPurpose::Label),
     ];
-    let via_purps = [(44, raw::LayerPurpose::Drawing)];
+    rawlayers.add(raw::Layer::new(67, "li1").add_pairs(&metal_purps)?);
+    let via_purps = [
+        (44, raw::LayerPurpose::Drawing),
+        (5, raw::LayerPurpose::Label),
+    ];
     let stack = Stack {
         units: Units::Nano,
-        boundary_layer: Some(raw::Layer::from_pairs(
+        boundary_layer: Some(rawlayers.add(raw::Layer::from_pairs(
             236,
             &[(0, raw::LayerPurpose::Outline)],
-        )?),
+        )?)),
         prim: PrimitiveLayer {
             pitches: (460, 3310).into(),
         },
@@ -40,7 +49,7 @@ fn stack() -> LayoutResult<Stack> {
                 offset: (-245).into(),
                 cutsize: (250).into(),
                 overlap: (490).into(),
-                raw: Some(raw::Layer::from_pairs(68, &metal_purps)?),
+                raw: Some(rawlayers.add(raw::Layer::from_pairs(68, &metal_purps)?)),
                 flip: FlipMode::EveryOther,
                 prim: PrimitiveMode::Partial,
             },
@@ -51,7 +60,7 @@ fn stack() -> LayoutResult<Stack> {
                 cutsize: (250).into(),
                 offset: (-70).into(),
                 overlap: (0).into(),
-                raw: Some(raw::Layer::from_pairs(69, &metal_purps)?),
+                raw: Some(rawlayers.add(raw::Layer::from_pairs(69, &metal_purps)?)),
                 flip: FlipMode::None,
                 prim: PrimitiveMode::None,
             },
@@ -67,7 +76,7 @@ fn stack() -> LayoutResult<Stack> {
                 offset: (-245).into(),
                 cutsize: (250).into(),
                 overlap: (490).into(),
-                raw: Some(raw::Layer::from_pairs(70, &metal_purps)?),
+                raw: Some(rawlayers.add(raw::Layer::from_pairs(70, &metal_purps)?)),
                 flip: FlipMode::EveryOther,
                 prim: PrimitiveMode::None,
             },
@@ -83,7 +92,7 @@ fn stack() -> LayoutResult<Stack> {
                 cutsize: (250).into(),
                 offset: (-255).into(),
                 overlap: (510).into(),
-                raw: Some(raw::Layer::from_pairs(71, &metal_purps)?),
+                raw: Some(rawlayers.add(raw::Layer::from_pairs(71, &metal_purps)?)),
                 flip: FlipMode::EveryOther,
                 prim: PrimitiveMode::None,
             },
@@ -93,27 +102,28 @@ fn stack() -> LayoutResult<Stack> {
                 name: "mcon".into(),
                 between: (0, 1),
                 size: (240, 240).into(),
-                raw: Some(raw::Layer::from_pairs(67, &via_purps)?),
+                raw: Some(rawlayers.add(raw::Layer::from_pairs(67, &via_purps)?)),
             },
             ViaLayer {
                 name: "via1".into(),
                 between: (1, 2),
                 size: (240, 240).into(),
-                raw: Some(raw::Layer::from_pairs(68, &via_purps)?),
+                raw: Some(rawlayers.add(raw::Layer::from_pairs(68, &via_purps)?)),
             },
             ViaLayer {
                 name: "via2".into(),
                 between: (2, 3),
                 size: (240, 240).into(),
-                raw: Some(raw::Layer::from_pairs(69, &via_purps)?),
+                raw: Some(rawlayers.add(raw::Layer::from_pairs(69, &via_purps)?)),
             },
             ViaLayer {
                 name: "via3".into(),
                 between: (3, 4),
                 size: (240, 240).into(),
-                raw: Some(raw::Layer::from_pairs(70, &via_purps)?),
+                raw: Some(rawlayers.add(raw::Layer::from_pairs(70, &via_purps)?)),
             },
         ],
+        rawlayers: Some(Ptr::new(rawlayers)),
     };
     Ok(stack)
 }
@@ -136,7 +146,7 @@ fn empty_cell() -> Result<(), LayoutError> {
         cuts: Vec::new(),
     };
     let mut lib = Library::new("EmptyCellLib");
-    let c2 = lib.cells.insert(c.into());
+    let _c2 = lib.cells.insert(c.into());
     exports(lib)?;
     Ok(())
 }
@@ -443,7 +453,6 @@ fn create_lib4() -> Result<(), LayoutError> {
     // For each column
     for x in 0..3 {
         let m2track = (m2xpitch * (x + 1) - 4) as usize;
-        let track = m2track;
         let m2entrack = (x * m2xpitch) + m2xpitch / 2;
 
         // For each row
@@ -507,12 +516,74 @@ fn create_lib4() -> Result<(), LayoutError> {
     exports(lib)
 }
 
+#[test]
+fn wrap_gds() -> LayoutResult<()> {
+    // Import a [GdsLibrary] to a [raw::Library]
+    let gds_fname = resource("ginv.gds");
+    let gds = raw::gds::gds21::GdsLibrary::load(&gds_fname)?;
+    // gds.name = "ginv".into();
+    // if gds.structs.len() > 1 {
+    //     gds.structs.pop();
+    // }
+    // gds.structs[0].name = "ginv".into();
+    // gds.save(&resource("ginv.gds"))?;
+    // save_yaml(&gds, &resource("ginv.gds.yaml"))?;
+
+    let stack = stack()?;
+
+    let rawlib = raw::Library::from_gds(&gds, Some(Ptr::clone(&stack.rawlayers.unwrap())))?;
+    assert_eq!(rawlib.cells.len(), 1);
+    // Get the first (and only) cell key
+    let cellkey = rawlib.cells.keys().next().unwrap();
+
+    // Create our [Library]
+    let mut lib = Library::new("wrap_gds");
+    // Take ownership of the [raw::Library]
+    let rawlibptr = lib.add_rawlib(rawlib);
+    // Create a [CellBag] from the [raw::Library]'s sole cell
+    let wrapped = cell::RawLayoutPtr {
+        lib: rawlibptr,
+        cell: cellkey,
+    };
+    let wrapped = lib.cells.insert(wrapped.into());
+
+    // Create a wrapper cell
+    let mut wrapper = LayoutImpl::new(
+        "Wrapper",              // name
+        0,                      // top_layer
+        Outline::rect(50, 10)?, // outline
+    );
+    wrapper.instances.push(Instance {
+        inst_name: "wrapped".into(),
+        cell: wrapped,
+        loc: (0, 0).into(),
+        reflect: false,
+        angle: None,
+    });
+    let _wrapper = lib.cells.insert(wrapper.into());
+    exports(lib)
+}
 
 /// Export [Library] `lib` in several formats
 fn exports(lib: Library) -> LayoutResult<()> {
-    // FIXME: whether to remove altogether save_yaml(&lib, &resource(&format!("{}.yaml", &lib.name)))?;
-    let raw = rawconv::RawConverter::convert(lib, stack()?)?;
-    save_yaml(&raw, &resource(&format!("{}.raw.yaml", &raw.name)))?;
+    // FIXME: whether to remove altogether:
+    // save_yaml(&lib, &resource(&format!("{}.yaml", &lib.name)))?;
+    let raw = rawconv::RawExporter::convert(lib, stack()?)?;
+    let raw = raw.read()?;
+    // FIXME: whether to remove altogether:
+    // save_yaml(&raw, &resource(&format!("{}.raw.yaml", &raw.name)))?;
+
+    // Export to ProtoBuf
+    let protolib = raw.to_proto()?;
+    save_yaml(
+        &protolib,
+        &resource(&format!("{}.proto.yaml", &protolib.domain)),
+    )?;
+    crate::raw::proto::proto::save(
+        &protolib,
+        &resource(&format!("{}.proto.bin", &protolib.domain)),
+    )
+    .unwrap();
 
     // Export to GDSII
     let gds = raw.to_gds()?;
@@ -520,11 +591,11 @@ fn exports(lib: Library) -> LayoutResult<()> {
     gds.save(&resource(&format!("{}.gds", &gds.name)))?;
     Ok(())
 }
-
-#[test]
-fn stack_to_yaml() -> LayoutResult<()> {
-    save_yaml(&stack()?, &resource("stack.yaml"))
-}
+// FIXME: whether to remove altogether:
+// #[test]
+// fn stack_to_yaml() -> LayoutResult<()> {
+//     save_yaml(&stack()?, &resource("stack.yaml"))
+// }
 /// Grab the full path of resource-file `fname`
 fn resource(fname: &str) -> String {
     format!("{}/resources/{}", env!("CARGO_MANIFEST_DIR"), fname)

@@ -14,6 +14,7 @@ use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 
 // Local imports
+use crate::utils::Ptr;
 use crate::{
     Cell, CellKey, Element, ErrorContext, HasErrors, Instance, LayerKey, LayerPurpose, Layers,
     LayoutError, LayoutResult, Library, Point, Shape, TextElement, Units,
@@ -76,7 +77,8 @@ impl<'lib> ProtoExporter<'lib> {
         // FIXME: should we store them here this way in the first place? Perhaps.
         let mut layers: HashMap<(i16, i16), Vec<&Element>> = HashMap::new();
         for elem in &cell.elems {
-            let layer = self.lib.layers.get(elem.layer).ok_or("Invalid Layer")?;
+            let selflayers = self.lib.layers.read()?;
+            let layer = selflayers.get(elem.layer).ok_or("Invalid Layer")?;
             let number = layer.layernum;
             let purpose = layer
                 .num(&elem.purpose)
@@ -186,15 +188,18 @@ enum ProtoShape {
 /// # ProtoBuf Importer
 #[derive(Debug, Default)]
 pub struct ProtoImporter {
-    pub layers: Layers,
+    pub layers: Ptr<Layers>,
     ctx_stack: Vec<ErrorContext>,
     cell_keys: HashMap<String, CellKey>,
     lib: Library,
 }
 impl ProtoImporter {
-    pub fn import(plib: &proto::Library, layers: Option<Layers>) -> LayoutResult<Library> {
+    pub fn import(plib: &proto::Library, layers: Option<Ptr<Layers>>) -> LayoutResult<Library> {
         // Create a default [Layers] if none were provided
-        let layers = layers.unwrap_or_default();
+        let layers = match layers {
+            Some(l) => l,
+            None => Ptr::new(Layers::default()),
+        };
         // Create the importer
         let mut importer = Self {
             layers,
@@ -417,7 +422,8 @@ impl ProtoImporter {
         // FIXME: maybe a bigger-size type for these layer numbers.
         let num = i16::try_from(player.number)?;
         let purpose = i16::try_from(player.purpose)?;
-        self.layers.get_or_insert(num, purpose)
+        let mut layers = self.layers.write()?;
+        layers.get_or_insert(num, purpose)
     }
 }
 impl HasErrors for ProtoImporter {
@@ -434,7 +440,10 @@ impl HasErrors for ProtoImporter {
 fn proto1() -> LayoutResult<()> {
     // Round-trip through Layout21::Raw -> ProtoBuf -> Layout21::Raw
     let mut lib = Library::new("prt_lib", Units::Nano);
-    let (layer, purpose) = lib.layers.get_or_insert(0, 0)?;
+    let (layer, purpose) = {
+        let mut layers = lib.layers.write()?;
+        layers.get_or_insert(0, 0)?
+    };
     let c1 = lib.cells.insert(Cell {
         name: "prt_cell".into(),
         elems: vec![
@@ -491,6 +500,7 @@ fn proto1() -> LayoutResult<()> {
     assert_eq!(lib.name, lib2.name);
     assert_eq!(lib.units, lib2.units);
     assert_eq!(lib.cells.len(), lib2.cells.len());
-    assert_eq!(lib.layers.nums.len(), lib2.layers.nums.len());
+    let layers = lib.layers.read()?;
+    assert_eq!(layers.nums.len(), layers.nums.len());
     Ok(())
 }

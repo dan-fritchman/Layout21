@@ -20,6 +20,9 @@ use serde::{Deserialize, Serialize};
 use slotmap::{new_key_type, SlotMap};
 
 // Internal modules & re-exports
+pub use layout21utils as utils;
+use utils::Ptr;
+
 #[cfg(feature = "gds")]
 pub mod gds;
 #[cfg(feature = "lef")]
@@ -89,6 +92,11 @@ impl From<std::num::TryFromIntError> for LayoutError {
 impl<T> From<std::sync::PoisonError<T>> for LayoutError {
     fn from(_e: std::sync::PoisonError<T>) -> Self {
         Self::Tbd // FIXME!
+    }
+}
+impl<T: std::error::Error + 'static> From<Box<T>> for LayoutError {
+    fn from(e: Box<T>) -> Self {
+        Self::Boxed(e)
     }
 }
 /// Helper trait for re-use among our many conversion tree-walkers.
@@ -248,11 +256,11 @@ impl Layers {
         key
     }
     /// Get a reference to the [LayerKey] for layer-number `num`
-    fn keynum(&self, num: i16) -> Option<&LayerKey> {
+    pub fn keynum(&self, num: i16) -> Option<&LayerKey> {
         self.nums.get(&num)
     }
     /// Get a reference to the [LayerKey] layer-name `name`
-    fn keyname(&self, name: impl Into<String>) -> Option<&LayerKey> {
+    pub fn keyname(&self, name: impl Into<String>) -> Option<&LayerKey> {
         self.names.get(&name.into())
     }
     /// Get a reference to [Layer] number `num`
@@ -277,7 +285,7 @@ impl Layers {
     /// Get the ([LayerKey], [LayerPurpose]) objects for numbers (`layernum`, `purposenum`) if present.
     /// Inserts a new [Layer] if `layernum` is not present.
     /// Returns `LayerPurpose::Other(purposenum)` if `purposenum` is not present on that layer.
-    fn get_or_insert(
+    pub fn get_or_insert(
         &mut self,
         layernum: i16,
         purposenum: i16,
@@ -367,12 +375,12 @@ impl Layer {
         }
         Ok(layer)
     }
-    /// Add purpose-numbers `pairs`.
-    pub fn add_pairs(&mut self, pairs: &[(i16, LayerPurpose)]) -> LayoutResult<()> {
+    /// Add purpose-numbers `pairs`. Consumes and returns `self` for chainability.
+    pub fn add_pairs(mut self, pairs: &[(i16, LayerPurpose)]) -> LayoutResult<Self> {
         for (num, purpose) in pairs {
             self.add_purpose(*num, purpose.clone())?;
         }
-        Ok(())
+        Ok(self)
     }
     /// Add a new [LayerPurpose]
     pub fn add_purpose(&mut self, num: i16, purp: LayerPurpose) -> LayoutResult<()> {
@@ -394,8 +402,8 @@ impl Layer {
         self.purps.get(&num)
     }
     /// Retrieve the purpose-number for this layer and [Purpose] `purpose`
-    pub fn num(&self, purpose: &LayerPurpose) -> Option<&i16> {
-        self.nums.get(purpose)
+    pub fn num(&self, purpose: &LayerPurpose) -> Option<i16> {
+        self.nums.get(purpose).copied()
     }
 }
 
@@ -422,14 +430,14 @@ pub struct AbstractPort {
 
 /// # Raw Layout Library  
 /// A collection of cell-definitions and sub-library definitions
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default)]
 pub struct Library {
     /// Library Name
     pub name: String,
     /// Distance Units
     pub units: Units,
     /// Layer Definitions
-    pub layers: Layers,
+    pub layers: Ptr<Layers>,
     /// Cell Definitions
     pub cells: SlotMap<CellKey, Cell>,
     /// Abstract-Layout Definitions
@@ -454,7 +462,7 @@ impl Library {
     #[cfg(feature = "gds")]
     pub fn from_gds(
         gdslib: &gds::gds21::GdsLibrary,
-        layers: Option<Layers>,
+        layers: Option<Ptr<Layers>>,
     ) -> LayoutResult<Library> {
         gds::GdsImporter::import(&gdslib, layers)
     }
@@ -465,7 +473,7 @@ impl Library {
     }
     /// Create from ProtoBuf, or anything convertible into a Proto Library
     #[cfg(feature = "proto")]
-    pub fn from_proto<T>(plib: T, layers: Option<Layers>) -> LayoutResult<Library>
+    pub fn from_proto<T>(plib: T, layers: Option<Ptr<Layers>>) -> LayoutResult<Library>
     where
         // These trait bounds aren't pretty, but more or less say:
         // * T is convertible into [proto::proto::Library]
@@ -540,10 +548,11 @@ impl Shape {
             Shape::Poly { pts: _ } => {
                 unimplemented!("Shape::Poly::center");
             }
-            Shape::Path { .. } => todo!(),
+            Shape::Path { .. } => Point::new(0, 0), // FIXME!!!
         }
     }
     /// Indicate whether this shape is (more or less) horizontal or vertical
+    /// Primarily used for orienting label-text
     pub fn orientation(&self) -> Dir {
         match *self {
             Shape::Rect { ref p0, ref p1 } => {
@@ -552,10 +561,9 @@ impl Shape {
                 }
                 Dir::Horiz
             }
-            Shape::Poly { pts: _ } => {
-                unimplemented!("Shape::Poly::orientation");
-            }
-            Shape::Path { .. } => todo!(),
+            // Polygon and Path elements always horizontal, at least for now
+            Shape::Poly { .. } => Dir::Horiz,
+            Shape::Path { .. } => Dir::Horiz,
         }
     }
     /// Shift coordinates by the (x,y) values specified in `pt`
