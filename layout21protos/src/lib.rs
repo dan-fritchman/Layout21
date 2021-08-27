@@ -63,6 +63,26 @@ pub fn save<T: Message + Sized + Default>(data: &T, fname: &str) -> Result<(), B
     Ok(())
 }
 
+/// Trait for reading and writing binary proto-format data to/from files
+///
+/// Includes default-implemented `open` and `save` methods,
+/// allowing empty implementations per type.
+///
+/// Both methods are also exposed as public module-level functions,
+/// allowing usage with types that do not implement `ProtoFile`,
+/// but do implement its prerequisites.
+pub trait ProtoFile: Message + Sized + Default {
+    /// Open from file `fname`
+    fn open(fname: &str) -> Result<Self, Box<dyn Error>> {
+        open(fname)
+    }
+    /// Save to file `fname`
+    fn save(&self, fname: &str) -> Result<(), Box<dyn Error>> {
+        save(self, fname)
+    }
+}
+impl ProtoFile for Library {}
+
 /// # Unit Tests
 ///
 /// Primarily basic generation of each proto-expanded type,

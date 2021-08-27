@@ -2,12 +2,6 @@
 //! # Lef21 Library Exchange Format (LEF) Parser & Writer
 //!
 
-// Standard Lib Imports
-#[allow(unused_imports)]
-use std::io::prelude::*;
-use std::io::{BufReader, BufWriter, Read, Write};
-use std::str::Chars;
-
 // Crates.io Imports
 #[allow(unused_imports)]
 use rust_decimal::prelude::*;
@@ -16,6 +10,7 @@ use serde::{Deserialize, Serialize};
 extern crate derive_builder;
 
 // Local modules & re-exports
+use layout21utils as utils;
 mod read;
 #[cfg(test)]
 mod tests;
@@ -406,46 +401,6 @@ pub struct LefSite {
 #[derive(Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Tbd;
 
-/// Enumerated, Supported Serialization Formats
-pub enum SerializationFormat {
-    Json,
-    Yaml,
-    Toml,
-}
-impl SerializationFormat {
-    /// Convert any [serde::Serialize] data to a serialized string
-    pub fn to_string(&self, data: &impl Serialize) -> LefResult<String> {
-        match *self {
-            Self::Json => Ok(serde_json::to_string(data)?),
-            Self::Yaml => Ok(serde_yaml::to_string(data)?),
-            Self::Toml => Ok(toml::to_string(data)?),
-        }
-    }
-    /// Save `data` to file `fname`
-    pub fn save(&self, data: &impl Serialize, fname: &str) -> LefResult<()> {
-        let mut file = BufWriter::new(std::fs::File::create(fname)?);
-        let s = self.to_string(data)?;
-        file.write_all(s.as_bytes())?;
-        file.flush()?;
-        Ok(())
-    }
-    /// Load from file at path `fname`
-    pub fn open<T: serde::de::DeserializeOwned>(&self, fname: &str) -> T {
-        let file = std::fs::File::open(&fname).unwrap();
-        let mut file = BufReader::new(file);
-        match *self {
-            Self::Json => serde_json::from_reader(file).unwrap(),
-            Self::Yaml => serde_yaml::from_reader(file).unwrap(),
-            Self::Toml => {
-                // TOML doesn't have that nice reader method, so we kinda recreate (a probably slower) one
-                let mut s = String::new();
-                file.read_to_string(&mut s).unwrap();
-                toml::from_str(&s).unwrap()
-            }
-        }
-    }
-}
-
 /// Lef String-Enumeration Trait
 /// Defines two central methods:
 /// * `to_str(&self) -> &'static str` converts the enum to its Lef-String values.
@@ -633,9 +588,15 @@ pub enum LefError {
     /// File I/O Errors
     Io(std::io::Error),
     /// Other wrapped errors, generally from other crates
-    Other(Box<dyn std::error::Error>),
+    Boxed(Box<dyn std::error::Error>),
     /// Other string-typed errors, generally from other crates
     Str(String),
+}
+impl From<utils::ser::Error> for LefError {
+    /// Convert common IO & file errors by wrapping them
+    fn from(e: utils::ser::Error) -> Self {
+        Self::Boxed(Box::new(e))
+    }
 }
 impl From<std::io::Error> for LefError {
     /// Convert common IO & file errors by wrapping them
@@ -647,22 +608,6 @@ impl From<rust_decimal::Error> for LefError {
     /// Convert integer-parsing errors by wrapping them
     fn from(e: rust_decimal::Error) -> Self {
         Self::ParseNum(e)
-    }
-}
-// More external error types, all wrapped as [LefError::Other]
-impl From<serde_json::Error> for LefError {
-    fn from(e: serde_json::Error) -> Self {
-        Self::Other(Box::new(e))
-    }
-}
-impl From<serde_yaml::Error> for LefError {
-    fn from(e: serde_yaml::Error) -> Self {
-        Self::Other(Box::new(e))
-    }
-}
-impl From<toml::ser::Error> for LefError {
-    fn from(e: toml::ser::Error) -> Self {
-        Self::Other(Box::new(e))
     }
 }
 impl From<String> for LefError {
@@ -679,3 +624,7 @@ impl From<&str> for LefError {
 }
 /// Lef21 Library-Wide Result Type
 pub type LefResult<T> = Result<T, LefError>;
+
+// Implement the serialization to/from file trait for libraries and macros
+impl utils::SerdeFile for LefLibrary {}
+impl utils::SerdeFile for LefMacro {}

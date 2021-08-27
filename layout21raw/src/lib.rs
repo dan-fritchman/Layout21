@@ -89,6 +89,11 @@ impl From<std::num::TryFromIntError> for LayoutError {
         Self::Boxed(Box::new(e))
     }
 }
+impl From<utils::ser::Error> for LayoutError {
+    fn from(e: utils::ser::Error) -> Self {
+        Self::Boxed(Box::new(e))
+    }
+}
 impl<T> From<std::sync::PoisonError<T>> for LayoutError {
     fn from(_e: std::sync::PoisonError<T>) -> Self {
         Self::Tbd // FIXME!

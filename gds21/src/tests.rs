@@ -30,30 +30,38 @@ fn floats() -> GdsResult<()> {
     Ok(())
 }
 #[test]
-fn scan() -> GdsResult<()> {
-    // First-level scan struct names and byte-locations
-    let fname = format!(
-        "{}/resources/has_properties.gds",
-        env!("CARGO_MANIFEST_DIR")
-    );
+fn stats() -> GdsResult<()> {
+    // Test collecting statistics
+    let fname = resource("sample1.gds");
     let lib = GdsLibrary::load(&fname)?;
-    dbg!(lib.stats());
+    let stats = lib.stats();
+    assert_eq!(
+        stats,
+        GdsStats {
+            libraries: 1,
+            structs: 1,
+            boundaries: 261,
+            paths: 0,
+            struct_refs: 0,
+            array_refs: 0,
+            text_elems: 26,
+            nodes: 0,
+            boxes: 0,
+        }
+    );
     Ok(())
 }
 #[test]
-fn stats() -> GdsResult<()> {
-    // Read the stats from a library
-    let fname = format!(
-        "{}/resources/has_properties.gds",
-        env!("CARGO_MANIFEST_DIR")
-    );
+fn scan() -> GdsResult<()> {
+    // Test first-pass scanning
+    let fname = resource("has_properties.gds");
     let _scan = GdsScanner::scan(&fname)?;
     Ok(())
 }
 #[test]
 fn it_reads() -> GdsResult<()> {
     // Read a sample GDS and compare to golden data
-    let fname = format!("{}/resources/sample1.gds", env!("CARGO_MANIFEST_DIR"));
+    let fname = resource("sample1.gds");
     let lib = GdsLibrary::load(&fname)?;
     check(&lib, &resource("sample1.json"));
     Ok(())
@@ -161,28 +169,14 @@ fn record_too_long() -> GdsResult<()> {
 
 /// Compare `lib` to "golden" data loaded from JSON at path `golden`.
 fn check(lib: &GdsLibrary, fname: &str) {
+    use layout21utils::ser::SerializationFormat::Json;
     // Uncomment this bit to over-write the golden data
-    // save_json(lib, fname);
+    // Json::save(lib, fname);
 
-    let golden = load_json(fname);
+    let golden = Json.open(fname).unwrap();
     assert_eq!(*lib, golden);
 }
 /// Grab the full path of resource-file `fname`
 fn resource(fname: &str) -> String {
     format!("{}/resources/{}", env!("CARGO_MANIFEST_DIR"), fname)
-}
-/// Load a library from JSON resource at path `fname`
-fn load_json(fname: &str) -> GdsLibrary {
-    use std::io::BufReader;
-    let file = File::open(&fname).unwrap();
-    let golden: GdsLibrary = serde_json::from_reader(BufReader::new(file)).unwrap();
-    golden
-}
-/// Save a `GdsLibrary` as a JSON-format file at path `fname`
-#[allow(dead_code)]
-fn save_json(lib: &GdsLibrary, fname: &str) {
-    let mut file = BufWriter::new(File::create(fname).unwrap());
-    let s = serde_json::to_string(lib).unwrap();
-    file.write_all(s.as_bytes()).unwrap();
-    file.flush().unwrap();
 }

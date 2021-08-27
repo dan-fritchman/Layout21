@@ -2,6 +2,10 @@
 //! # Lef Writer Module
 //!
 
+// Standard Lib Imports
+use std::io::Write;
+
+// Local imports
 use super::*;
 
 /// Write a [LefLibrary] to file `fname`

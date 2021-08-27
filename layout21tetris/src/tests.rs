@@ -1,7 +1,6 @@
-#[allow(unused_imports)]
-use std::io::prelude::*;
-
-use serde::Serialize;
+//!
+//! # Unit Tests
+//!
 
 use super::cell::{self, Instance, LayoutImpl};
 use super::library::Library;
@@ -579,19 +578,18 @@ fn gds_wrapped_ro() -> LayoutResult<()> {
 
 /// Export [Library] `lib` in several formats
 fn exports(lib: Library) -> LayoutResult<()> {
-    // FIXME: whether to remove altogether:
-    // save_yaml(&lib, &resource(&format!("{}.yaml", &lib.name)))?;
+    use crate::utils::SerializationFormat::Yaml;
+
     let raw = rawconv::RawExporter::convert(lib, stack()?)?;
     let raw = raw.read()?;
-    // FIXME: whether to remove altogether:
-    // save_yaml(&raw, &resource(&format!("{}.raw.yaml", &raw.name)))?;
 
-    // Export to ProtoBuf
+    // Export to ProtoBuf, save as YAML and binary
     let protolib = raw.to_proto()?;
-    save_yaml(
+    Yaml.save(
         &protolib,
         &resource(&format!("{}.proto.yaml", &protolib.domain)),
-    )?;
+    )
+    .unwrap();
     crate::raw::proto::proto::save(
         &protolib,
         &resource(&format!("{}.proto.bin", &protolib.domain)),
@@ -600,26 +598,12 @@ fn exports(lib: Library) -> LayoutResult<()> {
 
     // Export to GDSII
     let gds = raw.to_gds()?;
-    save_yaml(&gds, &resource(&format!("{}.gds.yaml", &gds.name)))?;
+    Yaml.save(&gds, &resource(&format!("{}.gds.yaml", &gds.name)))
+        .unwrap();
     gds.save(&resource(&format!("{}.gds", &gds.name)))?;
     Ok(())
 }
-// FIXME: whether to remove altogether:
-// #[test]
-// fn stack_to_yaml() -> LayoutResult<()> {
-//     save_yaml(&stack()?, &resource("stack.yaml"))
-// }
 /// Grab the full path of resource-file `fname`
 fn resource(fname: &str) -> String {
     format!("{}/resources/{}", env!("CARGO_MANIFEST_DIR"), fname)
-}
-/// Save any [Serialize]-able type to yaml-format file `fname`
-fn save_yaml(data: &impl Serialize, fname: &str) -> LayoutResult<()> {
-    use std::fs::File;
-    use std::io::BufWriter;
-    let mut file = BufWriter::new(File::create(fname).unwrap());
-    let yaml = serde_yaml::to_string(data).unwrap();
-    file.write_all(yaml.as_bytes()).unwrap();
-    file.flush().unwrap();
-    Ok(())
 }

@@ -5,6 +5,11 @@
 //! Includes the core Lexer and Parser classes.
 //!
 
+// Standard Lib Imports
+use std::io::Read;
+use std::str::Chars;
+
+// Local imports
 use super::*;
 
 /// Parse LEF content from file `fname`
@@ -1023,7 +1028,6 @@ fn it_parses() -> LefResult<()> {
         END LIBRARY
     "#;
     let lib = parse_str(src)?;
-    SerializationFormat::Yaml.save(&lib, &resource("lib1.yaml"))?;
     check_yaml(&lib, &resource("lib1.yaml"));
     Ok(())
 }
@@ -1077,7 +1081,8 @@ fn it_parses_lib2() -> LefResult<()> {
 #[cfg(test)]
 /// Helper function: Assert that `data` equals the content in YAML file `fname`
 fn check_yaml<T: Eq + std::fmt::Debug + serde::de::DeserializeOwned>(data: &T, fname: &str) {
-    let golden: T = SerializationFormat::Yaml.open(fname);
+    use crate::utils::SerializationFormat::Yaml;
+    let golden: T = Yaml.open(fname).unwrap();
     assert_eq!(*data, golden);
 }
 #[cfg(test)]

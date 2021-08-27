@@ -55,7 +55,7 @@
 //!
 //! Converting a [GdsLibrary] to JSON, YAML, or TOML:
 //!
-//! ```
+//! ```text
 //! let lib = gds21::GdsLibrary::new("mylib");
 //! let json = serde_json::to_string(&lib);
 //! let yaml = serde_yaml::to_string(&lib);
@@ -85,11 +85,14 @@ use serde::{Deserialize, Serialize};
 #[macro_use]
 extern crate derive_builder;
 
+// Local Imports
+use layout21utils as utils;
+
 // Internal Modules
 #[doc(hidden)]
 mod read;
 #[doc(inline)]
-use read::{GdsParser, GdsScanner};
+use read::{GdsParser, GdsScanner, GdsStructScan};
 #[doc(hidden)]
 mod write;
 #[doc(inline)]
@@ -937,10 +940,8 @@ impl GdsLibrary {
         // And parse it to a library-tree
         me.parse_lib()
     }
-    pub fn scan_(fname: &str) -> GdsResult<()> {
-        // FIXME: the actual name "scan" here conflicts with some std-lib trait, figure out what to call this
-        GdsScanner::scan(fname)?;
-        Ok(())
+    pub fn scan(fname: &str) -> GdsResult<Vec<GdsStructScan>> {
+        GdsScanner::scan(fname)
     }
     /// Collect and return the library's aggregate statistics
     /// (numbers of structs, elements by type)
@@ -963,6 +964,9 @@ impl GdsLibrary {
         wr.write_lib(self)
     }
 }
+// Enable [GdsLibrary] serialization to file,
+// in each of `utils` supported formats.
+impl utils::ser::SerdeFile for GdsLibrary {}
 
 /// # Gds Layer Spec
 ///
