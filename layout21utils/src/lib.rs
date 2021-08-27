@@ -95,3 +95,35 @@ impl<T> Hash for Ptr<T> {
         self.0.hash(state)
     }
 }
+
+/// # Pointer List
+///
+/// Newtype wrapping a <Vec<Ptr>>, adding an interface designed
+/// for ease of getting referable [Ptr]s upon insertion.
+/// Other methods are passed into the underlying [Vec] via [Deref] and [DerefMut].
+///
+#[derive(Debug, Clone, Default)]
+pub struct PtrList<T: Clone>(Vec<Ptr<T>>);
+impl<T: Clone> PtrList<T> {
+    /// Add an owned [T], returning a [Ptr] to it
+    pub fn add(&mut self, val: T) -> Ptr<T> {
+        let rv = Ptr::new(val);
+        self.0.push(Ptr::clone(&rv));
+        rv
+    }
+    /// Alias for `add`
+    pub fn insert(&mut self, val: T) -> Ptr<T> {
+        self.add(val)
+    }
+}
+impl<T: Clone> Deref for PtrList<T> {
+    type Target = Vec<Ptr<T>>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl<T: Clone> DerefMut for PtrList<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
