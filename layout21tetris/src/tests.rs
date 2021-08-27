@@ -34,21 +34,21 @@ fn stack() -> LayoutResult<Stack> {
             &[(0, raw::LayerPurpose::Outline)],
         )?)),
         prim: PrimitiveLayer {
-            pitches: (460, 3310).into(),
+            pitches: (460, 2720).into(),
         },
         layers: vec![
             Layer {
                 name: "met1".into(),
                 entries: vec![
-                    TrackSpec::gnd(490),
-                    TrackSpec::pat(vec![TrackEntry::gap(230), TrackEntry::sig(140)], 7),
-                    TrackSpec::gap(230),
-                    TrackSpec::pwr(490),
+                    TrackSpec::gnd(480),
+                    TrackSpec::pat(vec![TrackEntry::gap(200), TrackEntry::sig(140)], 6),
+                    TrackSpec::gap(200),
+                    TrackSpec::pwr(480),
                 ],
                 dir: Dir::Horiz,
-                offset: (-245).into(),
+                offset: (-240).into(),
                 cutsize: (250).into(),
-                overlap: (490).into(),
+                overlap: (480).into(),
                 raw: Some(rawlayers.add(raw::Layer::from_pairs(68, &metal_purps)?)),
                 flip: FlipMode::EveryOther,
                 prim: PrimitiveMode::Partial,
@@ -67,15 +67,15 @@ fn stack() -> LayoutResult<Stack> {
             Layer {
                 name: "met3".into(),
                 entries: vec![
-                    TrackSpec::gnd(490),
-                    TrackSpec::pat(vec![TrackEntry::gap(230), TrackEntry::sig(140)], 7),
-                    TrackSpec::gap(230),
-                    TrackSpec::pwr(490),
+                    TrackSpec::gnd(480),
+                    TrackSpec::pat(vec![TrackEntry::gap(200), TrackEntry::sig(140)], 6),
+                    TrackSpec::gap(200),
+                    TrackSpec::pwr(480),
                 ],
                 dir: Dir::Horiz,
-                offset: (-245).into(),
+                offset: (-240).into(),
                 cutsize: (250).into(),
-                overlap: (490).into(),
+                overlap: (480).into(),
                 raw: Some(rawlayers.add(raw::Layer::from_pairs(70, &metal_purps)?)),
                 flip: FlipMode::EveryOther,
                 prim: PrimitiveMode::None,
@@ -136,7 +136,7 @@ fn validate_stack() -> LayoutResult<()> {
 }
 /// Create an empy cell
 #[test]
-fn empty_cell() -> Result<(), LayoutError> {
+fn empty_cell() -> LayoutResult<()> {
     let c = LayoutImpl {
         name: "EmptyCell".into(),
         top_layer: 4,
@@ -152,7 +152,7 @@ fn empty_cell() -> Result<(), LayoutError> {
 }
 /// Create a layout-implementation
 #[test]
-fn create_layout() -> Result<(), LayoutError> {
+fn create_layout() -> LayoutResult<()> {
     LayoutImpl {
         name: "HereGoes".into(),
         top_layer: 3,
@@ -173,7 +173,7 @@ fn create_layout() -> Result<(), LayoutError> {
 }
 /// Create a library
 #[test]
-fn create_lib1() -> Result<(), LayoutError> {
+fn create_lib1() -> LayoutResult<()> {
     let mut lib = Library::new("lib1");
 
     lib.cells.insert(
@@ -236,7 +236,7 @@ fn create_lib1() -> Result<(), LayoutError> {
 }
 /// Create a cell with instances
 #[test]
-fn create_lib2() -> Result<(), LayoutError> {
+fn create_lib2() -> LayoutResult<()> {
     let mut lib = Library::new("lib2");
 
     let c2 = lib.cells.insert(
@@ -282,7 +282,7 @@ fn create_lib2() -> Result<(), LayoutError> {
 
 /// Create an abstract layout, with its variety of supported port types
 #[test]
-fn create_abstract() -> Result<(), LayoutError> {
+fn create_abstract() -> LayoutResult<()> {
     let outline = Outline::rect(11, 11)?;
     let ports = vec![
         abstrakt::Port {
@@ -339,7 +339,7 @@ fn create_abstract() -> Result<(), LayoutError> {
 
 /// Create a cell with abstract instances
 #[test]
-fn create_lib3() -> Result<(), LayoutError> {
+fn create_lib3() -> LayoutResult<()> {
     let mut lib = Library::new("lib3");
 
     let c2 = lib.cells.insert(
@@ -400,45 +400,53 @@ fn create_lib3() -> Result<(), LayoutError> {
 
 /// Create a cell with abstract instances
 #[test]
-fn create_lib4() -> Result<(), LayoutError> {
+fn create_lib4() -> LayoutResult<()> {
     let mut lib = Library::new("lib4");
-
+    let unit = abstract_unit()?.into(); // Convert to a [CellBag]
+    let unit = lib.cells.insert(unit); // Insert and get a shared-pointer
+    let ro = ro(unit)?; // Create the RO level
+    lib.cells.insert(ro); // And insert it
+    exports(lib)
+}
+fn abstract_unit() -> Result<abstrakt::LayoutAbstract, LayoutError> {
     let unitsize = (18, 1);
 
-    let c2 = lib.cells.insert(
-        abstrakt::LayoutAbstract {
-            name: "UnitCell".into(),
-            top_layer: 0,
-            outline: Outline::rect(unitsize.0, unitsize.1)?,
-            ports: vec![
-                abstrakt::Port {
-                    name: "en".into(),
-                    kind: abstrakt::PortKind::ZTopEdge {
-                        track: 2,
-                        side: abstrakt::Side::BottomOrLeft,
-                        into: (5, RelZ::Above),
-                    },
+    let unit = abstrakt::LayoutAbstract {
+        name: "UnitCell".into(),
+        top_layer: 0,
+        outline: Outline::rect(unitsize.0, unitsize.1)?,
+        ports: vec![
+            abstrakt::Port {
+                name: "en".into(),
+                kind: abstrakt::PortKind::ZTopEdge {
+                    track: 2,
+                    side: abstrakt::Side::BottomOrLeft,
+                    into: (5, RelZ::Above),
                 },
-                abstrakt::Port {
-                    name: "inp".into(),
-                    kind: abstrakt::PortKind::ZTopEdge {
-                        track: 3,
-                        side: abstrakt::Side::TopOrRight,
-                        into: (11, RelZ::Above),
-                    },
+            },
+            abstrakt::Port {
+                name: "inp".into(),
+                kind: abstrakt::PortKind::ZTopEdge {
+                    track: 3,
+                    side: abstrakt::Side::TopOrRight,
+                    into: (11, RelZ::Above),
                 },
-                abstrakt::Port {
-                    name: "out".into(),
-                    kind: abstrakt::PortKind::ZTopEdge {
-                        track: 5,
-                        side: abstrakt::Side::TopOrRight,
-                        into: (11, RelZ::Above),
-                    },
+            },
+            abstrakt::Port {
+                name: "out".into(),
+                kind: abstrakt::PortKind::ZTopEdge {
+                    track: 5,
+                    side: abstrakt::Side::TopOrRight,
+                    into: (11, RelZ::Above),
                 },
-            ],
-        }
-        .into(), // Convert to a [CellBag]
-    );
+            },
+        ],
+    };
+    Ok(unit)
+}
+/// Create a very-specifically crafted ring from unit-cell `unit`
+fn ro(unit: Ptr<cell::CellBag>) -> LayoutResult<cell::CellBag> {
+    let unitsize = (18, 1);
 
     // Create an initially empty layout
     let mut hasunits = LayoutImpl::new(
@@ -447,8 +455,8 @@ fn create_lib4() -> Result<(), LayoutError> {
         Outline::rect(7 * unitsize.0, 7 * unitsize.1)?, // outline
     );
     let m2xpitch = 36;
-    let m2botcut = 6;
-    let m2topcut = 7 * 6;
+    let m2botcut = 5;
+    let m2topcut = 7 * m2botcut + 1;
 
     // For each column
     for x in 0..3 {
@@ -460,7 +468,7 @@ fn create_lib4() -> Result<(), LayoutError> {
             let loc = ((2 * x + 1) * unitsize.0, (2 * y + 1) * unitsize.1).into();
             let inst = Instance {
                 inst_name: format!("inst{}{}", x, y),
-                cell: c2.clone(),
+                cell: unit.clone(),
                 loc,
                 reflect: false,
                 angle: None,
@@ -468,7 +476,7 @@ fn create_lib4() -> Result<(), LayoutError> {
             hasunits.instances.push(inst);
 
             // Assign the input
-            let m1track = (y * 14 + 10) as usize;
+            let m1track = (y * 12 + 9) as usize;
             let m3track = m1track + x as usize;
             hasunits
                 .net(format!("dly{}", x))
@@ -483,7 +491,7 @@ fn create_lib4() -> Result<(), LayoutError> {
             }
             // Assign the output
             let m3track = m1track + ((x + 1) % 3) as usize;
-            let m1track = (y * 14 + 12) as usize;
+            let m1track = (y * 12 + 11) as usize;
             hasunits
                 .net(format!("dly{}", ((x + 1) % 3)))
                 .at(1, m2track + 2, m1track, RelZ::Below)
@@ -497,7 +505,7 @@ fn create_lib4() -> Result<(), LayoutError> {
             }
 
             // Assign the enable
-            let m1track = (y * 14 + 9) as usize;
+            let m1track = (y * 12 + 8) as usize;
             let m2track = (m2entrack + y) as usize;
             hasunits
                 .net(format!("en{}{}", x, y))
@@ -511,23 +519,20 @@ fn create_lib4() -> Result<(), LayoutError> {
         hasunits.cut(1, m2track + 2, m2botcut, RelZ::Below);
         hasunits.cut(1, m2track + 2, m2topcut, RelZ::Below);
     }
-    // Add it to our library, and export
-    let _ = lib.cells.insert(hasunits.into());
-    exports(lib)
+    Ok(hasunits.into())
 }
-
+/// Test importing and wrapping an existing GDSII into a [Library]/[CellBag]
 #[test]
 fn wrap_gds() -> LayoutResult<()> {
+    let mut lib = Library::new("wrap_gds");
+    _wrap_gds(&mut lib)?;
+    exports(lib)
+}
+/// Most internal implementation of the `wrap_gds` test
+fn _wrap_gds(lib: &mut Library) -> LayoutResult<Ptr<cell::CellBag>> {
     // Import a [GdsLibrary] to a [raw::Library]
     let gds_fname = resource("ginv.gds");
     let gds = raw::gds::gds21::GdsLibrary::load(&gds_fname)?;
-    // gds.name = "ginv".into();
-    // if gds.structs.len() > 1 {
-    //     gds.structs.pop();
-    // }
-    // gds.structs[0].name = "ginv".into();
-    // gds.save(&resource("ginv.gds"))?;
-    // save_yaml(&gds, &resource("ginv.gds.yaml"))?;
 
     let stack = stack()?;
 
@@ -536,8 +541,6 @@ fn wrap_gds() -> LayoutResult<()> {
     // Get the first (and only) cell key
     let cellkey = rawlib.cells.keys().next().unwrap();
 
-    // Create our [Library]
-    let mut lib = Library::new("wrap_gds");
     // Take ownership of the [raw::Library]
     let rawlibptr = lib.add_rawlib(rawlib);
     // Create a [CellBag] from the [raw::Library]'s sole cell
@@ -548,10 +551,11 @@ fn wrap_gds() -> LayoutResult<()> {
     let wrapped = lib.cells.insert(wrapped.into());
 
     // Create a wrapper cell
+    let unitsize = (18, 1);
     let mut wrapper = LayoutImpl::new(
-        "Wrapper",              // name
-        0,                      // top_layer
-        Outline::rect(50, 10)?, // outline
+        "Wrapper",                              // name
+        0,                                      // top_layer
+        Outline::rect(unitsize.0, unitsize.1)?, // outline
     );
     wrapper.instances.push(Instance {
         inst_name: "wrapped".into(),
@@ -560,7 +564,16 @@ fn wrap_gds() -> LayoutResult<()> {
         reflect: false,
         angle: None,
     });
-    let _wrapper = lib.cells.insert(wrapper.into());
+    let wrapper = lib.cells.insert(wrapper.into());
+    Ok(wrapper)
+}
+/// Create a cell with abstract instances
+#[test]
+fn gds_wrapped_ro() -> LayoutResult<()> {
+    let mut lib = Library::new("WrappedRo");
+    let unit = _wrap_gds(&mut lib)?;
+    let ro = ro(unit)?; // Create the RO level
+    lib.cells.insert(ro); // And add it to the Library
     exports(lib)
 }
 

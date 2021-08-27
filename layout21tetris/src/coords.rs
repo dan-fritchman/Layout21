@@ -117,7 +117,10 @@ impl std::ops::Add<PrimPitches> for PrimPitches {
     /// Panics if the two are not in the same direction.
     fn add(self, rhs: Self) -> Self::Output {
         if self.dir != rhs.dir {
-            panic!()
+            panic!(
+                "Invalid attempt to add opposite-direction {:?} and {:?}",
+                self, rhs
+            );
         }
         Self {
             dir: self.dir,

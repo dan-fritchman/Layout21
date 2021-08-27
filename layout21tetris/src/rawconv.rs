@@ -627,9 +627,12 @@ impl<'lib> RawExporter<'lib> {
             Dir::Vert => (y, x),
         };
 
-        // FIXME: we probably want to detect bad Outline dimensions sooner than this
+        // FIXME: move to `validate` stage
         if (breadth % layer.pitch) != 0 {
-            panic!("HOWD WE GET THIS BAD LAYER?!?!");
+            return self.fail(format!(
+                "{:?} has invalid pitch {:?}, must be multiple of {:?}",
+                layer, layer.pitch, breadth,
+            ));
         }
         let nperiods = usize::try_from(breadth / layer.pitch).unwrap(); // FIXME: errors
         Ok(TempCellLayer {
