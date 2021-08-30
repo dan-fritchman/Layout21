@@ -16,8 +16,8 @@ use std::convert::{TryFrom, TryInto};
 // Local imports
 use crate::utils::Ptr;
 use crate::{
-    Cell, CellKey, Element, ErrorContext, HasErrors, Instance, LayerKey, LayerPurpose, Layers,
-    LayoutError, LayoutResult, Library, Point, Shape, TextElement, Units,
+    Cell, Element, ErrorContext, HasErrors, Instance, LayerKey, LayerPurpose, Layers, LayoutError,
+    LayoutResult, Library, Point, Shape, TextElement, Units,
 };
 pub use layout21protos as proto;
 
@@ -43,7 +43,7 @@ impl<'lib> ProtoExporter<'lib> {
             .lib
             .cells
             .iter()
-            .map(|(_key, c)| self.export_cell(c))
+            .map(|c| self.export_cell(&*c.read()?))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(lib)
     }
@@ -111,17 +111,13 @@ impl<'lib> ProtoExporter<'lib> {
     }
     /// Convert an [Instance] to a [proto::Instance]
     fn export_instance(&self, inst: &Instance) -> LayoutResult<proto::Instance> {
-        let celldef = &self
-            .lib
-            .cells
-            .get(inst.cell.into())
-            .ok_or(format!("Instance {} of Invalid Cell", inst.inst_name))?;
+        let cell = inst.cell.read()?;
         Ok(proto::Instance {
             name: inst.inst_name.clone(),
             cell: Some(proto::Reference {
-                to: Some(proto::reference::To::Local(celldef.name.clone())),
+                to: Some(proto::reference::To::Local(cell.name.clone())),
             }),
-            lower_left: Some(proto::Point::new(inst.p0.x as i64, inst.p0.y as i64)),
+            lower_left: Some(proto::Point::new(inst.p0.x as i64, inst.p0.y as i64)), // FIXME: convert-point or similar method
             rotation_clockwise_degrees: 0,
         })
     }
@@ -190,7 +186,7 @@ enum ProtoShape {
 pub struct ProtoImporter {
     pub layers: Ptr<Layers>,
     ctx_stack: Vec<ErrorContext>,
-    cell_keys: HashMap<String, CellKey>,
+    cell_map: HashMap<String, Ptr<Cell>>,
     lib: Library,
 }
 impl ProtoImporter {
@@ -227,7 +223,7 @@ impl ProtoImporter {
             let name = cell.name.clone();
             let cell = self.import_cell(cell)?;
             let cellkey = self.lib.cells.insert(cell);
-            self.cell_keys.insert(name, cellkey);
+            self.cell_map.insert(name, cellkey);
         }
         Ok(())
     }
@@ -352,7 +348,7 @@ impl ProtoImporter {
         })
     }
     /// Import a proto-defined pointer, AKA [proto::Reference]
-    fn import_reference(&mut self, pinst: &proto::Instance) -> LayoutResult<CellKey> {
+    fn import_reference(&mut self, pinst: &proto::Instance) -> LayoutResult<Ptr<Cell>> {
         // Mostly wind through protobuf-generated structures layers of [Option]s
         let pref = self.unwrap(
             pinst.cell.as_ref(),
@@ -369,7 +365,7 @@ impl ProtoImporter {
         }?;
         // Now look that up in our hashmap
         let cellkey = self.unwrap(
-            self.cell_keys.get(cellname),
+            self.cell_map.get(cellname),
             format!("Instance proto::Instance of undefined cell {}", cellname),
         )?;
         Ok(cellkey.clone())

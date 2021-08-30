@@ -74,7 +74,8 @@ fn test_gds_to_proto1() -> LayoutResult<()> {
     let lib = gds::GdsImporter::import(&gds, None)?;
     assert_eq!(lib.name, "dff1_lib");
     assert_eq!(lib.cells.len(), 1);
-    let cell = &lib.cells.values().next().unwrap();
+    let cell = lib.cells.first().unwrap().clone();
+    let cell = cell.read()?;
     assert_eq!(cell.name, "dff1");
     let p = proto::ProtoExporter::export(&lib)?;
     assert_eq!(p.domain, "dff1_lib");

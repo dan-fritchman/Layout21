@@ -537,15 +537,15 @@ fn _wrap_gds(lib: &mut Library) -> LayoutResult<Ptr<cell::CellBag>> {
 
     let rawlib = raw::Library::from_gds(&gds, Some(Ptr::clone(&stack.rawlayers.unwrap())))?;
     assert_eq!(rawlib.cells.len(), 1);
-    // Get the first (and only) cell key
-    let cellkey = rawlib.cells.keys().next().unwrap();
+    // Get a [Ptr] to the first (and only) cell
+    let cell = rawlib.cells.first().unwrap().clone();
 
     // Take ownership of the [raw::Library]
     let rawlibptr = lib.add_rawlib(rawlib);
     // Create a [CellBag] from the [raw::Library]'s sole cell
     let wrapped = cell::RawLayoutPtr {
         lib: rawlibptr,
-        cell: cellkey,
+        cell,
     };
     let wrapped = lib.cells.insert(wrapped.into());
 

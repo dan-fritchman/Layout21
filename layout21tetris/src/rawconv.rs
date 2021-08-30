@@ -17,7 +17,7 @@ use crate::library::Library;
 use crate::outline::Outline;
 use crate::raw::{self, Dir, HasErrors, LayoutError, LayoutResult, Point};
 use crate::stack::{LayerPeriod, RelZ, Stack, Track, TrackError, TrackSegmentType};
-use crate::utils::Ptr;
+use crate::utils::{Ptr, PtrList};
 use crate::{abstrakt, cell, validate};
 
 // Create key-types for each internal type stored in [SlotMap]s
@@ -121,9 +121,9 @@ pub struct RawExporter<'lib> {
     lib: Library,
     /// Source (validated) [Stack]
     stack: validate::ValidStack<'lib>,
-    /// HashMap from source [CellBag] to exported [CellKey],
+    /// HashMap from source [CellBag] to exported [raw::Cell],
     /// largely for lookup during conversion of [Instance]s
-    rawcells: HashMap<Ptr<cell::CellBag>, raw::CellKey>,
+    rawcells: HashMap<Ptr<cell::CellBag>, Ptr<raw::Cell>>,
 }
 impl<'lib> RawExporter<'lib> {
     /// Convert the combination of a [Library] `lib` and [Stack] `stack` to a [raw::Library].
@@ -181,14 +181,15 @@ impl<'lib> RawExporter<'lib> {
             // Probably not difficult, but not done yet either.
             self.fail("NotImplemented: with multiple [raw::Library")
         }?;
-        // Get write-access to the raw-lib
-        let mut rawlib = rawlibptr.write()?;
-        // Convert each defined [Cell] to a [raw::Cell]
-        for srcptr in DepOrder::order(&self.lib).iter() {
-            let rawkey = self.convert_cell(&*srcptr.read()?, &mut rawlib.cells)?;
-            self.rawcells.insert(Ptr::clone(srcptr), rawkey);
-        }
-        drop(rawlib);
+        {
+            // Get write-access to the raw-lib
+            let mut rawlib = rawlibptr.write()?;
+            // Convert each defined [Cell] to a [raw::Cell]
+            for srcptr in DepOrder::order(&self.lib).iter() {
+                let rawptr = self.convert_cell(&*srcptr.read()?, &mut rawlib.cells)?;
+                self.rawcells.insert(srcptr.clone(), rawptr);
+            }
+        } // Ends `rawlib` write-access scope
         Ok(rawlibptr)
     }
     /// Convert a [CellBag] to a [raw::Cell] and add to `rawcells`.
@@ -197,16 +198,16 @@ impl<'lib> RawExporter<'lib> {
     fn convert_cell(
         &self,
         cell: &cell::CellBag,
-        rawcells: &mut SlotMap<raw::CellKey, raw::Cell>,
-    ) -> LayoutResult<raw::CellKey> {
+        rawcells: &mut PtrList<raw::Cell>,
+    ) -> LayoutResult<Ptr<raw::Cell>> {
         if let Some(ref x) = cell.raw {
-            // Raw definitions store the "key" pointer
-            // Just return a copy of it
+            // Raw definitions store the cell-pointer
+            // Just return a copy of it and *don't* add it to `rawcells`
             Ok(x.cell.clone())
         } else if let Some(ref x) = cell.layout {
-            Ok(rawcells.insert(self.convert_layout_impl(x)?))
+            Ok(rawcells.add(self.convert_layout_impl(x)?))
         } else if let Some(ref x) = cell.abstrakt {
-            Ok(rawcells.insert(self.convert_abstract(x)?))
+            Ok(rawcells.add(self.convert_abstract(x)?))
         } else {
             self.fail(format!(
                 "No Abstract or Implementation found for cell {}",

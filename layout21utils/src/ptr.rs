@@ -1,6 +1,6 @@
-//! 
+//!
 //! # Shared-Pointer Types
-//! 
+//!
 
 // Std-lib
 use std::hash::{Hash, Hasher};
@@ -95,7 +95,7 @@ impl<T> Hash for Ptr<T> {
         self.0.hash(state)
     }
 }
-/// 
+///
 /// # Pointer List
 ///
 /// Newtype wrapping a <Vec<Ptr>>, adding an interface designed
@@ -105,6 +105,15 @@ impl<T> Hash for Ptr<T> {
 #[derive(Debug, Clone, Default)]
 pub struct PtrList<T: Clone>(Vec<Ptr<T>>);
 impl<T: Clone> PtrList<T> {
+    /// Create a [PtrList]
+    pub fn new(ptrs: Vec<Ptr<T>>) -> Self {
+        Self(ptrs)
+    }
+    /// Create a [PtrList] from owned [T]s
+    pub fn from_owned(vals: Vec<T>) -> Self {
+        let ptrs = vals.into_iter().map(|v| Ptr::new(v)).collect();
+        Self(ptrs)
+    }
     /// Add an owned [T], returning a [Ptr] to it
     pub fn add(&mut self, val: T) -> Ptr<T> {
         let rv = Ptr::new(val);
@@ -127,4 +136,3 @@ impl<T: Clone> DerefMut for PtrList<T> {
         &mut self.0
     }
 }
-

@@ -15,8 +15,8 @@ use slotmap::{new_key_type, SlotMap};
 // Local imports
 use crate::utils::Ptr;
 use crate::{Cell, Dir, Element, Instance, LayerPurpose, Layers, Library, Point, Shape, Units};
-use crate::{CellKey, LayerKey, TextElement};
 use crate::{ErrorContext, HasErrors, LayoutError, LayoutResult};
+use crate::{LayerKey, TextElement};
 pub use gds21;
 
 new_key_type! {
@@ -57,7 +57,7 @@ impl<'lib> GdsExporter<'lib> {
             .lib
             .cells
             .iter()
-            .map(|(_key, c)| self.export_cell(c))
+            .map(|c| self.export_cell(&*c.read()?))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(gdslib)
     }
@@ -81,13 +81,9 @@ impl<'lib> GdsExporter<'lib> {
     }
     /// Convert an [Instance] to a GDS instance, AKA [gds21::GdsStructRef]
     fn export_instance(&self, inst: &Instance) -> LayoutResult<gds21::GdsStructRef> {
-        let celldef = &self
-            .lib
-            .cells
-            .get(inst.cell.into())
-            .ok_or(format!("Instance {} of Invalid Cell", inst.inst_name))?;
+        let cell = inst.cell.read()?;
         Ok(gds21::GdsStructRef {
-            name: celldef.name.clone(),
+            name: cell.name.clone(),
             xy: self.export_point(&inst.p0)?,
             strans: None, //FIXME!
             ..Default::default()
@@ -268,7 +264,7 @@ pub struct GdsImporter {
     pub layers: Ptr<Layers>,
     ctx_stack: Vec<ErrorContext>,
     unsupported: Vec<gds21::GdsElement>,
-    cell_keys: HashMap<String, CellKey>,
+    cell_map: HashMap<String, Ptr<Cell>>,
     lib: Library,
 }
 impl GdsImporter {
@@ -358,7 +354,7 @@ impl GdsImporter {
     fn import_and_add(&mut self, strukt: &gds21::GdsStruct) -> LayoutResult<()> {
         let name = &strukt.name;
         // Check whether we're already defined, and bail if so
-        match self.cell_keys.get(name) {
+        match self.cell_map.get(name) {
             Some(_) => return Ok(()), // Already done
             None => (),               // Not yet defined, run the code below
         }
@@ -367,7 +363,7 @@ impl GdsImporter {
         // Add it to our library
         let key = self.lib.cells.insert(cell);
         // And add the key to our name-map
-        self.cell_keys.insert(name.to_string(), key);
+        self.cell_map.insert(name.to_string(), key);
         Ok(())
     }
     /// Import a GDS Cell ([gds21::GdsStruct]) into a [Cell]
@@ -573,11 +569,11 @@ impl GdsImporter {
         let cname = sref.name.clone();
         self.ctx_stack.push(ErrorContext::Instance(cname.clone()));
         // Look up the cell-key, which must be imported by now
-        let cell = self
-            .cell_keys
-            .get(&sref.name)
-            .ok_or(format!("Instance Array of invalid cell {}", cname))?
-            .clone();
+        let cell = self.unwrap(
+            self.cell_map.get(&sref.name),
+            format!("Instance of invalid cell {}", cname),
+        )?;
+        let cell = Ptr::clone(cell);
 
         let p0 = self.import_point(&sref.xy)?;
         let inst_name = "".into(); // FIXME
@@ -605,15 +601,15 @@ impl GdsImporter {
     /// Import a (two-dimensional) [gds21::GdsArrayRef] into [Instance]s
     fn import_instance_array(&mut self, aref: &gds21::GdsArrayRef) -> LayoutResult<Vec<Instance>> {
         let inst_name = "".to_string(); // FIXME
-        let cell_name = aref.name.clone();
-        self.ctx_stack.push(ErrorContext::Array(cell_name.clone()));
+        let cname = aref.name.clone();
+        self.ctx_stack.push(ErrorContext::Array(cname.clone()));
 
         // Look up the cell-key, which must be imported by now
-        let cell = self
-            .cell_keys
-            .get(&aref.name)
-            .ok_or(format!("Instance Array of invalid cell {}", cell_name))?
-            .clone();
+        let cell = self.unwrap(
+            self.cell_map.get(&aref.name),
+            format!("Instance Array of invalid cell {}", cname),
+        )?;
+        let cell = Ptr::clone(cell);
 
         // Convert its three (x,y) coordinates
         let p0 = self.import_point(&aref.xy[0])?;
@@ -739,7 +735,8 @@ fn gds_import1() -> LayoutResult<()> {
     let lib = GdsImporter::import(&gds, None)?;
     assert_eq!(lib.name, "lib1");
     assert_eq!(lib.cells.len(), 1);
-    let cell = &lib.cells.values().next().unwrap();
+    let cell = lib.cells.first().unwrap().clone();
+    let cell = cell.read()?;
     assert_eq!(cell.name, "cell1");
     let elem = &cell.elems[0];
     assert_eq!(elem.net, Some("net1".to_string()));

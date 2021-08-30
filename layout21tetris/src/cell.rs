@@ -102,7 +102,7 @@ impl<'h> NetHandle<'h> {
 #[derive(Debug, Clone)]
 pub struct RawLayoutPtr {
     pub lib: Ptr<raw::Library>,
-    pub cell: raw::CellKey,
+    pub cell: Ptr<raw::Cell>,
 }
 /// # Cell View Enumeration
 /// All of the ways in which a Cell is represented

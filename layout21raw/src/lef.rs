@@ -40,7 +40,7 @@ impl<'lib> LefExporter<'lib> {
             .lib
             .abstracts
             .iter()
-            .map(|a| self.export_abstract(a))
+            .map(|a| self.export_abstract(&*a.read()?))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(lib)
     }
@@ -172,7 +172,8 @@ pub struct LefImporter;
 #[cfg(test)]
 #[test]
 fn test_lef1() -> LayoutResult<()> {
-    use crate::utils::Ptr;
+    use crate::utils::{Ptr, PtrList};
+    
     let layers = crate::tests::layers()?;
     let a = Abstract {
         name: "to_lef1".into(),
@@ -203,7 +204,7 @@ fn test_lef1() -> LayoutResult<()> {
     let lib = Library {
         name: "to_lef_lib1".into(),
         layers: Ptr::new(layers),
-        abstracts: vec![a],
+        abstracts: PtrList::from_owned(vec![a]),
         ..Default::default()
     };
     let leflib = LefExporter::export(&lib)?;

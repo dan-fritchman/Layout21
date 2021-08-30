@@ -5,9 +5,6 @@
 //! Consists of geometric primitives and instances of other layout cells,
 //! much akin to nearly any legacy layout system.
 //!
-//! Conversion to GDSII is supported via the [Library::to_gds] method.
-//! Import from GDSII, LEF, and other industry formats remains WIP.
-//!
 
 // Std-Lib
 use std::collections::HashMap;
@@ -21,7 +18,7 @@ use slotmap::{new_key_type, SlotMap};
 
 // Internal modules & re-exports
 pub use layout21utils as utils;
-use utils::Ptr;
+use utils::{Ptr, PtrList};
 
 #[cfg(feature = "gds")]
 pub mod gds;
@@ -36,10 +33,6 @@ mod tests;
 new_key_type! {
     /// Keys for [Layer] entries
     pub struct LayerKey;
-    /// Keys for [Cell] entries
-    pub struct CellKey;
-    /// Keys for [abstrakt::LayoutAbstract] entries
-    pub struct AbstractKey;
 }
 /// LayoutError-Specific Result Type
 pub type LayoutResult<T> = Result<T, LayoutError>;
@@ -224,12 +217,12 @@ impl Not for Dir {
 }
 
 /// Instance of another Cell
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Instance {
     /// Instance Name
     pub inst_name: String,
     /// Cell Definition Reference
-    pub cell: CellKey,
+    pub cell: Ptr<Cell>,
     /// Bottom-Left Corner Point
     pub p0: Point,
     /// Reflection
@@ -444,9 +437,9 @@ pub struct Library {
     /// Layer Definitions
     pub layers: Ptr<Layers>,
     /// Cell Definitions
-    pub cells: SlotMap<CellKey, Cell>,
+    pub cells: PtrList<Cell>,
     /// Abstract-Layout Definitions
-    pub abstracts: Vec<Abstract>,
+    pub abstracts: PtrList<Abstract>,
 }
 impl Library {
     /// Create a new and empty Library
@@ -454,7 +447,6 @@ impl Library {
         Self {
             name: name.into(),
             units,
-            cells: SlotMap::with_key(),
             ..Default::default()
         }
     }
@@ -494,7 +486,7 @@ impl Library {
     }
 }
 /// Raw-Layout Cell Definition
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default)]
 pub struct Cell {
     /// Cell Name
     pub name: String,

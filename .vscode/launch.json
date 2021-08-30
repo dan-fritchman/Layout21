@@ -58,7 +58,7 @@
                     "kind": "lib"
                 }
             },
-            "args": [],
+            "args": ["gds_wrapped_ro"],
             "cwd": "${workspaceFolder}"
         },
         {
