@@ -389,7 +389,7 @@ pub struct GdsParser {
     /// Number of records read
     numread: usize,
     /// Context Stack
-    ctx_stack: Vec<GdsContext>,
+    ctx: Vec<GdsContext>,
 }
 impl GdsParser {
     /// Create a new GdsReader iterator for the file at path `fname`
@@ -405,7 +405,7 @@ impl GdsParser {
             rdr,
             nxt,
             numread: 1,
-            ctx_stack: Vec::new(),
+            ctx: Vec::new(),
         })
     }
     /// Advance our iterator and return the next element
@@ -426,7 +426,7 @@ impl GdsParser {
     }
     /// Parse a [GdsLibrary]. Generally the start-state when reading a GDS file.
     pub fn parse_lib(&mut self) -> GdsResult<GdsLibrary> {
-        self.ctx_stack.push(GdsContext::Library);
+        self.ctx.push(GdsContext::Library);
         let mut lib = GdsLibraryBuilder::default();
         let mut structs = Vec::<GdsStruct>::with_capacity(1024);
         // Read the Header and its version data
@@ -472,7 +472,7 @@ impl GdsParser {
     }
     /// Parse a cell ([GdsStruct])
     fn parse_struct(&mut self, dates: Vec<i16>) -> GdsResult<GdsStruct> {
-        self.ctx_stack.push(GdsContext::Struct);
+        self.ctx.push(GdsContext::Struct);
         let mut strukt = GdsStructBuilder::default();
         // Parse and store the header information: `dates` and `name`
         strukt = strukt.dates(self.parse_datetimes(dates)?);
@@ -499,7 +499,7 @@ impl GdsParser {
         }
         strukt = strukt.elems(elems);
         let strukt = strukt.build()?;
-        self.ctx_stack.pop();
+        self.ctx.pop();
         Ok(strukt)
     }
     /// Parse a [GdsBoundary]
@@ -526,12 +526,12 @@ impl GdsParser {
         }
         b = b.properties(props);
         let b = b.build()?;
-        self.ctx_stack.pop();
+        self.ctx.pop();
         Ok(b)
     }
     /// Parse a [GdsPath]
     fn parse_path(&mut self) -> GdsResult<GdsPath> {
-        self.ctx_stack.push(GdsContext::Path);
+        self.ctx.push(GdsContext::Path);
         let mut b = GdsPathBuilder::default();
         let mut props: Vec<GdsProperty> = Vec::new();
 
@@ -558,13 +558,13 @@ impl GdsParser {
         }
         b = b.properties(props);
         let b = b.build()?;
-        self.ctx_stack.pop();
+        self.ctx.pop();
         Ok(b)
     }
     /// Parse a [GdsTextElem] from an iterator of [GdsRecord]s.
     /// Requires the initial `Text` record has already been parsed.
     fn parse_text_elem(&mut self) -> GdsResult<GdsTextElem> {
-        self.ctx_stack.push(GdsContext::Text);
+        self.ctx.push(GdsContext::Text);
         let mut b = GdsTextElemBuilder::default();
         let mut props: Vec<GdsProperty> = Vec::new();
 
@@ -592,12 +592,12 @@ impl GdsParser {
         }
         b = b.properties(props);
         let b = b.build()?;
-        self.ctx_stack.pop();
+        self.ctx.pop();
         Ok(b)
     }
     /// Parse a [GdsNode]
     fn parse_node(&mut self) -> GdsResult<GdsNode> {
-        self.ctx_stack.push(GdsContext::Node);
+        self.ctx.push(GdsContext::Node);
         let mut b = GdsNodeBuilder::default();
         let mut props: Vec<GdsProperty> = Vec::new();
 
@@ -620,12 +620,12 @@ impl GdsParser {
         }
         b = b.properties(props);
         let b = b.build()?;
-        self.ctx_stack.pop();
+        self.ctx.pop();
         Ok(b)
     }
     /// Parse a [GdsBox]
     fn parse_box(&mut self) -> GdsResult<GdsBox> {
-        self.ctx_stack.push(GdsContext::Box);
+        self.ctx.push(GdsContext::Box);
         let mut b = GdsBoxBuilder::default();
         let mut props: Vec<GdsProperty> = Vec::new();
 
@@ -658,12 +658,12 @@ impl GdsParser {
         }
         b = b.properties(props);
         let b = b.build()?;
-        self.ctx_stack.pop();
+        self.ctx.pop();
         Ok(b)
     }
     /// Parse a [GdsStructRef]
     fn parse_struct_ref(&mut self) -> GdsResult<GdsStructRef> {
-        self.ctx_stack.push(GdsContext::StructRef);
+        self.ctx.push(GdsContext::StructRef);
         let mut b = GdsStructRefBuilder::default();
         let mut props: Vec<GdsProperty> = Vec::new();
 
@@ -686,12 +686,12 @@ impl GdsParser {
         }
         b = b.properties(props);
         let b = b.build()?;
-        self.ctx_stack.pop();
+        self.ctx.pop();
         Ok(b)
     }
     /// Parse a [GdsArrayRef]
     fn parse_array_ref(&mut self) -> GdsResult<GdsArrayRef> {
-        self.ctx_stack.push(GdsContext::ArrayRef);
+        self.ctx.push(GdsContext::ArrayRef);
         let mut b = GdsArrayRefBuilder::default();
         let mut props: Vec<GdsProperty> = Vec::new();
 
@@ -725,7 +725,7 @@ impl GdsParser {
         }
         b = b.properties(props);
         let b = b.build()?;
-        self.ctx_stack.pop();
+        self.ctx.pop();
         Ok(b)
     }
     /// Parse a [GdsStrans] from records. Header bytes are passed as arguments `d0`, `d1`.
@@ -756,14 +756,14 @@ impl GdsParser {
     /// Parse a [GdsProperty]
     /// Numeric attribute `attr` is collected beforehand, as its record is the indication to parse an (attr, value) pair.
     fn parse_property(&mut self, attr: i16) -> GdsResult<GdsProperty> {
-        self.ctx_stack.push(GdsContext::Property);
+        self.ctx.push(GdsContext::Property);
         // `PropAttr` records must *immediately* be followed by `PropValue`, or parsing/ decoding fails.
         let value = if let GdsRecord::PropValue(v) = self.next()? {
             v
         } else {
             return self.fail("Gds Property without PropValue");
         };
-        self.ctx_stack.pop();
+        self.ctx.pop();
         Ok(GdsProperty { attr, value })
     }
     /// Parse from GDSII's vector of i16's format
@@ -791,7 +791,7 @@ impl GdsParser {
             record,
             recordnum: self.numread,
             bytepos: self.rdr.pos(),
-            ctx: self.ctx_stack.clone(),
+            ctx: self.ctx.clone(),
         })
     }
     /// Error helper. Create a Parse error
@@ -801,7 +801,7 @@ impl GdsParser {
             record: self.peek().clone(), // FIXME: this will generally be one too far, sadly
             recordnum: self.numread,
             bytepos: self.rdr.pos(),
-            ctx: self.ctx_stack.clone(),
+            ctx: self.ctx.clone(),
         }
     }
     /// Return failure

@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package layout21.utils;
+
+// An (x,y) point in Cartesian layout space.
+message Point {
+    int64 x = 1;
+    int64 y = 2;
+  }
+  
+  // Distance unit enumeration
+  enum Units {
+    MICRO = 0;
+    NANO = 1;
+    ANGSTROM = 2;
+  }
+
+  enum SIPrefix {
+    YOCTO = 0;  // E-24
+    ZEPTO = 1;  // E-21
+    ATTO = 2; // E-18
+    FEMTO = 3;  // E-15
+    PICO = 4; // E-12
+    NANO = 5; // E-9
+    MICRO = 6;  // E-6
+    MILLI = 7;  // E-3
+    CENTI = 8;  // E-2
+    DECI = 9; // E-1
+    DECA = 10; // E1
+    HECTO = 11;  // E2
+    KILO = 12; // E3
+    MEGA = 13; // E6
+    GIGA = 14; // E9
+    TERA = 15; // E12
+    PETA = 16; // E15
+    EXA = 17;  // E18
+    ZETTA = 18;  // E21
+    YOTTA = 19;  // E24
+  }
+
+  
+/// Domain-qualified name, referring outside its own Library 
+message QualifiedName {
+    string domain = 1;
+    string name = 2;
+  }
+  
+  /// Reference to another Module, 
+  /// either defined in this Library (local) or another (external)
+  message Reference {
+    oneof to {
+      string local = 1;
+      QualifiedName external = 2;
+    }
+  }

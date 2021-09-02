@@ -10,10 +10,11 @@
 use enum_dispatch::enum_dispatch;
 
 // Local imports
+use crate::coords::{PrimPitches, Xy};
 use crate::raw::{LayoutError, LayoutResult};
 use crate::stack::{Assign, RelZ, TrackIntersection};
 use crate::utils::Ptr;
-use crate::{abstrakt, coords, interface, outline, raw};
+use crate::{abstrakt, interface, outline, raw};
 
 /// # Layout Cell Implementation
 ///
@@ -102,7 +103,7 @@ impl<'h> NetHandle<'h> {
 #[derive(Debug, Clone)]
 pub struct RawLayoutPtr {
     pub lib: Ptr<raw::Library>,
-    pub cell: Ptr<raw::Cell>,
+    pub cell: Ptr<raw::CellBag>,
 }
 /// # Cell View Enumeration
 /// All of the ways in which a Cell is represented
@@ -154,13 +155,12 @@ impl CellBag {
     }
     /// Create from a list of [CellView]s and a name.
     pub fn from_views(name: impl Into<String>, views: Vec<CellView>) -> Self {
-        // Initialize a default, empty [CellBag]
-        let mut me = Self::default();
-        me.name = name.into();
+        let mut myself = Self::default();
+        myself.name = name.into();
         for view in views {
-            me.add_view(view);
+            myself.add_view(view);
         }
-        me
+        myself
     }
     /// Return whichever view highest-prioritorily dictates the outline
     pub fn outline(&self) -> LayoutResult<&outline::Outline> {
@@ -227,8 +227,12 @@ impl From<LayoutImpl> for CellBag {
 }
 impl From<RawLayoutPtr> for CellBag {
     fn from(src: RawLayoutPtr) -> Self {
+        let name = {
+            let cell = src.cell.read().unwrap();
+            cell.name.clone()
+        };
         Self {
-            name: "".into(), // FIXME!
+            name,
             raw: Some(src),
             ..Default::default()
         }
@@ -243,9 +247,9 @@ pub struct Instance {
     /// Cell Definition Reference
     pub cell: Ptr<CellBag>,
     /// Location, in primitive pitches
-    pub loc: coords::Xy<coords::PrimPitches>,
-    /// Reflection
-    pub reflect: bool,
-    /// Angle of Rotation (Degrees)
-    pub angle: Option<f64>,
+    pub loc: Xy<PrimPitches>,
+    /// Horizontal Reflection
+    pub reflect_horiz: bool,
+    /// Vertical Reflection
+    pub reflect_vert: bool,
 }

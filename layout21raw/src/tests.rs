@@ -16,7 +16,7 @@ pub fn layers() -> LayoutResult<Layers> {
     let mut layers = Layers::default();
 
     // Add the outline/ boundary layer
-    layers.add(Layer::from_pairs(236, &[(0, LayerPurpose::Outline)])?);
+    layers.add(Layer::new(236, "boundary").add_pairs(&[(0, LayerPurpose::Outline)])?);
 
     // Create metal layers
     let metal_purps = [(20, LayerPurpose::Drawing), (5, LayerPurpose::Label)];

@@ -321,7 +321,7 @@ pub struct LefParser<'src> {
     /// Lexer
     lex: LefLexer<'src>,
     /// Context Stack
-    ctx_stack: Vec<LefParseContext>,
+    ctx: Vec<LefParseContext>,
 }
 impl<'src> LefParser<'src> {
     /// Construct a [LefParser] of input-text `src`
@@ -330,7 +330,7 @@ impl<'src> LefParser<'src> {
         Ok(Self {
             src,
             lex,
-            ctx_stack: Vec::new(),
+            ctx: Vec::new(),
         })
     }
     #[inline(always)]
@@ -426,7 +426,7 @@ impl<'src> LefParser<'src> {
     }
     /// Parse a [LefLibrary]
     fn parse_lib(&mut self) -> LefResult<LefLibrary> {
-        self.ctx_stack.push(LefParseContext::Library);
+        self.ctx.push(LefParseContext::Library);
         let mut lib = LefLibraryBuilder::default();
         let mut macros = Vec::new();
         let mut sites = Vec::new();
@@ -473,13 +473,13 @@ impl<'src> LefParser<'src> {
         }
         lib.macros(macros);
         lib.sites(sites);
-        self.ctx_stack.pop();
+        self.ctx.pop();
         Ok(lib.build()?)
     }
     /// Parse a Lef MACRO definition
     fn parse_macro(&mut self) -> LefResult<LefMacro> {
         self.expect_keyword("MACRO")?;
-        self.ctx_stack.push(LefParseContext::Macro);
+        self.ctx.push(LefParseContext::Macro);
         let mut mac = LefMacroBuilder::default();
         // Parse the macro-name
         let name = self.parse_ident()?;
@@ -545,13 +545,13 @@ impl<'src> LefParser<'src> {
         self.expect_ident(&name)?;
         // Set the pins, build our struct and return it
         mac.pins(pins);
-        self.ctx_stack.pop();
+        self.ctx.pop();
         Ok(mac.build()?)
     }
     /// Parse a MACRO::PIN definition into a [LefPin]
     fn parse_pin(&mut self) -> LefResult<LefPin> {
         self.expect_keyword("PIN")?;
-        self.ctx_stack.push(LefParseContext::Pin);
+        self.ctx.push(LefParseContext::Pin);
         let mut pin = LefPinBuilder::default();
         // Parse the pin-name
         let name = self.parse_ident()?;
@@ -613,7 +613,7 @@ impl<'src> LefParser<'src> {
         // Set our port-objects, build and return the Pin
         pin.ports(ports);
         pin.antenna_attrs(antenna_attrs);
-        self.ctx_stack.pop();
+        self.ctx.pop();
         Ok(pin.build()?)
     }
     /// Parse a [LefPinDirection]
@@ -640,7 +640,7 @@ impl<'src> LefParser<'src> {
     /// Parse a MACRO::PIN::PORT definition into a [LefPort]
     fn parse_port(&mut self) -> LefResult<LefPort> {
         self.expect_keyword("PORT")?;
-        self.ctx_stack.push(LefParseContext::Port);
+        self.ctx.push(LefParseContext::Port);
         let mut class: Option<LefPortClass> = None;
         let mut layers = Vec::new();
         // Parse attributes and geometries
@@ -664,7 +664,7 @@ impl<'src> LefParser<'src> {
                 _ => return self.err(LefParseErrorType::InvalidKey),
             }
         }
-        self.ctx_stack.pop();
+        self.ctx.pop();
         Ok(LefPort { layers, class })
     }
     /// Parse a [LefMacro]'s obstruction definitions
@@ -693,7 +693,7 @@ impl<'src> LefParser<'src> {
     }
     /// Parse a set of geometries on a single layer, as commonly specified per-[LefPort]
     fn parse_layer_geometries(&mut self) -> LefResult<LefLayerGeometries> {
-        self.ctx_stack.push(LefParseContext::Geometry);
+        self.ctx.push(LefParseContext::Geometry);
         let mut layer = LefLayerGeometriesBuilder::default();
         // Check for the opening "LAYER" keyword
         self.expect_keyword("LAYER")?;
@@ -755,7 +755,7 @@ impl<'src> LefParser<'src> {
         }
         layer.vias(vias);
         layer.geometries(geoms);
-        self.ctx_stack.pop();
+        self.ctx.pop();
         Ok(layer.build()?)
     }
     /// Parse a [LefGeometry] statement
@@ -804,7 +804,7 @@ impl<'src> LefParser<'src> {
     /// Parse [LefUnits] definitions
     fn parse_units(&mut self) -> LefResult<LefUnits> {
         self.expect_keyword("UNITS")?;
-        self.ctx_stack.push(LefParseContext::Units);
+        self.ctx.push(LefParseContext::Units);
         let mut units = LefUnits::default();
         loop {
             match self.get_name()?.to_ascii_uppercase().as_str() {
@@ -826,7 +826,7 @@ impl<'src> LefParser<'src> {
                 _ => return self.err(LefParseErrorType::InvalidKey),
             }
         }
-        self.ctx_stack.pop();
+        self.ctx.pop();
         Ok(units)
     }
     /// Parse [LefMacro] SYMMETRY options into a vector of [LefSymmetry]
@@ -892,7 +892,7 @@ impl<'src> LefParser<'src> {
     /// Parse a [LefSite] definition
     fn parse_site_def(&mut self) -> LefResult<LefSite> {
         self.expect_keyword("SITE")?;
-        self.ctx_stack.push(LefParseContext::Site);
+        self.ctx.push(LefParseContext::Site);
         let mut site = LefSiteBuilder::default();
         // Parse the site name. Keep a copy for later comparison.
         let name = self.parse_ident()?;
@@ -919,7 +919,7 @@ impl<'src> LefParser<'src> {
                 _ => return self.err(LefParseErrorType::InvalidValue),
             }
         }
-        self.ctx_stack.pop();
+        self.ctx.pop();
         Ok(site.build()?)
     }
     /// Parse the Lef SIZE statement into an (x, y) pair of [LefDecimal]s
@@ -982,7 +982,7 @@ impl<'src> LefParser<'src> {
         }
         .to_string();
         // Grab the current parsing-context from our stack
-        let ctx = match self.ctx_stack.last() {
+        let ctx = match self.ctx.last() {
             Some(c) => c.clone(),
             None => LefParseContext::Unknown,
         };

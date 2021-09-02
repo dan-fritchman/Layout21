@@ -129,6 +129,8 @@ pub trait HasErrors {
 pub enum ErrorContext {
     Library(String),
     Cell(String),
+    Abstract,
+    Impl,
     Instance(String),
     Array(String),
     Units,
@@ -222,12 +224,13 @@ pub struct Instance {
     /// Instance Name
     pub inst_name: String,
     /// Cell Definition Reference
-    pub cell: Ptr<Cell>,
-    /// Bottom-Left Corner Point
-    pub p0: Point,
-    /// Reflection
-    pub reflect: bool,
-    /// Angle of Rotation (Degrees)
+    pub cell: Ptr<CellBag>,
+    /// Location, Bottom-Left Corner Point
+    pub loc: Point,
+    /// Vertical Reflection
+    pub reflect_vert: bool,
+    /// Angle of rotation (degrees),
+    /// Clockwise and applied *after* reflection
     pub angle: Option<f64>,
 }
 
@@ -293,7 +296,7 @@ impl Layers {
             Some(key) => key.clone(),
             None => self.add(Layer::from_num(layernum)),
         };
-        // Get that [Layer], so we can get or add a [LayerPurpose]
+        // Slightly awkwardly, get that [Layer] (back), so we can get or add a [LayerPurpose]
         let layer = self
             .slots
             .get_mut(key)
@@ -408,14 +411,28 @@ impl Layer {
 /// Raw Abstract-Layout
 /// Contains geometric [Element]s generally representing pins and blockages
 /// Does not contain instances, arrays, or layout-implementation details
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct Abstract {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LayoutAbstract {
     /// Cell Name
     pub name: String,
+    /// Outline
+    pub outline: Element,
     /// Ports
     pub ports: Vec<AbstractPort>,
     /// Blockages
     pub blockages: HashMap<LayerKey, Vec<Shape>>,
+}
+impl LayoutAbstract {
+    /// Create a new [LayoutAbstract] with the given `name`
+    pub fn new(name: impl Into<String>, outline: Element) -> Self {
+        let name = name.into();
+        Self {
+            name,
+            outline,
+            ports: Vec::new(),
+            blockages: HashMap::new(),
+        }
+    }
 }
 /// # Port Element for [Abstract]s
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -437,9 +454,7 @@ pub struct Library {
     /// Layer Definitions
     pub layers: Ptr<Layers>,
     /// Cell Definitions
-    pub cells: PtrList<Cell>,
-    /// Abstract-Layout Definitions
-    pub abstracts: PtrList<Abstract>,
+    pub cells: PtrList<CellBag>,
 }
 impl Library {
     /// Create a new and empty Library
@@ -485,14 +500,54 @@ impl Library {
         proto::ProtoImporter::import(&plib, layers)
     }
 }
-/// Raw-Layout Cell Definition
+
+/// Collection of the Views describing a Cell
+#[derive(Debug, Default, Clone)]
+pub struct CellBag {
+    // Cell Name
+    pub name: String,
+    // Layout Abstract
+    pub abstrakt: Option<LayoutAbstract>,
+    // Layout Implementation
+    pub layout: Option<LayoutImpl>,
+}
+impl CellBag {
+    /// Create a new and empty CellBag named `name`
+    pub fn new(name: impl Into<String>) -> Self {
+        let name = name.into();
+        Self {
+            name,
+            ..Default::default()
+        }
+    }
+}
+impl From<LayoutAbstract> for CellBag {
+    fn from(src: LayoutAbstract) -> Self {
+        Self {
+            name: src.name.clone(),
+            abstrakt: Some(src),
+            ..Default::default()
+        }
+    }
+}
+impl From<LayoutImpl> for CellBag {
+    fn from(src: LayoutImpl) -> Self {
+        Self {
+            name: src.name.clone(),
+            layout: Some(src),
+            ..Default::default()
+        }
+    }
+}
+
+/// Raw-Layout Implementation
 #[derive(Debug, Clone, Default)]
-pub struct Cell {
+pub struct LayoutImpl {
     /// Cell Name
     pub name: String,
-    /// Cell Instances
+    /// Instances
     pub insts: Vec<Instance>,
-    /// Primitive Elements
+    /// Primitive/ Geometric Elements
     pub elems: Vec<Element>,
     /// Text Annotations
     pub annotations: Vec<TextElement>,

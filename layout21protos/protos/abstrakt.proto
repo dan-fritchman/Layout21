@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package cutesy_name1.cutesy_name2;
+
+message Cell {
+    Abstract abstract = 1;
+    CellDefinitionImplementationOrWhatever layout = 2;
+    Interface interface = 3;
+
+  }
+
+  message Interface {
+      // This should use some `circuit` message-types
+  }
+
+// # Layout Library 
+// A collection of cells and asssociated meta-data. 
+message Library {
+    // Library Name / Domain 
+    string domain = 1;
+    // Distance Units
+    Units units = 2;
+    // Cell Definitions
+    repeated Cell cells = 3; 
+  }
+
+
+// # Abstract Layout 
+// 
+// Defines the physical interface to a [Cell], 
+// including ports and internal blockages. 
+// 
+message Abstract {
+    // Cell Name
+    string name = 1;
+    // Outline
+    Polygon outline = 2;
+    // Ports 
+    repeated AbstractPort ports = 4;
+    // Blockages
+    LayerShapes blockages = 5;
+   
+    // Author
+    string author = 100;
+    // Copyright (something)
+    string copyright = 101;
+  }
+  // # Abstract Port
+  // Combination of a net and set of shapes
+  message AbstractPort {
+    // Port Name
+    string net = 1;
+    // Shapes, grouped by layer 
+    repeated LayerShapes shapes = 2; 
+  }
+  
+  

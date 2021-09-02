@@ -334,7 +334,8 @@ pub struct Unsupported;
 #[derive(Default, Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct GdsStrans {
     // Required Fields
-    /// Reflection
+    /// Reflection, about the x-axis. 
+    /// Applied before rotation.
     pub reflected: bool,
     /// Absolute Magnification Setting
     pub abs_mag: bool,
@@ -358,7 +359,7 @@ pub struct GdsPresentation(u8, u8);
 
 /// # Gds Element Flags
 /// As configured by `ELFLAGS` records.
-/// ElemFlags two bytes of bit-fields are stored in raw `u8` form.
+/// Two bytes of bit-fields stored in raw `u8` form.
 #[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct GdsElemFlags(u8, u8);
 
@@ -424,7 +425,7 @@ impl GdsPoint {
     }
     /// Create a vector of [GdsPoint] from an array of tuples
     pub fn vec(pts: &[(i32, i32)]) -> Vec<Self> {
-        pts.iter().map(|pt| GdsPoint::new(pt.0, pt.1)).collect()
+        pts.iter().map(|pt| Self::new(pt.0, pt.1)).collect()
     }
     /// Convert from a two-element vector
     fn parse(from: &Vec<i32>) -> GdsResult<Self> {
@@ -540,7 +541,7 @@ pub struct GdsPath {
 /// Most IC layout is comprised of [GdsBoundary] elements, which represent individual polygons.
 /// GDSII dictates that the first two and final two coordinates in each [GdsBoundary]
 /// shall be identical, "closing" the polygon.
-/// Hence an N-sided polygon is represented by a 2(N+1)-length `xy` vector.
+/// Hence an N-sided polygon is represented by an (N+1)-point `xy` vector.
 ///
 /// Spec BNF:
 /// ```text

@@ -15,7 +15,7 @@ use crate::cell::{Instance, LayoutImpl};
 use crate::coords::{DbUnits, HasUnits, PrimPitches, UnitSpeced, Xy};
 use crate::library::Library;
 use crate::outline::Outline;
-use crate::raw::{self, Dir, HasErrors, LayoutError, LayoutResult, Point};
+use crate::raw::{self, Dir, ErrorContext, HasErrors, LayoutError, LayoutResult, Point};
 use crate::stack::{LayerPeriod, RelZ, Stack, Track, TrackError, TrackSegmentType};
 use crate::utils::{Ptr, PtrList};
 use crate::{abstrakt, cell, validate};
@@ -81,7 +81,7 @@ struct TempPeriod<'lib> {
 pub struct DepOrder<'lib> {
     lib: &'lib Library,
     stack: Vec<Ptr<cell::CellBag>>,
-    seen: HashSet<Ptr<cell::CellBag>>, // FIXME: should be able to use [Ptr]
+    seen: HashSet<Ptr<cell::CellBag>>,
 }
 impl<'lib> DepOrder<'lib> {
     fn order(lib: &'lib Library) -> Vec<Ptr<cell::CellBag>> {
@@ -121,9 +121,11 @@ pub struct RawExporter<'lib> {
     lib: Library,
     /// Source (validated) [Stack]
     stack: validate::ValidStack<'lib>,
-    /// HashMap from source [CellBag] to exported [raw::Cell],
+    /// HashMap from source [CellBag] to exported [raw::CellBag],
     /// largely for lookup during conversion of [Instance]s
-    rawcells: HashMap<Ptr<cell::CellBag>, Ptr<raw::Cell>>,
+    rawcells: HashMap<Ptr<cell::CellBag>, Ptr<raw::CellBag>>,
+    /// Context stack, largely for error reporting
+    ctx: Vec<ErrorContext>,
 }
 impl<'lib> RawExporter<'lib> {
     /// Convert the combination of a [Library] `lib` and [Stack] `stack` to a [raw::Library].
@@ -136,12 +138,13 @@ impl<'lib> RawExporter<'lib> {
             lib,
             stack,
             rawcells: HashMap::new(),
+            ctx: Vec::new(),
         };
-        myself.convert_stack()?;
-        myself.convert_lib()
+        myself.export_stack()?;
+        myself.export_lib()
     }
     /// "Convert" our [Stack]. Really just checks a few properties are valid.
-    fn convert_stack(&self) -> LayoutResult<()> {
+    fn export_stack(&mut self) -> LayoutResult<()> {
         // Require our [Stack] specify both:
         // (a) set of [raw::Layers], and
         // (b) a boundary layer
@@ -155,7 +158,8 @@ impl<'lib> RawExporter<'lib> {
         Ok(())
     }
     /// Convert everything in our [Library]
-    fn convert_lib(&mut self) -> LayoutResult<Ptr<raw::Library>> {
+    fn export_lib(&mut self) -> LayoutResult<Ptr<raw::Library>> {
+        self.ctx.push(ErrorContext::Library(self.lib.name.clone()));
         // Get our starter raw-lib, either anew or from any we've imported
         let rawlibptr = if self.lib.rawlibs.len() == 0 {
             // Create a new [raw::Library]
@@ -184,39 +188,58 @@ impl<'lib> RawExporter<'lib> {
         {
             // Get write-access to the raw-lib
             let mut rawlib = rawlibptr.write()?;
-            // Convert each defined [Cell] to a [raw::Cell]
+            // Convert each defined [Cell] to a [raw::CellBag]
             for srcptr in DepOrder::order(&self.lib).iter() {
-                let rawptr = self.convert_cell(&*srcptr.read()?, &mut rawlib.cells)?;
+                let rawptr = self.export_cell(&*srcptr.read()?, &mut rawlib.cells)?;
                 self.rawcells.insert(srcptr.clone(), rawptr);
             }
         } // Ends `rawlib` write-access scope
+        self.ctx.pop();
         Ok(rawlibptr)
     }
-    /// Convert a [CellBag] to a [raw::Cell] and add to `rawcells`.
-    /// In reality only one of the cell-views is converted,
+    /// Convert a [CellBag] to a [raw::CellBag] and add to `rawcells`.
+    /// FIXME: In reality only one of the cell-views is converted,
     /// generally the "most specific" available view.
-    fn convert_cell(
-        &self,
+    fn export_cell(
+        &mut self,
         cell: &cell::CellBag,
-        rawcells: &mut PtrList<raw::Cell>,
-    ) -> LayoutResult<Ptr<raw::Cell>> {
+        rawcells: &mut PtrList<raw::CellBag>,
+    ) -> LayoutResult<Ptr<raw::CellBag>> {
         if let Some(ref x) = cell.raw {
             // Raw definitions store the cell-pointer
             // Just return a copy of it and *don't* add it to `rawcells`
-            Ok(x.cell.clone())
-        } else if let Some(ref x) = cell.layout {
-            Ok(rawcells.add(self.convert_layout_impl(x)?))
-        } else if let Some(ref x) = cell.abstrakt {
-            Ok(rawcells.add(self.convert_abstract(x)?))
-        } else {
-            self.fail(format!(
-                "No Abstract or Implementation found for cell {}",
-                cell.name
-            ))
+            // First check for valiidity, i.e. lack of alternate definitions
+            if cell.abstrakt.is_some() || cell.layout.is_some() {
+                // FIXME: move this to validation stages
+                return self.fail(format!(
+                    "Cell {} has an invalid combination of raw-definition and tetris-definition",
+                    cell.name,
+                ));
+            }
+            return Ok(x.cell.clone());
         }
+        if cell.abstrakt.is_none() && cell.layout.is_none() {
+            // FIXME: move this to validation stages
+            return self.fail(format!(
+                "Cell {} has no abstract nor implementation",
+                cell.name,
+            ));
+        }
+
+        // Create the raw-cell
+        let mut rawcell = raw::CellBag::new(&cell.name.to_string());
+        // And create each defined view
+        if let Some(ref x) = cell.layout {
+            rawcell.layout = Some(self.export_layout_impl(x)?);
+        }
+        if let Some(ref x) = cell.abstrakt {
+            rawcell.abstrakt = Some(self.export_abstract(x)?);
+        }
+        // Add it to `rawcells`, and return the pointer that comes back
+        Ok(rawcells.add(rawcell))
     }
     /// Convert to a raw layout cell
-    fn convert_layout_impl(&self, layout: &LayoutImpl) -> LayoutResult<raw::Cell> {
+    fn export_layout_impl(&self, layout: &LayoutImpl) -> LayoutResult<raw::LayoutImpl> {
         if layout.outline.x.len() > 1 {
             return Err(LayoutError::Str(
                 "Non-rectangular outline; conversions not supported (yet)".into(),
@@ -234,19 +257,19 @@ impl<'lib> RawExporter<'lib> {
                 // Again, re-organize into the relevant objects for this "layer period"
                 let temp_period = self.temp_cell_layer_period(&temp_layer, periodnum)?;
                 // And finally start doing stuff!
-                elems.extend(self.convert_cell_layer_period(&temp_period)?);
+                elems.extend(self.export_cell_layer_period(&temp_period)?);
             }
         }
         // Convert our [Outline] into a polygon
-        elems.push(self.convert_outline(&layout.outline)?);
+        elems.push(self.export_outline(&layout.outline)?);
         // Convert our [Instance]s
         let insts = layout
             .instances
             .iter()
-            .map(|inst| self.convert_instance(inst).unwrap()) // FIXME: error handling
+            .map(|inst| self.export_instance(inst).unwrap()) // FIXME: error handling
             .collect();
-        // Aaaand create our new [raw::Cell]
-        Ok(raw::Cell {
+        // Aaaand create our new [raw::CellBag]
+        Ok(raw::LayoutImpl {
             name: layout.name.clone(),
             insts,
             elems,
@@ -254,20 +277,27 @@ impl<'lib> RawExporter<'lib> {
         })
     }
     /// Convert an [Instance] to a [raw::Instance]
-    fn convert_instance(&self, inst: &Instance) -> LayoutResult<raw::Instance> {
+    fn export_instance(&self, inst: &Instance) -> LayoutResult<raw::Instance> {
         // Get the raw-cell pointer from our mapping.
         // Note this requires dependent cells be converted first, depth-wise.
         let rawkey = self.unwrap(
             self.rawcells.get(&inst.cell),
             format!("Internal Error Exporting Instance {}", inst.inst_name),
         )?;
+        // Convert its orientation
+        let (reflect_vert, angle) = match (inst.reflect_vert, inst.reflect_horiz) {
+            (false, false) => (false, None),     // Default orientation
+            (true, false) => (true, None),       // Flip vertically
+            (false, true) => (true, Some(180.)), // Flip horiz via vert-flip and rotation
+            (true, true) => (false, Some(180.)), // Flip both by rotation
+        };
         // Primarily scale the location of each instance by our pitches
         Ok(raw::Instance {
             inst_name: inst.inst_name.clone(),
             cell: rawkey.clone(),
-            p0: self.convert_xy(&inst.loc),
-            reflect: inst.reflect,
-            angle: inst.angle,
+            loc: self.export_xy(&inst.loc),
+            reflect_vert,
+            angle,
         })
     }
     /// Create a [TempCell], organizing [Cell] data in more-convenient fashion for conversion
@@ -309,7 +339,7 @@ impl<'lib> RawExporter<'lib> {
         })
     }
     /// Convert a single row/col (period) on a single layer in a single Cell.
-    fn convert_cell_layer_period(
+    fn export_cell_layer_period(
         &self,
         temp_period: &TempPeriod,
     ) -> LayoutResult<Vec<raw::Element>> {
@@ -370,11 +400,11 @@ impl<'lib> RawExporter<'lib> {
                 layer: via_layer.raw.unwrap(),
                 purpose: raw::LayerPurpose::Drawing,
                 inner: raw::Shape::Rect {
-                    p0: self.convert_point(
+                    p0: self.export_point(
                         assn.loc.xy.x - via_layer.size.x / 2,
                         assn.loc.xy.y - via_layer.size.y / 2,
                     ),
-                    p1: self.convert_point(
+                    p1: self.export_point(
                         assn.loc.xy.x + via_layer.size.x / 2,
                         assn.loc.xy.y + via_layer.size.y / 2,
                     ),
@@ -394,10 +424,10 @@ impl<'lib> RawExporter<'lib> {
 
         // Convert all TrackSegments to raw Elements
         for t in layer_period.rails.iter() {
-            elems.extend(self.convert_track(t, &layer)?);
+            elems.extend(self.export_track(t, &layer)?);
         }
         for t in layer_period.signals.iter() {
-            elems.extend(self.convert_track(t, &layer)?);
+            elems.extend(self.export_track(t, &layer)?);
         }
         Ok(elems)
     }
@@ -442,98 +472,120 @@ impl<'lib> RawExporter<'lib> {
         }?;
         Ok(())
     }
-    /// Convert an [Abstract]
-    /// FIXME: make these [raw::LayoutAbstract] instead
-    pub fn convert_abstract(&self, abs: &abstrakt::LayoutAbstract) -> LayoutResult<raw::Cell> {
-        let mut elems = Vec::with_capacity(abs.ports.len() + 1);
-        // Create our [Outline]s boundary
-        elems.push(self.convert_outline(&abs.outline)?);
-        // Create shapes for each pin
-        for port in abs.ports.iter() {
-            // Add its shape
-            use abstrakt::PortKind::{Edge, ZTopEdge, ZTopInner};
+    /// Convert a [LayoutAbstract] into raw form.
+    pub fn export_abstract(
+        &mut self,
+        abs: &abstrakt::LayoutAbstract,
+    ) -> LayoutResult<raw::LayoutAbstract> {
+        self.ctx.push(ErrorContext::Abstract);
 
-            let elem = match &port.kind {
-                Edge {
-                    layer: layer_index,
-                    track,
-                    side,
-                } => {
-                    let layer = &self.stack.metals[*layer_index].spec;
-                    // First get the "infinite dimension" coordinate from the edge
-                    let infdims: (DbUnits, DbUnits) = match side {
-                        abstrakt::Side::BottomOrLeft => (DbUnits(0), DbUnits(100)),
-                        abstrakt::Side::TopOrRight => {
-                            // FIXME: this assumes rectangular outlines; will take some more work for polygons.
-                            let outside = self.db_units(abs.outline.max(layer.dir));
-                            (outside - DbUnits(100), outside)
-                        }
-                    };
-                    // Now get the "periodic dimension" from our layer-center
-                    let perdims: (DbUnits, DbUnits) = self.track_span(*layer_index, *track)?;
-                    // Presuming we're horizontal, points are here:
-                    let mut pts = [Xy::new(infdims.0, perdims.0), Xy::new(infdims.1, perdims.1)];
-                    // And if vertical, just transpose them
-                    if layer.dir == Dir::Vert {
-                        pts[0] = pts[0].transpose();
-                        pts[1] = pts[1].transpose();
-                    }
-                    raw::Element {
-                        net: Some(port.name.clone()),
-                        layer: self.stack.metals[*layer_index].raw.unwrap(),
-                        purpose: raw::LayerPurpose::Drawing,
-                        inner: raw::Shape::Rect {
-                            p0: self.convert_xy(&pts[0]),
-                            p1: self.convert_xy(&pts[1]),
-                        },
-                    }
-                }
-                ZTopEdge { track, side, into } => {
-                    let layer = &self.stack.metals[abs.top_layer].spec;
-                    let other_layer_index = match into.1 {
-                        RelZ::Above => abs.top_layer + 1,
-                        RelZ::Below => abs.top_layer - 1,
-                    };
-                    let other_layer = &self.stack.metals[other_layer_index];
-                    let other_layer_center = other_layer.center(into.0)?;
-                    // First get the "infinite dimension" coordinate from the edge
-                    let infdims: (DbUnits, DbUnits) = match side {
-                        abstrakt::Side::BottomOrLeft => (DbUnits(0), other_layer_center),
-                        abstrakt::Side::TopOrRight => {
-                            // FIXME: this assumes rectangular outlines; will take some more work for polygons.
-                            let outside = self.db_units(abs.outline.max(layer.dir));
-                            (other_layer_center, outside)
-                        }
-                    };
-                    // Now get the "periodic dimension" from our layer-center
-                    let perdims: (DbUnits, DbUnits) = self.track_span(abs.top_layer, *track)?;
-                    // Presuming we're horizontal, points are here:
-                    let mut pts = [Xy::new(infdims.0, perdims.0), Xy::new(infdims.1, perdims.1)];
-                    // And if vertical, just transpose them
-                    if layer.dir == Dir::Vert {
-                        pts[0] = pts[0].transpose();
-                        pts[1] = pts[1].transpose();
-                    }
-                    raw::Element {
-                        net: Some(port.name.clone()),
-                        layer: self.stack.metals[abs.top_layer].raw.unwrap(),
-                        purpose: raw::LayerPurpose::Drawing,
-                        inner: raw::Shape::Rect {
-                            p0: self.convert_xy(&pts[0]),
-                            p1: self.convert_xy(&pts[1]),
-                        },
-                    }
-                }
-                ZTopInner { .. } => todo!(),
-            };
-            elems.push(elem);
+        // Create the outline-element, and grab a copy of its inner shape
+        let outline = self.export_outline(&abs.outline)?;
+        let outline_shape = outline.inner.clone();
+        // Create the raw abstract
+        let mut rawabs = raw::LayoutAbstract::new(&abs.name, outline);
+
+        // Draw a blockage on each layer, equal to the shape of the outline
+        for layerindex in 0..(abs.top_layer + 1) {
+            let layerkey = self.stack.metals[layerindex].raw.unwrap();
+            rawabs
+                .blockages
+                .insert(layerkey, vec![outline_shape.clone()]);
         }
-        // And return a new [raw::LayoutAbstract]
-        Ok(raw::Cell {
-            name: abs.name.clone(),
-            elems,
-            ..Default::default()
-        })
+
+        // Create shapes for each port
+        for port in abs.ports.iter() {
+            let rawport = self.export_abstract_port(abs, port)?;
+            rawabs.ports.push(rawport);
+        }
+        // And return the [raw::LayoutAbstract]
+        self.ctx.pop();
+        Ok(rawabs)
+    }
+    /// Convert an [abstrakt::Port] into raw form.
+    pub fn export_abstract_port(
+        &mut self,
+        abs: &abstrakt::LayoutAbstract,
+        port: &abstrakt::Port,
+    ) -> LayoutResult<raw::AbstractPort> {
+        use abstrakt::PortKind::{Edge, ZTopEdge, ZTopInner};
+
+        let (layerkey, shape): (raw::LayerKey, raw::Shape) = match &port.kind {
+            Edge {
+                layer: layer_index,
+                track,
+                side,
+            } => {
+                let layer = &self.stack.metals[*layer_index].spec;
+                // First get the "infinite dimension" coordinate from the edge
+                let infdims: (DbUnits, DbUnits) = match side {
+                    abstrakt::Side::BottomOrLeft => (DbUnits(0), DbUnits(100)),
+                    abstrakt::Side::TopOrRight => {
+                        // FIXME: this assumes rectangular outlines; will take some more work for polygons.
+                        let outside = self.db_units(abs.outline.max(layer.dir));
+                        (outside - DbUnits(100), outside)
+                    }
+                };
+                // Now get the "periodic dimension" from our layer-center
+                let perdims: (DbUnits, DbUnits) = self.track_span(*layer_index, *track)?;
+                // Presuming we're horizontal, points are here:
+                let mut pts = [Xy::new(infdims.0, perdims.0), Xy::new(infdims.1, perdims.1)];
+                // And if vertical, just transpose them
+                if layer.dir == Dir::Vert {
+                    pts[0] = pts[0].transpose();
+                    pts[1] = pts[1].transpose();
+                }
+                (
+                    self.stack.metals[*layer_index].raw.unwrap(),
+                    raw::Shape::Rect {
+                        p0: self.export_xy(&pts[0]),
+                        p1: self.export_xy(&pts[1]),
+                    },
+                )
+            }
+            ZTopEdge { track, side, into } => {
+                let layer = &self.stack.metals[abs.top_layer].spec;
+                let other_layer_index = match into.1 {
+                    RelZ::Above => abs.top_layer + 1,
+                    RelZ::Below => abs.top_layer - 1,
+                };
+                let other_layer = &self.stack.metals[other_layer_index];
+                let other_layer_center = other_layer.center(into.0)?;
+                // First get the "infinite dimension" coordinate from the edge
+                let infdims: (DbUnits, DbUnits) = match side {
+                    abstrakt::Side::BottomOrLeft => (DbUnits(0), other_layer_center),
+                    abstrakt::Side::TopOrRight => {
+                        // FIXME: this assumes rectangular outlines; will take some more work for polygons.
+                        let outside = self.db_units(abs.outline.max(layer.dir));
+                        (other_layer_center, outside)
+                    }
+                };
+                // Now get the "periodic dimension" from our layer-center
+                let perdims: (DbUnits, DbUnits) = self.track_span(abs.top_layer, *track)?;
+                // Presuming we're horizontal, points are here:
+                let mut pts = [Xy::new(infdims.0, perdims.0), Xy::new(infdims.1, perdims.1)];
+                // And if vertical, just transpose them
+                if layer.dir == Dir::Vert {
+                    pts[0] = pts[0].transpose();
+                    pts[1] = pts[1].transpose();
+                }
+                (
+                    self.stack.metals[abs.top_layer].raw.unwrap(),
+                    raw::Shape::Rect {
+                        p0: self.export_xy(&pts[0]),
+                        p1: self.export_xy(&pts[1]),
+                    },
+                )
+            }
+            ZTopInner { .. } => todo!(),
+        };
+        let mut shapes = HashMap::new();
+        shapes.insert(layerkey, vec![shape]);
+        let rawport = raw::AbstractPort {
+            net: port.name.clone(),
+            shapes,
+        };
+        Ok(rawport)
     }
     /// Get the positions spanning track number `track` on layer number `layer`
     fn track_span(
@@ -544,8 +596,8 @@ impl<'lib> RawExporter<'lib> {
         let layer = &self.stack.metals[layer_index];
         layer.span(track_index)
     }
-    /// Convert an [Outline] to a [raw::Element] polygon
-    pub fn convert_outline(&self, outline: &Outline) -> LayoutResult<raw::Element> {
+    /// Convert an [Outline] to a [raw::Shape]
+    fn outline_shape(&self, outline: &Outline) -> LayoutResult<raw::Shape> {
         // Create an array of Outline-Points
         let mut pts = vec![Point { x: 0, y: 0 }];
         let mut xp: isize;
@@ -558,16 +610,22 @@ impl<'lib> RawExporter<'lib> {
         }
         // Add the final implied Point at (x, y[-1])
         pts.push(Point::new(0, yp));
-        // Create the [raw::Element]
+        Ok(raw::Shape::Poly { pts })
+    }
+    /// Convert an [Outline] to a [raw::Element] polygon
+    pub fn export_outline(&self, outline: &Outline) -> LayoutResult<raw::Element> {
+        // Create the outline shape
+        let shape = self.outline_shape(outline)?;
+        // And create the [raw::Element]
         Ok(raw::Element {
             net: None,
             layer: self.stack.boundary_layer.unwrap(),
             purpose: raw::LayerPurpose::Outline,
-            inner: raw::Shape::Poly { pts },
+            inner: shape,
         })
     }
     /// Convert a [Track]-full of [TrackSegment]s to a vector of [raw::Element] rectangles
-    fn convert_track(
+    fn export_track(
         &self,
         track: &Track,
         layer: &validate::ValidMetalLayer,
@@ -584,12 +642,12 @@ impl<'lib> RawExporter<'lib> {
             // Convert the inner shape
             let inner = match track.dir {
                 Dir::Horiz => raw::Shape::Rect {
-                    p0: self.convert_point(seg.start, track.start),
-                    p1: self.convert_point(seg.stop, track.start + track.width),
+                    p0: self.export_point(seg.start, track.start),
+                    p1: self.export_point(seg.stop, track.start + track.width),
                 },
                 Dir::Vert => raw::Shape::Rect {
-                    p0: self.convert_point(track.start, seg.start),
-                    p1: self.convert_point(track.start + track.width, seg.stop),
+                    p0: self.export_point(track.start, seg.start),
+                    p1: self.export_point(track.start + track.width, seg.stop),
                 },
             };
             // And pack it up as a [raw::Element]
@@ -746,13 +804,13 @@ impl<'lib> RawExporter<'lib> {
         }
     }
     /// Convert an [Xy] into a [raw::Point]
-    fn convert_xy<T: HasUnits + Into<UnitSpeced>>(&self, xy: &Xy<T>) -> raw::Point {
+    fn export_xy<T: HasUnits + Into<UnitSpeced>>(&self, xy: &Xy<T>) -> raw::Point {
         let x = self.db_units(xy.x);
         let y = self.db_units(xy.y);
-        self.convert_point(x, y)
+        self.export_point(x, y)
     }
     /// Convert a two-tuple of [DbUnits] into a [raw::Point]
-    fn convert_point(&self, x: DbUnits, y: DbUnits) -> raw::Point {
+    fn export_point(&self, x: DbUnits, y: DbUnits) -> raw::Point {
         raw::Point::new(x.0, y.0)
     }
 }
@@ -760,7 +818,7 @@ impl HasErrors for RawExporter<'_> {
     fn err(&self, msg: impl Into<String>) -> LayoutError {
         LayoutError::Export {
             message: msg.into(),
-            stack: Vec::new(), // FIXME! get a stack already! self.ctx_stack.clone(),
+            stack: self.ctx.clone(),
         }
     }
 }

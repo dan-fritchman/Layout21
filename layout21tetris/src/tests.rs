@@ -13,19 +13,22 @@ use crate::utils::Ptr;
 /// Create a [Stack] used by a number of tests
 fn stack() -> LayoutResult<Stack> {
     let mut rawlayers = raw::Layers::default();
-    rawlayers.add(raw::Layer::new(64, "nwell").add_pairs(&[
-        (44, raw::LayerPurpose::Drawing),
-        (5, raw::LayerPurpose::Label),
-    ])?);
+    // Shorthands for the common purpose-numbers
     let metal_purps = [
         (20, raw::LayerPurpose::Drawing),
         (5, raw::LayerPurpose::Label),
+        (16, raw::LayerPurpose::Pin),
     ];
-    rawlayers.add(raw::Layer::new(67, "li1").add_pairs(&metal_purps)?);
     let via_purps = [
         (44, raw::LayerPurpose::Drawing),
         (5, raw::LayerPurpose::Label),
+        (16, raw::LayerPurpose::Pin),
     ];
+    // Add a few base-layers that we are used in imported cells,
+    // But not in our stack
+    rawlayers.add(raw::Layer::new(64, "nwell").add_pairs(&metal_purps)?);
+    rawlayers.add(raw::Layer::new(67, "li1").add_pairs(&metal_purps)?);
+    // Create the test stack
     let stack = Stack {
         units: Units::Nano,
         boundary_layer: Some(rawlayers.add(raw::Layer::from_pairs(
@@ -145,7 +148,7 @@ fn empty_cell() -> LayoutResult<()> {
         cuts: Vec::new(),
     };
     let mut lib = Library::new("EmptyCellLib");
-    let _c2 = lib.cells.insert(c.into());
+    let _c2 = lib.cells.insert(cell::CellBag::from(c));
     exports(lib)?;
     Ok(())
 }
@@ -260,8 +263,8 @@ fn create_lib2() -> LayoutResult<()> {
                 inst_name: "inst1".into(),
                 cell: c2,
                 loc: (20, 2).into(),
-                reflect: false,
-                angle: None,
+                reflect_horiz: false,
+                reflect_vert: false,
             }],
             assignments: vec![Assign {
                 net: "clk".into(),
@@ -361,22 +364,22 @@ fn create_lib3() -> LayoutResult<()> {
                     inst_name: "inst1".into(),
                     cell: c2.clone(),
                     loc: (0, 0).into(),
-                    reflect: false,
-                    angle: None,
+                    reflect_horiz: false,
+                    reflect_vert: false,
                 },
                 Instance {
                     inst_name: "inst2".into(),
                     cell: c2.clone(),
                     loc: (200, 20).into(),
-                    reflect: false,
-                    angle: None,
+                    reflect_horiz: false,
+                    reflect_vert: false,
                 },
                 Instance {
                     inst_name: "inst4".into(),
                     cell: c2.clone(),
                     loc: (400, 40).into(),
-                    reflect: false,
-                    angle: None,
+                    reflect_horiz: false,
+                    reflect_vert: false,
                 },
             ],
             assignments: vec![
@@ -469,8 +472,8 @@ fn ro(unit: Ptr<cell::CellBag>) -> LayoutResult<cell::CellBag> {
                 inst_name: format!("inst{}{}", x, y),
                 cell: unit.clone(),
                 loc,
-                reflect: false,
-                angle: None,
+                reflect_horiz: false,
+                reflect_vert: false,
             };
             hasunits.instances.push(inst);
 
@@ -560,8 +563,8 @@ fn _wrap_gds(lib: &mut Library) -> LayoutResult<Ptr<cell::CellBag>> {
         inst_name: "wrapped".into(),
         cell: wrapped,
         loc: (0, 0).into(),
-        reflect: false,
-        angle: None,
+        reflect_horiz: false,
+        reflect_vert: false,
     });
     let wrapper = lib.cells.insert(wrapper.into());
     Ok(wrapper)
@@ -583,18 +586,18 @@ fn exports(lib: Library) -> LayoutResult<()> {
     let raw = rawconv::RawExporter::convert(lib, stack()?)?;
     let raw = raw.read()?;
 
-    // Export to ProtoBuf, save as YAML and binary
-    let protolib = raw.to_proto()?;
-    Yaml.save(
-        &protolib,
-        &resource(&format!("{}.proto.yaml", &protolib.domain)),
-    )
-    .unwrap();
-    crate::raw::proto::proto::save(
-        &protolib,
-        &resource(&format!("{}.proto.bin", &protolib.domain)),
-    )
-    .unwrap();
+    // // Export to ProtoBuf, save as YAML and binary
+    // let protolib = raw.to_proto()?;
+    // Yaml.save(
+    //     &protolib,
+    //     &resource(&format!("{}.proto.yaml", &protolib.domain)),
+    // )
+    // .unwrap();
+    // crate::raw::proto::proto::save(
+    //     &protolib,
+    //     &resource(&format!("{}.proto.bin", &protolib.domain)),
+    // )
+    // .unwrap();
 
     // Export to GDSII
     let gds = raw.to_gds()?;

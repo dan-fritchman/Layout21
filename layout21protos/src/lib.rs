@@ -31,13 +31,21 @@ impl Layer {
     }
 }
 
-/// Encode into Byte-Vector
+/// Encode into a newly-allocated byte-[Vec].
+/// Wraps [prost::Message::encode], which is likely more efficent
+/// for pre-allocated buffers.
 pub fn to_bytes<T: Message + Sized + Default>(data: &T) -> Vec<u8> {
     let mut buf = Vec::<u8>::with_capacity(data.encoded_len());
     data.encode(&mut buf).unwrap();
     buf
 }
 /// Decode from byte array/vector
+///
+/// Wraps [prost::Message::decode], adding support for some input types,
+/// notably including `&Vec<u8>` as returned from `to_bytes`.
+/// Using [prost::Message::decode] directly instead generally
+/// works, but requires casting to slice via [Vec::as_slice].
+///
 pub fn from_bytes<T: Message + Sized + Default>(bytes: &[u8]) -> Result<T, prost::DecodeError> {
     T::decode(bytes)
 }
@@ -220,9 +228,9 @@ mod tests {
                 purpose: 11
             })
         );
-        assert_eq!(x.rectangles, []);
-        assert_eq!(x.polygons, []);
-        assert_eq!(x.paths, []);
+        assert_eq!(x.rectangles, vec![]);
+        assert_eq!(x.polygons, vec![]);
+        assert_eq!(x.paths, vec![]);
 
         // Protobuf Serialization Round-Trip
         let bytes = to_bytes(&x);
@@ -359,8 +367,9 @@ mod tests {
                     name: "cell_name".into(),
                 })),
             }),
+            reflect_vert: true,
             rotation_clockwise_degrees: 0,
-            lower_left: Some(Point::new(0, 0)),
+            origin_location: Some(Point::new(0, 0)),
         };
         assert_eq!(x.name, "inst_name");
         assert_eq!(
@@ -372,8 +381,9 @@ mod tests {
                 })),
             })
         );
+        assert_eq!(x.reflect_vert, true);
         assert_eq!(x.rotation_clockwise_degrees, 0);
-        assert_eq!(x.lower_left, Some(Point::new(0, 0)));
+        assert_eq!(x.origin_location, Some(Point::new(0, 0)));
 
         // Protobuf Serialization Round-Trip
         let bytes = to_bytes(&x);
@@ -391,9 +401,9 @@ mod tests {
             copyright: "copyright".into(),
         };
         assert_eq!(x.name, "cell_name");
-        assert_eq!(x.shapes, []);
-        assert_eq!(x.instances, []);
-        assert_eq!(x.annotations, []);
+        assert_eq!(x.shapes, vec![]);
+        assert_eq!(x.instances, vec![]);
+        assert_eq!(x.annotations, vec![]);
         assert_eq!(x.author, "author");
         assert_eq!(x.copyright, "copyright");
 
@@ -408,6 +418,7 @@ mod tests {
             domain: "libdomain".into(),
             units: Units::Angstrom.into(),
             cells: Vec::new(),
+            abstracts: Vec::new(),
         };
         assert_eq!(r.domain, "libdomain");
         assert_eq!(r.units, Units::Angstrom.into());
@@ -415,6 +426,80 @@ mod tests {
         // Protobuf Serialization Round-Trip
         let bytes = to_bytes(&r);
         let rt: Library = from_bytes(&bytes).unwrap();
+        assert_eq!(r, rt);
+    }
+    #[test]
+    fn abstrakt_port() {
+        let r = AbstractPort {
+            net: "abs_port_name".into(),
+            shapes: vec![LayerShapes::default()],
+        };
+        assert_eq!(r.net, "abs_port_name");
+        assert_eq!(
+            r.shapes,
+            vec![LayerShapes {
+                layer: None,
+                rectangles: vec![],
+                polygons: vec![],
+                paths: vec![],
+            }]
+        );
+        // Protobuf Serialization Round-Trip
+        let bytes = to_bytes(&r);
+        let rt: AbstractPort = from_bytes(&bytes).unwrap();
+        assert_eq!(r, rt);
+    }
+    #[test]
+    fn abstrakt() {
+        let r = Abstract {
+            name: "abs".into(),
+            outline: Some(Polygon {
+                net: "".into(),
+                vertices: vec![
+                    Point::new(0, 0),
+                    Point::new(1, 0),
+                    Point::new(1, 1),
+                    Point::new(0, 1),
+                ],
+            }),
+            ports: vec![AbstractPort::default()],
+            blockages: Some(LayerShapes::default()),
+            author: "author".into(),
+            copyright: "copyright".into(),
+        };
+
+        assert_eq!(r.name, "abs");
+        assert_eq!(
+            r.outline,
+            Some(Polygon {
+                net: "".into(),
+                vertices: vec![
+                    Point::new(0, 0),
+                    Point::new(1, 0),
+                    Point::new(1, 1),
+                    Point::new(0, 1),
+                ],
+            })
+        );
+        assert_eq!(
+            r.ports,
+            vec![AbstractPort {
+                net: "".into(),
+                shapes: vec![],
+            }]
+        );
+        assert_eq!(
+            r.blockages,
+            Some(LayerShapes {
+                layer: None,
+                rectangles: vec![],
+                polygons: vec![],
+                paths: vec![],
+            })
+        );
+        // Protobuf Serialization Round-Trip
+        let bytes = to_bytes(&r);
+        let rt = Abstract::decode(bytes.as_slice()).unwrap();
         assert_eq!(r, rt);
     }
 }

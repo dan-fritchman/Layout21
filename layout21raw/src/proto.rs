@@ -16,39 +16,45 @@ use std::convert::{TryFrom, TryInto};
 // Local imports
 use crate::utils::Ptr;
 use crate::{
-    Cell, Element, ErrorContext, HasErrors, Instance, LayerKey, LayerPurpose, Layers, LayoutError,
-    LayoutResult, Library, Point, Shape, TextElement, Units,
+    CellBag, Element, ErrorContext, HasErrors, Instance, LayerKey, LayerPurpose, Layers,
+    LayoutAbstract, LayoutError, LayoutImpl, LayoutResult, Library, Point, Shape, TextElement,
+    Units,
 };
 pub use layout21protos as proto;
 
 /// # ProtoBuf Exporter
 #[derive(Debug)]
 pub struct ProtoExporter<'lib> {
-    pub lib: &'lib Library,
+    lib: &'lib Library,
+    ctx: Vec<ErrorContext>,
 }
 impl<'lib> ProtoExporter<'lib> {
     pub fn export(lib: &'lib Library) -> LayoutResult<proto::Library> {
-        Self { lib }.export_lib()
+        Self {
+            lib,
+            ctx: Vec::new(),
+        }
+        .export_lib()
     }
     /// Internal implementation method. Convert all, starting from our top-level [Library].
     fn export_lib(&mut self) -> LayoutResult<proto::Library> {
+        self.ctx.push(ErrorContext::Library(self.lib.name.clone()));
         // Create a new [proto::Library]
-        let mut lib = proto::Library::default();
-        lib.units = self.export_units(&self.lib.units)?.into();
+        let mut plib = proto::Library::default();
+        plib.units = self.export_units(&self.lib.units)?.into();
         // Set its library name
-        lib.domain = self.lib.name.clone();
+        plib.domain = self.lib.name.clone();
         // And convert each of our cells
         // FIXME: need to write these in dependency-aware order
-        lib.cells = self
-            .lib
-            .cells
-            .iter()
-            .map(|c| self.export_cell(&*c.read()?))
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(lib)
+        for cell in self.lib.cells.iter() {
+            let cell = cell.read()?;
+            self.export_cell(&*cell, &mut plib.cells, &mut plib.abstracts)?;
+        }
+        self.ctx.pop();
+        Ok(plib)
     }
     /// Export the [Units] distance definition
-    fn export_units(&self, units: &Units) -> LayoutResult<proto::Units> {
+    fn export_units(&mut self, units: &Units) -> LayoutResult<proto::Units> {
         Ok(match units {
             Units::Micro => proto::Units::Micro,
             Units::Nano => proto::Units::Nano,
@@ -56,7 +62,44 @@ impl<'lib> ProtoExporter<'lib> {
         })
     }
     /// Convert a [Cell] to a [proto::Cell] cell-definition
-    fn export_cell(&self, cell: &Cell) -> LayoutResult<proto::Cell> {
+    /// Adds to the running lists `pcells` and `pabs`.
+    fn export_cell(
+        &mut self,
+        cell: &CellBag,
+        pcells: &mut Vec<proto::Cell>,
+        pabs: &mut Vec<proto::Abstract>,
+    ) -> LayoutResult<()> {
+        self.ctx.push(ErrorContext::Cell(cell.name.clone()));
+        if let Some(ref lay) = cell.layout {
+            pcells.push(self.export_layout(lay)?);
+        }
+        if let Some(ref a) = cell.abstrakt {
+            pabs.push(self.export_abstract(a)?);
+        }
+        self.ctx.pop();
+        Ok(())
+    }
+    /// Convert a [LayoutAbstract]
+    fn export_abstract(&mut self, abs: &LayoutAbstract) -> LayoutResult<proto::Abstract> {
+        self.ctx.push(ErrorContext::Abstract);
+
+        // Create the new [proto::Abstract]
+        let mut pabs = proto::Abstract::default();
+        // Convert our name
+        pabs.name = abs.name.clone();
+        // Convert its outline
+        todo!();
+        // Convert its ports
+        todo!();
+        // Convert its blockages
+        todo!();
+
+        self.ctx.pop();
+        Ok(pabs)
+    }
+    /// Convert a [LayoutImpl] to a [proto::Cell] cell-definition
+    fn export_layout(&mut self, cell: &LayoutImpl) -> LayoutResult<proto::Cell> {
+        self.ctx.push(ErrorContext::Impl);
         // Create the empty/default [proto::Cell]
         let mut pcell = proto::Cell::default();
         // Convert our name
@@ -107,28 +150,36 @@ impl<'lib> ProtoExporter<'lib> {
             }
             pcell.shapes.push(layershape);
         }
+        self.ctx.pop();
         Ok(pcell)
     }
     /// Convert an [Instance] to a [proto::Instance]
-    fn export_instance(&self, inst: &Instance) -> LayoutResult<proto::Instance> {
+    fn export_instance(&mut self, inst: &Instance) -> LayoutResult<proto::Instance> {
         let cell = inst.cell.read()?;
         Ok(proto::Instance {
             name: inst.inst_name.clone(),
             cell: Some(proto::Reference {
                 to: Some(proto::reference::To::Local(cell.name.clone())),
             }),
-            lower_left: Some(proto::Point::new(inst.p0.x as i64, inst.p0.y as i64)), // FIXME: convert-point or similar method
+            reflect_vert: inst.reflect_vert,
+            origin_location: Some(self.export_point(&inst.loc)?),
             rotation_clockwise_degrees: 0,
         })
     }
+    /// Export a [Point]
+    fn export_point(&mut self, p: &Point) -> LayoutResult<proto::Point> {
+        let x = i64::try_from(p.x)?;
+        let y = i64::try_from(p.y)?;
+        Ok(proto::Point::new(x, y))
+    }
     /// Convert an [Instance] to a [proto::Instance]
-    fn export_annotation(&self, text: &TextElement) -> LayoutResult<proto::TextElement> {
+    fn export_annotation(&mut self, text: &TextElement) -> LayoutResult<proto::TextElement> {
         Ok(proto::TextElement {
             string: text.string.clone(),
-            loc: Some(proto::Point::new(text.loc.x as i64, text.loc.y as i64)),
+            loc: Some(self.export_point(&text.loc)?),
         })
     }
-    fn export_element(&self, elem: &Element) -> LayoutResult<ProtoShape> {
+    fn export_element(&mut self, elem: &Element) -> LayoutResult<ProtoShape> {
         // Convert unconnected nets to the empty string
         let net = if let Some(ref net) = elem.net {
             net.clone()
@@ -170,7 +221,7 @@ impl HasErrors for ProtoExporter<'_> {
     fn err(&self, msg: impl Into<String>) -> LayoutError {
         LayoutError::Export {
             message: msg.into(),
-            stack: Vec::new(), // FIXME! get a stack already! self.ctx_stack.clone(),
+            stack: self.ctx.clone(),
         }
     }
 }
@@ -185,8 +236,8 @@ enum ProtoShape {
 #[derive(Debug, Default)]
 pub struct ProtoImporter {
     pub layers: Ptr<Layers>,
-    ctx_stack: Vec<ErrorContext>,
-    cell_map: HashMap<String, Ptr<Cell>>,
+    ctx: Vec<ErrorContext>,
+    cell_map: HashMap<String, Ptr<CellBag>>,
     lib: Library,
 }
 impl ProtoImporter {
@@ -213,7 +264,7 @@ impl ProtoImporter {
     /// Internal implementation method. Convert the top-level library.
     fn import_lib(&mut self, plib: &proto::Library) -> LayoutResult<()> {
         let name = plib.domain.clone();
-        self.ctx_stack.push(ErrorContext::Library(name.clone()));
+        self.ctx.push(ErrorContext::Library(name.clone()));
         // Give our library its name
         self.lib.name = name;
         // Set its distance units
@@ -229,7 +280,7 @@ impl ProtoImporter {
     }
     /// Import our [Units]. (Yes, proto-code keeps them as an integer. At least it has some helpers.)
     fn import_units(&mut self, punits: i32) -> LayoutResult<Units> {
-        self.ctx_stack.push(ErrorContext::Units);
+        self.ctx.push(ErrorContext::Units);
         let punits = match proto::Units::from_i32(punits) {
             Some(p) => Ok(p),
             None => self.fail(format!("Invalid proto::Units value {}", punits)),
@@ -239,15 +290,26 @@ impl ProtoImporter {
             proto::Units::Nano => Units::Nano,
             proto::Units::Angstrom => Units::Angstrom,
         };
-        self.ctx_stack.pop();
+        self.ctx.pop();
         Ok(ours)
     }
-    /// Import a [Cell]
-    fn import_cell(&mut self, pcell: &proto::Cell) -> LayoutResult<Cell> {
-        let mut cell = Cell::default();
+    /// Import a [CellBag]
+    fn import_cell(&mut self, pcell: &proto::Cell) -> LayoutResult<CellBag> {
+        self.ctx.push(ErrorContext::Cell(pcell.name.clone()));
+        let cell = self.import_layout(&pcell)?.into();
+        self.ctx.pop();
+        Ok(cell)
+    }
+    /// Import a [LayoutAbstract]
+    fn import_abstract(&mut self, pcell: &proto::Abstract) -> LayoutResult<LayoutAbstract> {
+        todo!()
+    }
+    /// Import a [LayoutImpl]
+    fn import_layout(&mut self, pcell: &proto::Cell) -> LayoutResult<LayoutImpl> {
+        let mut cell = LayoutImpl::default();
         let name = pcell.name.clone();
         cell.name = name.clone();
-        self.ctx_stack.push(ErrorContext::Cell(name));
+        self.ctx.push(ErrorContext::Impl);
 
         for inst in &pcell.instances {
             cell.insts.push(self.import_instance(inst)?);
@@ -258,7 +320,7 @@ impl ProtoImporter {
         for txt in &pcell.annotations {
             cell.annotations.push(self.import_annotation(txt)?);
         }
-        self.ctx_stack.pop();
+        self.ctx.pop();
         Ok(cell)
     }
     /// Import a layer's-worth of shapes
@@ -269,7 +331,7 @@ impl ProtoImporter {
             None => self.fail("Invalid proto::LayerShapes with no Layer"),
         }?;
         // Import all the shapes
-        self.ctx_stack.push(ErrorContext::Geometry);
+        self.ctx.push(ErrorContext::Geometry);
         let mut elems = Vec::new();
         for shape in &player.rectangles {
             let e = self.import_rect(shape)?;
@@ -286,7 +348,7 @@ impl ProtoImporter {
             let e = self.convert_shape(e, layer, purpose.clone(), &shape.net)?;
             elems.push(e);
         }
-        self.ctx_stack.pop();
+        self.ctx.pop();
         Ok(elems)
     }
     /// Import a text annotation
@@ -348,8 +410,8 @@ impl ProtoImporter {
         })
     }
     /// Import a proto-defined pointer, AKA [proto::Reference]
-    fn import_reference(&mut self, pinst: &proto::Instance) -> LayoutResult<Ptr<Cell>> {
-        // Mostly wind through protobuf-generated structures layers of [Option]s
+    fn import_reference(&mut self, pinst: &proto::Instance) -> LayoutResult<Ptr<CellBag>> {
+        // Mostly wind through protobuf-generated structures' layers of [Option]s
         let pref = self.unwrap(
             pinst.cell.as_ref(),
             format!("Invalid proto::Instance with null Cell: {}", pinst.name),
@@ -372,31 +434,32 @@ impl ProtoImporter {
     }
     /// Import an [Instance]
     fn import_instance(&mut self, pinst: &proto::Instance) -> LayoutResult<Instance> {
-        let cname = pinst.name.clone();
-        self.ctx_stack.push(ErrorContext::Instance(cname.clone()));
-        // Look up the cell-key, which must be imported by now, or we fail
-        let cellkey = self.import_reference(&pinst)?;
-
-        let p0 = match &pinst.lower_left {
-            Some(p) => self.import_point(p),
-            None => self.fail(format!(
-                "Invalid proto::Instance with no Location: {}",
-                pinst.name
-            )),
-        }?;
+        let inst_name = pinst.name.clone();
+        self.ctx.push(ErrorContext::Instance(inst_name.clone()));
+        // Look up the cell-pointer, which must be imported by now, or we fail
+        let cell = self.import_reference(&pinst)?;
+        // Unwrap the [Option] over (not really optional) location `origin_location`
+        let origin_location = self.unwrap(
+            pinst.origin_location.as_ref(),
+            format!("Invalid proto::Instance with no Location: {}", pinst.name),
+        )?;
+        // And convert it
+        let loc = self.import_point(origin_location)?;
+        // Convert the rotation, mapping the proto-default zero to [None]
         let angle = if pinst.rotation_clockwise_degrees == 0 {
             None
         } else {
-            Some(pinst.rotation_clockwise_degrees as f64)
+            let f = f64::try_from(pinst.rotation_clockwise_degrees).unwrap(); // FIXME: error case/conversion
+            Some(f)
         };
         let inst = Instance {
-            inst_name: pinst.name.clone(),
-            cell: cellkey,
-            p0,
-            reflect: false, // FIXME!
+            inst_name,
+            cell,
+            loc,
+            reflect_vert: pinst.reflect_vert,
             angle,
         };
-        self.ctx_stack.pop();
+        self.ctx.pop();
         Ok(inst)
     }
     /// Import a [Point]
@@ -426,7 +489,7 @@ impl HasErrors for ProtoImporter {
     fn err(&self, msg: impl Into<String>) -> LayoutError {
         LayoutError::Import {
             message: msg.into(),
-            stack: self.ctx_stack.clone(),
+            stack: self.ctx.clone(),
         }
     }
 }
@@ -440,57 +503,63 @@ fn proto1() -> LayoutResult<()> {
         let mut layers = lib.layers.write()?;
         layers.get_or_insert(0, 0)?
     };
-    let c1 = lib.cells.insert(Cell {
-        name: "prt_cell".into(),
-        elems: vec![
-            Element {
-                net: Some("prt_rect_net".to_string()),
-                layer,
-                purpose: purpose.clone(),
-                inner: Shape::Rect {
-                    p0: Point::default(),
-                    p1: Point::default(),
+    let c1 = lib.cells.insert(
+        LayoutImpl {
+            name: "prt_cell".into(),
+            elems: vec![
+                Element {
+                    net: Some("prt_rect_net".to_string()),
+                    layer,
+                    purpose: purpose.clone(),
+                    inner: Shape::Rect {
+                        p0: Point::default(),
+                        p1: Point::default(),
+                    },
                 },
-            },
-            Element {
-                net: Some("prt_poly_net".to_string()),
-                layer,
-                purpose: purpose.clone(),
-                inner: Shape::Poly {
-                    pts: vec![Point::default(), Point::default(), Point::default()],
+                Element {
+                    net: Some("prt_poly_net".to_string()),
+                    layer,
+                    purpose: purpose.clone(),
+                    inner: Shape::Poly {
+                        pts: vec![Point::default(), Point::default(), Point::default()],
+                    },
                 },
-            },
-            Element {
-                net: Some("prt_path_net".to_string()),
-                layer,
-                purpose: purpose.clone(),
-                inner: Shape::Path {
-                    width: 5,
-                    pts: vec![Point::default(), Point::default(), Point::default()],
+                Element {
+                    net: Some("prt_path_net".to_string()),
+                    layer,
+                    purpose: purpose.clone(),
+                    inner: Shape::Path {
+                        width: 5,
+                        pts: vec![Point::default(), Point::default(), Point::default()],
+                    },
                 },
-            },
-        ],
-        insts: Vec::new(),
-        annotations: vec![TextElement {
-            loc: Point::default(),
-            string: "prt_text".into(),
-        }],
-    });
-    lib.cells.insert(Cell {
-        name: "prt_cell_with_inst".into(),
-        elems: Vec::new(),
-        insts: vec![Instance {
-            inst_name: "prt_inst".into(),
-            p0: Point::new(5, 5),
-            cell: c1,
-            reflect: false,
-            angle: None,
-        }],
-        annotations: vec![TextElement {
-            loc: Point::new(11, 11),
-            string: "prt_more_text".into(),
-        }],
-    });
+            ],
+            insts: Vec::new(),
+            annotations: vec![TextElement {
+                loc: Point::default(),
+                string: "prt_text".into(),
+            }],
+        }
+        .into(),
+    );
+    lib.cells.insert(
+        LayoutImpl {
+            name: "prt_cell_with_inst".into(),
+            elems: Vec::new(),
+            insts: vec![Instance {
+                inst_name: "prt_inst".into(),
+                loc: Point::new(5, 5),
+                cell: c1,
+                reflect_vert: false,
+                angle: None,
+            }],
+            annotations: vec![TextElement {
+                loc: Point::new(11, 11),
+                string: "prt_more_text".into(),
+            }],
+        }
+        .into(),
+    );
     let p = lib.to_proto()?;
     let lib2 = ProtoImporter::import(&p, None)?;
     assert_eq!(lib.name, lib2.name);

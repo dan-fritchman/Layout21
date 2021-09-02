@@ -34,7 +34,9 @@ message QualifiedName {
 /// either defined in this Library (local) or another (external)
 message Reference {
   oneof to {
+    /// Intra-library local reference
     string local = 1;
+    /// Reference to a domain-qualified name in another Library
     QualifiedName external = 2;
   }
 }
@@ -119,10 +121,16 @@ message Instance {
   string name = 1;
   // Cell Reference
   Reference cell = 3;
-  // Rotation
-  int32 rotation_clockwise_degrees = 4;
-  // Location
-  Point lower_left = 5;
+  
+  // Location of the defined Cell's origin 
+  // this location holds regardless of reflection or rotation
+  Point origin_location = 4; 
+  // Vertical reflection about x-axis, 
+  // applied *before* rotation.
+  bool reflect_vert = 6;
+  /// Angle of rotation (degrees), 
+  /// Clockwise and applied *after* reflection
+  int32 rotation_clockwise_degrees = 7;
 }
 
 // # Layout Library 
@@ -134,4 +142,36 @@ message Library {
   repeated Cell cells = 2;
   // Distance Units
   Units units = 3;
+  // Abstract Definitions 
+  repeated Abstract abstracts = 4;
 }
+
+// # Abstract Layout 
+// 
+// Defines the physical interface to a [Cell], 
+// including ports and internal blockages. 
+// 
+message Abstract {
+  // Cell Name
+  string name = 1;
+  // Outline
+  Polygon outline = 2;
+  // Ports 
+  repeated AbstractPort ports = 4;
+  // Blockages
+  LayerShapes blockages = 5;
+ 
+  // Author
+  string author = 100;
+  // Copyright (something)
+  string copyright = 101;
+}
+// # Abstract Port
+// Combination of a net and set of shapes
+message AbstractPort {
+  // Port Name
+  string net = 1;
+  // Shapes, grouped by layer 
+  repeated LayerShapes shapes = 2; 
+}
+
