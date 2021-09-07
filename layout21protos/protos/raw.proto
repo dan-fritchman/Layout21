@@ -155,11 +155,11 @@ message Abstract {
   // Cell Name
   string name = 1;
   // Outline
-  Polygon outline = 2;
+  Rectangle outline = 2; // FIXME: support for other shapes
   // Ports 
   repeated AbstractPort ports = 4;
   // Blockages
-  LayerShapes blockages = 5;
+  repeated LayerShapes blockages = 5;
  
   // Author
   string author = 100;

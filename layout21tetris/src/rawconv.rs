@@ -598,6 +598,15 @@ impl<'lib> RawExporter<'lib> {
     }
     /// Convert an [Outline] to a [raw::Shape]
     fn outline_shape(&self, outline: &Outline) -> LayoutResult<raw::Shape> {
+        if outline.x.len() == 1 {
+            // Rectangular
+            let p0 = Point::new(0, 0);
+            let xp = self.db_units(outline.x[0]).raw();
+            let yp = self.db_units(outline.y[0]).raw();
+            let p1 = Point::new(xp, yp);
+            return Ok(raw::Shape::Rect { p0, p1 });
+        }
+        // Polygon
         // Create an array of Outline-Points
         let mut pts = vec![Point { x: 0, y: 0 }];
         let mut xp: isize;

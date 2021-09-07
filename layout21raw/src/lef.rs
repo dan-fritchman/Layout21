@@ -30,10 +30,8 @@ impl<'lib> LefExporter<'lib> {
         self.ctx.push(ErrorContext::Library(self.lib.name.clone()));
         // Create a new [lef21::LefLibrary]
         let mut lib = lef21::LefLibrary::default();
-
-        // FIXME: export Units, or at least the `database_microns` part.
+        // Export its Units
         lib.units = self.export_units(&self.lib.units)?.into();
-
         // And convert each of our cells
         for cell in self.lib.cells.iter() {
             let cell = cell.read()?;

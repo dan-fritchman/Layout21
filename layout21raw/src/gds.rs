@@ -374,7 +374,6 @@ pub struct GdsImporter {
 }
 impl GdsImporter {
     /// Import a [gds21::GdsLibrary] into a [Library]
-    /// FIXME: optionally provide layer definitions
     pub fn import(
         gdslib: &gds21::GdsLibrary,
         layers: Option<Ptr<Layers>>,

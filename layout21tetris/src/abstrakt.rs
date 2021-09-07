@@ -4,7 +4,7 @@
 //! Abstract layouts describe a block's outline and interface,
 //! without exposing implementation details.
 //! Cells primarily comprise their outlines and pins.
-//! Outlines follow the same "Tetris-Shapes" as (FIXME: name-tbd) layout cells,
+//! Outlines follow the same "Tetris-Shapes" as `layout21::tetris` layout cells,
 //! including the requirements for a uniform z-axis.
 //! Internal layers are "fully blocked", in that parent layouts may not route through them.
 //! In legacy layout systems this would be akin to including blockages of the same shape as [Outline] on each layer.

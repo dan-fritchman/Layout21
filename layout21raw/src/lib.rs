@@ -89,7 +89,7 @@ impl From<utils::ser::Error> for LayoutError {
 }
 impl<T> From<std::sync::PoisonError<T>> for LayoutError {
     fn from(_e: std::sync::PoisonError<T>) -> Self {
-        Self::Tbd // FIXME!
+        Self::Tbd // FIXME! Can't be boxed due to type lifetime. 
     }
 }
 impl<T: std::error::Error + 'static> From<Box<T>> for LayoutError {
@@ -235,7 +235,7 @@ pub struct Instance {
 }
 
 /// Layer Set & Manager
-/// Keep track of active layers, and index them by number (FIXME: and name)
+/// Keep track of active layers, and index them by name and number.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Layers {
     slots: SlotMap<LayerKey, Layer>,
@@ -597,10 +597,15 @@ impl Shape {
     pub fn center(&self) -> Point {
         match *self {
             Shape::Rect { ref p0, ref p1 } => Point::new((p0.x + p1.x) / 2, (p0.y + p1.y) / 2),
-            Shape::Poly { pts: _ } => {
-                unimplemented!("Shape::Poly::center");
+            Shape::Path { ref pts, .. } => {
+                // Place on the center of the first segment
+                let p0 = &pts[0];
+                let p1 = &pts[1];
+                Point::new((p0.x + p1.x) / 2, (p0.y + p1.y) / 2)
             }
-            Shape::Path { .. } => Point::new(0, 0), // FIXME!!!
+            Shape::Poly { .. } => {
+                unimplemented!("Shape::Poly/Path::center");
+            }
         }
     }
     /// Indicate whether this shape is (more or less) horizontal or vertical
@@ -614,8 +619,7 @@ impl Shape {
                 Dir::Horiz
             }
             // Polygon and Path elements always horizontal, at least for now
-            Shape::Poly { .. } => Dir::Horiz,
-            Shape::Path { .. } => Dir::Horiz,
+            Shape::Poly { .. } | Shape::Path { .. } => Dir::Horiz,
         }
     }
     /// Shift coordinates by the (x,y) values specified in `pt`

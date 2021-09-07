@@ -453,17 +453,14 @@ mod tests {
     fn abstrakt() {
         let r = Abstract {
             name: "abs".into(),
-            outline: Some(Polygon {
+            outline: Some(Rectangle {
                 net: "".into(),
-                vertices: vec![
-                    Point::new(0, 0),
-                    Point::new(1, 0),
-                    Point::new(1, 1),
-                    Point::new(0, 1),
-                ],
+                lower_left: Some(Point { x: 0, y: 0 }),
+                width: 99,
+                height: 11,
             }),
             ports: vec![AbstractPort::default()],
-            blockages: Some(LayerShapes::default()),
+            blockages: vec![LayerShapes::default()],
             author: "author".into(),
             copyright: "copyright".into(),
         };
@@ -471,15 +468,12 @@ mod tests {
         assert_eq!(r.name, "abs");
         assert_eq!(
             r.outline,
-            Some(Polygon {
+            Some(Rectangle {
                 net: "".into(),
-                vertices: vec![
-                    Point::new(0, 0),
-                    Point::new(1, 0),
-                    Point::new(1, 1),
-                    Point::new(0, 1),
-                ],
-            })
+                lower_left: Some(Point { x: 0, y: 0 }),
+                width: 99,
+                height: 11,
+            }),
         );
         assert_eq!(
             r.ports,
@@ -490,12 +484,12 @@ mod tests {
         );
         assert_eq!(
             r.blockages,
-            Some(LayerShapes {
+            vec![LayerShapes {
                 layer: None,
                 rectangles: vec![],
                 polygons: vec![],
                 paths: vec![],
-            })
+            }]
         );
         // Protobuf Serialization Round-Trip
         let bytes = to_bytes(&r);

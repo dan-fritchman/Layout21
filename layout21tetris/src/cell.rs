@@ -122,15 +122,18 @@ trait CellViewable {}
 /// Collection of the Views describing a Cell
 #[derive(Debug, Default, Clone)]
 pub struct CellBag {
-    // Cell Name
+    /// Cell Name
     pub name: String,
-    // Interface
+    /// Interface
     pub interface: Option<interface::Bundle>,
-    // Layout Abstract
+    /// Layout Abstract
     pub abstrakt: Option<abstrakt::LayoutAbstract>,
-    // Layout Implementation
+    /// Layout Implementation
     pub layout: Option<LayoutImpl>,
-    // Raw Layout
+    /// Raw Layout
+    /// FIXME: this should probably move "up" a level,
+    /// so that cells are either defined as `raw` or `tetris` implementations,
+    /// but not both
     pub raw: Option<RawLayoutPtr>,
 }
 impl CellBag {

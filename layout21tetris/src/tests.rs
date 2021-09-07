@@ -15,11 +15,13 @@ fn stack() -> LayoutResult<Stack> {
     let mut rawlayers = raw::Layers::default();
     // Shorthands for the common purpose-numbers
     let metal_purps = [
+        (255, raw::LayerPurpose::Obstruction),
         (20, raw::LayerPurpose::Drawing),
         (5, raw::LayerPurpose::Label),
         (16, raw::LayerPurpose::Pin),
     ];
     let via_purps = [
+        (255, raw::LayerPurpose::Obstruction),
         (44, raw::LayerPurpose::Drawing),
         (5, raw::LayerPurpose::Label),
         (16, raw::LayerPurpose::Pin),
@@ -319,16 +321,6 @@ fn create_abstract() -> LayoutResult<()> {
                 side: abstrakt::Side::TopOrRight,
             },
         },
-        // abstrakt::Port {
-        //     name: "zfull".into(),
-        //     kind: abstrakt::PortKind::Z { track: 3 },
-        // },
-        // abstrakt::Port {
-        //     name: "zlocs".into(),
-        //     kind: abstrakt::PortKind::ZTopInner {
-        //         locs: vec![Assign {}],
-        //     },
-        // },
     ];
     abstrakt::LayoutAbstract {
         name: "abstrack".into(),
@@ -382,17 +374,7 @@ fn create_lib3() -> LayoutResult<()> {
                     reflect_vert: false,
                 },
             ],
-            assignments: vec![
-            //     Assign {
-            //     net: "clk".into(),
-            //     at: TrackIntersection {
-            //         layer: 1,
-            //         track: 22,
-            //         at: 22,
-            //         relz: RelZ::Above,
-            //     },
-            // }
-            ],
+            assignments: Vec::new(),
             cuts: Vec::new(),
         }
         .into(),
@@ -586,18 +568,18 @@ fn exports(lib: Library) -> LayoutResult<()> {
     let raw = rawconv::RawExporter::convert(lib, stack()?)?;
     let raw = raw.read()?;
 
-    // // Export to ProtoBuf, save as YAML and binary
-    // let protolib = raw.to_proto()?;
-    // Yaml.save(
-    //     &protolib,
-    //     &resource(&format!("{}.proto.yaml", &protolib.domain)),
-    // )
-    // .unwrap();
-    // crate::raw::proto::proto::save(
-    //     &protolib,
-    //     &resource(&format!("{}.proto.bin", &protolib.domain)),
-    // )
-    // .unwrap();
+    // Export to ProtoBuf, save as YAML and binary
+    let protolib = raw.to_proto()?;
+    Yaml.save(
+        &protolib,
+        &resource(&format!("{}.proto.yaml", &protolib.domain)),
+    )
+    .unwrap();
+    crate::raw::proto::proto::save(
+        &protolib,
+        &resource(&format!("{}.proto.bin", &protolib.domain)),
+    )
+    .unwrap();
 
     // Export to GDSII
     let gds = raw.to_gds()?;
