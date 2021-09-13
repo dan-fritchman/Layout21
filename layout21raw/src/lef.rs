@@ -5,9 +5,9 @@
 //!
 
 // Local imports
+use crate::utils::{ErrorContext, ErrorHelper};
 use crate::{
-    AbstractPort, ErrorContext, HasErrors, LayerKey, LayoutAbstract, LayoutError, LayoutResult,
-    Library, Point, Shape, Units,
+    AbstractPort, LayerKey, LayoutAbstract, LayoutError, LayoutResult, Library, Point, Shape, Units,
 };
 use lef21;
 
@@ -154,7 +154,8 @@ impl<'lib> LefExporter<'lib> {
     }
 }
 
-impl HasErrors for LefExporter<'_> {
+impl ErrorHelper for LefExporter<'_> {
+    type Error = LayoutError;
     fn err(&self, msg: impl Into<String>) -> LayoutError {
         LayoutError::Export {
             message: msg.into(),

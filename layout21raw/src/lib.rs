@@ -7,7 +7,7 @@
 //!
 
 // Std-Lib
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::convert::{TryFrom, TryInto};
 use std::hash::Hash;
 use std::ops::Not;
@@ -18,14 +18,17 @@ use slotmap::{new_key_type, SlotMap};
 
 // Internal modules & re-exports
 pub use layout21utils as utils;
+use utils::{ErrorContext};
 use utils::{Ptr, PtrList};
 
+// Optional-feature modules
 #[cfg(feature = "gds")]
 pub mod gds;
 #[cfg(feature = "lef")]
 pub mod lef;
 #[cfg(feature = "proto")]
 pub mod proto;
+// Unit tests
 #[cfg(test)]
 mod tests;
 
@@ -89,7 +92,7 @@ impl From<utils::ser::Error> for LayoutError {
 }
 impl<T> From<std::sync::PoisonError<T>> for LayoutError {
     fn from(_e: std::sync::PoisonError<T>) -> Self {
-        Self::Tbd // FIXME! Can't be boxed due to type lifetime. 
+        Self::Tbd // FIXME! Can't be boxed due to type lifetime.
     }
 }
 impl<T: std::error::Error + 'static> From<Box<T>> for LayoutError {
@@ -97,47 +100,6 @@ impl<T: std::error::Error + 'static> From<Box<T>> for LayoutError {
         Self::Boxed(e)
     }
 }
-/// Helper trait for re-use among our many conversion tree-walkers.
-/// Each implementer will generally have some internal state to report upon failure,
-/// which it can inject in the implementation-required `err` method.
-/// The `fail` method, provided by default, simply returns the `err` value.
-pub trait HasErrors {
-    /// Create and return a [LayoutError]
-    fn err(&self, msg: impl Into<String>) -> LayoutError;
-    /// Return failure
-    fn fail<T>(&self, msg: impl Into<String>) -> LayoutResult<T> {
-        Err(self.err(msg))
-    }
-    /// Unwrap the [Option] `opt` if it is [Some], and return our error if not.
-    fn unwrap<T>(&self, opt: Option<T>, msg: impl Into<String>) -> LayoutResult<T> {
-        match opt {
-            Some(val) => Ok(val),
-            None => self.fail(msg),
-        }
-    }
-    /// Unwrap the [Result] `res`. Return through our failure method if it is [Err].
-    fn ok<T, E>(&self, res: Result<T, E>, msg: impl Into<String>) -> LayoutResult<T> {
-        match res {
-            Ok(val) => Ok(val),
-            Err(_) => self.fail(msg),
-        }
-    }
-}
-/// Enumerated conversion contexts
-/// Generally used for error reporting
-#[derive(Debug, Clone)]
-pub enum ErrorContext {
-    Library(String),
-    Cell(String),
-    Abstract,
-    Impl,
-    Instance(String),
-    Array(String),
-    Units,
-    Geometry,
-    Unknown,
-}
-
 /// Distance Units Enumeration
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Units {
@@ -225,9 +187,11 @@ pub struct Instance {
     pub inst_name: String,
     /// Cell Definition Reference
     pub cell: Ptr<CellBag>,
-    /// Location, Bottom-Left Corner Point
+    /// Location of `cell` origin
+    /// regardless of rotation or reflection
     pub loc: Point,
-    /// Vertical Reflection
+    /// Vertical reflection,
+    /// applied *before* rotation
     pub reflect_vert: bool,
     /// Angle of rotation (degrees),
     /// Clockwise and applied *after* reflection
@@ -498,6 +462,45 @@ impl Library {
     {
         let plib = plib.try_into()?;
         proto::ProtoImporter::import(&plib, layers)
+    }
+}
+
+/// # Dependency-Orderer
+///
+/// Ideally an iterator, but really just a struct that creates an in-order [Vec] at creation time.
+#[derive(Debug)]
+pub struct DepOrder<'lib> {
+    lib: &'lib Library,
+    stack: Vec<Ptr<CellBag>>,
+    seen: HashSet<Ptr<CellBag>>,
+}
+impl<'lib> DepOrder<'lib> {
+    fn order(lib: &'lib Library) -> Vec<Ptr<CellBag>> {
+        let mut myself = Self {
+            lib,
+            stack: Vec::new(),
+            seen: HashSet::new(),
+        };
+        for cell in myself.lib.cells.as_slice() {
+            myself.push(cell);
+        }
+        myself.stack
+    }
+    fn push(&mut self, ptr: &Ptr<CellBag>) {
+        // If the Cell hasn't already been visited, depth-first search it
+        if !self.seen.contains(&ptr) {
+            // Read the cell-pointer
+            let cell = ptr.read().unwrap();
+            // If the cell has an implementation, visit its [Instance]s before inserting it
+            if let Some(layout) = &cell.layout {
+                for inst in &layout.insts {
+                    self.push(&inst.cell);
+                }
+            }
+            // And insert the cell (pointer) itself
+            self.seen.insert(Ptr::clone(ptr));
+            self.stack.push(Ptr::clone(ptr));
+        }
     }
 }
 

@@ -7,3 +7,5 @@ pub mod ptr;
 pub use ptr::*;
 pub mod ser;
 pub use ser::*;
+pub mod error;
+pub use error::*;

@@ -15,10 +15,11 @@ use std::convert::{TryFrom, TryInto};
 
 // Local imports
 use crate::utils::Ptr;
+use crate::utils::{ErrorContext, ErrorHelper};
 use crate::{
-    AbstractPort, CellBag, Element, ErrorContext, HasErrors, Instance, LayerKey, LayerPurpose,
-    Layers, LayoutAbstract, LayoutError, LayoutImpl, LayoutResult, Library, Point, Shape,
-    TextElement, Units,
+    AbstractPort, CellBag, DepOrder, Element, Instance, LayerKey, LayerPurpose, Layers,
+    LayoutAbstract, LayoutError, LayoutImpl, LayoutResult, Library, Point, Shape, TextElement,
+    Units,
 };
 pub use layout21protos as proto;
 
@@ -45,8 +46,7 @@ impl<'lib> ProtoExporter<'lib> {
         // Set its library name
         plib.domain = self.lib.name.clone();
         // And convert each of our cells
-        // FIXME: need to write these in dependency-aware order
-        for cell in self.lib.cells.iter() {
+        for cell in DepOrder::order(self.lib).iter() {
             let cell = cell.read()?;
             self.export_cell(&*cell, &mut plib.cells, &mut plib.abstracts)?;
         }
@@ -241,8 +241,8 @@ impl<'lib> ProtoExporter<'lib> {
             Shape::Poly { ref pts } => {
                 let vertices = pts
                     .iter()
-                    .map(|p| proto::Point::new(p.x as i64, p.y as i64)) // FIXME: convert
-                    .collect::<Vec<_>>();
+                    .map(|p| self.export_point(p))
+                    .collect::<Result<Vec<_>, _>>()?;
                 Ok(ProtoShape::Poly(proto::Polygon {
                     net: "".into(),
                     vertices,
@@ -252,8 +252,8 @@ impl<'lib> ProtoExporter<'lib> {
                 let width = i64::try_from(*width)?;
                 let points = pts
                     .iter()
-                    .map(|p| proto::Point::new(p.x as i64, p.y as i64)) // FIXME: convert
-                    .collect::<Vec<_>>();
+                    .map(|p| self.export_point(p))
+                    .collect::<Result<Vec<_>, _>>()?;
                 Ok(ProtoShape::Path(proto::Path {
                     net: "".into(),
                     width,
@@ -315,7 +315,8 @@ impl<'lib> ProtoExporter<'lib> {
         Ok(proto::Point::new(x, y))
     }
 }
-impl HasErrors for ProtoExporter<'_> {
+impl ErrorHelper for ProtoExporter<'_> {
+    type Error = LayoutError;
     fn err(&self, msg: impl Into<String>) -> LayoutError {
         LayoutError::Export {
             message: msg.into(),
@@ -547,8 +548,7 @@ impl ProtoImporter {
         let angle = if pinst.rotation_clockwise_degrees == 0 {
             None
         } else {
-            let f = f64::try_from(pinst.rotation_clockwise_degrees).unwrap(); // FIXME: error case/conversion
-            Some(f)
+            Some(f64::from(pinst.rotation_clockwise_degrees))
         };
         let inst = Instance {
             inst_name,
@@ -583,7 +583,8 @@ impl ProtoImporter {
         layers.get_or_insert(num, purpose)
     }
 }
-impl HasErrors for ProtoImporter {
+impl ErrorHelper for ProtoImporter {
+    type Error = LayoutError;
     fn err(&self, msg: impl Into<String>) -> LayoutError {
         LayoutError::Import {
             message: msg.into(),

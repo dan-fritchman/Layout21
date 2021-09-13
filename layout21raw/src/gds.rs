@@ -14,11 +14,12 @@ use slotmap::{new_key_type, SlotMap};
 
 // Local imports
 use crate::utils::Ptr;
+use crate::utils::{ErrorContext, ErrorHelper};
 use crate::{AbstractPort, LayerKey, LayoutAbstract, TextElement};
 use crate::{
     CellBag, Dir, Element, Instance, LayerPurpose, Layers, LayoutImpl, Library, Point, Shape, Units,
 };
-use crate::{ErrorContext, HasErrors, LayoutError, LayoutResult};
+use crate::{LayoutError, LayoutResult};
 pub use gds21;
 
 new_key_type! {
@@ -42,6 +43,7 @@ pub struct GdsExporter<'lib> {
     ctx: Vec<ErrorContext>,
 }
 impl<'lib> GdsExporter<'lib> {
+    /// Export `lib` to a GDSII library.
     pub fn export(lib: &'lib Library) -> LayoutResult<gds21::GdsLibrary> {
         Self {
             lib,
@@ -49,6 +51,7 @@ impl<'lib> GdsExporter<'lib> {
         }
         .export_lib()
     }
+    /// Primary internal method for exporting [Library] `self.lib`.
     fn export_lib(&mut self) -> LayoutResult<gds21::GdsLibrary> {
         self.ctx.push(ErrorContext::Library(self.lib.name.clone()));
         // Create a new Gds Library
@@ -142,11 +145,13 @@ impl<'lib> GdsExporter<'lib> {
         }
         // Convert each [Element]
         // Note each can produce more than one [GdsElement]
+        self.ctx.push(ErrorContext::Geometry);
         for elem in cell.elems.iter() {
             for gdselem in self.export_element(elem)?.into_iter() {
                 elems.push(gdselem);
             }
         }
+        self.ctx.pop();
         // Create and return a [GdsStruct]
         let mut strukt = gds21::GdsStruct::new(&cell.name);
         strukt.elems = elems;
@@ -155,10 +160,11 @@ impl<'lib> GdsExporter<'lib> {
     }
     /// Convert an [Instance] to a GDS instance, AKA [gds21::GdsStructRef]
     fn export_instance(&mut self, inst: &Instance) -> LayoutResult<gds21::GdsStructRef> {
+        self.ctx.push(ErrorContext::Instance(inst.inst_name.clone()));
         // Convert the orientation to a [gds21::GdsStrans] option
         let mut strans = None;
         if inst.reflect_vert || inst.angle.is_some() {
-            let angle = inst.angle.map(|a| f64::try_from(a).unwrap()); // FIXME: error case/conversion
+            let angle = inst.angle.map(|a| f64::from(a));
             strans = Some(gds21::GdsStrans {
                 reflected: true,
                 angle,
@@ -166,12 +172,14 @@ impl<'lib> GdsExporter<'lib> {
             });
         }
         let cell = inst.cell.read()?;
-        Ok(gds21::GdsStructRef {
+        let gdsinst = gds21::GdsStructRef {
             name: cell.name.clone(),
             xy: self.export_point(&inst.loc)?,
             strans,
             ..Default::default()
-        })
+        };
+        self.ctx.pop();
+        Ok(gdsinst)
     }
     /// Convert a (LayerKey, LayerPurpose) combination to a [gds21::GdsLayerSpec]
     pub fn export_layerspec(
@@ -193,16 +201,12 @@ impl<'lib> GdsExporter<'lib> {
         let layer = layer.layernum;
         Ok(gds21::GdsLayerSpec { layer, xtype })
     }
-    /// Convert an [Element] into one or more [gds21::GdsElement]
+    /// Convert an [Element] into one or more [gds21::GdsElement]s.
     ///
     /// Our [Element]s often correspond to more than one GDSII element,
     /// notably in the case in which a polygon is annotated with a net-name.
     /// Here, the net-name is an attribute of the polygon [Element].
     /// In GDSII, text is "free floating" as a separate element.
-    ///
-    /// GDS shapes are flattened vectors of (x,y) coordinates,
-    /// and include an explicit repetition of their origin for closure.
-    /// So an N-sided polygon is described by a 2*(N+1)-entry vector.
     ///
     pub fn export_element(&mut self, elem: &Element) -> LayoutResult<Vec<gds21::GdsElement>> {
         // Get the element's layer-numbers pair
@@ -217,36 +221,13 @@ impl<'lib> GdsExporter<'lib> {
         }
         Ok(gds_elems)
     }
-    /// Create a labeling [gds21::GdsElement] for [Shape] `shape`
-    pub fn export_shape_label(
-        &mut self,
-        net: &str,
-        shape: &Shape,
-        layerspec: &gds21::GdsLayerSpec,
-    ) -> LayoutResult<gds21::GdsElement> {
-        // Text is placed in the shape's (at least rough) center
-        let loc = shape.center();
-        // Rotate that text 90 degrees for mostly-vertical shapes
-        let strans = match shape.orientation() {
-            Dir::Horiz => None,
-            Dir::Vert => Some(gds21::GdsStrans {
-                angle: Some(90.0),
-                ..Default::default()
-            }),
-        };
-        // And return a converted [GdsTextElem]
-        Ok(gds21::GdsTextElem {
-            string: net.into(),
-            layer: layerspec.layer,
-            texttype: layerspec.xtype,
-            xy: self.export_point(&loc)?,
-            strans,
-            ..Default::default()
-        }
-        .into())
-    }
+
     /// Convert a [Shape] to a [gds21::GdsElement]
     /// Layer and datatype must be previously converted to gds21's [gds21::GdsLayerSpec] format.
+    ///
+    /// GDS shapes include an explicit repetition of their origin for closure.
+    /// So an N-sided polygon is described by a (N+1)-point vector.
+    ///
     pub fn export_shape(
         &mut self,
         shape: &Shape,
@@ -270,10 +251,10 @@ impl<'lib> GdsExporter<'lib> {
             }
             Shape::Poly { pts } => {
                 // Flatten our points-vec, converting to 32-bit along the way
-                let mut xy = Vec::new();
-                for p in pts.iter() {
-                    xy.push(self.export_point(p)?);
-                }
+                let mut xy = pts
+                    .iter()
+                    .map(|p| self.export_point(p))
+                    .collect::<Result<Vec<_>, _>>()?;
                 // Add the origin a second time, to "close" the polygon
                 xy.push(self.export_point(&pts[0])?);
                 gds21::GdsBoundary {
@@ -304,6 +285,34 @@ impl<'lib> GdsExporter<'lib> {
         };
         Ok(elem)
     }
+    /// Create a labeling [gds21::GdsElement] for [Shape] `shape`
+    pub fn export_shape_label(
+        &mut self,
+        net: &str,
+        shape: &Shape,
+        layerspec: &gds21::GdsLayerSpec,
+    ) -> LayoutResult<gds21::GdsElement> {
+        // Text is placed in the shape's (at least rough) center
+        let loc = shape.center();
+        // Rotate that text 90 degrees for mostly-vertical shapes
+        let strans = match shape.orientation() {
+            Dir::Horiz => None,
+            Dir::Vert => Some(gds21::GdsStrans {
+                angle: Some(90.0),
+                ..Default::default()
+            }),
+        };
+        // And return a converted [GdsTextElem]
+        Ok(gds21::GdsTextElem {
+            string: net.into(),
+            layer: layerspec.layer,
+            texttype: layerspec.xtype,
+            xy: self.export_point(&loc)?,
+            strans,
+            ..Default::default()
+        }
+        .into())
+    }
     /// Convert a [Point] to a GDS21 [gds21::GdsPoint]
     pub fn export_point(&mut self, pt: &Point) -> LayoutResult<gds21::GdsPoint> {
         let x = pt.x.try_into()?;
@@ -311,7 +320,8 @@ impl<'lib> GdsExporter<'lib> {
         Ok(gds21::GdsPoint::new(x, y))
     }
 }
-impl HasErrors for GdsExporter<'_> {
+impl ErrorHelper for GdsExporter<'_> {
+    type Error = LayoutError;
     fn err(&self, msg: impl Into<String>) -> LayoutError {
         LayoutError::Export {
             message: msg.into(),
@@ -797,7 +807,8 @@ impl GdsImporter {
         layers.get_or_insert(spec.layer, spec.xtype)
     }
 }
-impl HasErrors for GdsImporter {
+impl ErrorHelper for GdsImporter {
+    type Error = LayoutError;
     fn err(&self, msg: impl Into<String>) -> LayoutError {
         LayoutError::Import {
             message: msg.into(),

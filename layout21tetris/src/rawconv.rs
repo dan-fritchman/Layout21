@@ -15,8 +15,9 @@ use crate::cell::{Instance, LayoutImpl};
 use crate::coords::{DbUnits, HasUnits, PrimPitches, UnitSpeced, Xy};
 use crate::library::Library;
 use crate::outline::Outline;
-use crate::raw::{self, Dir, ErrorContext, HasErrors, LayoutError, LayoutResult, Point};
+use crate::raw::{self, Dir, LayoutError, LayoutResult, Point};
 use crate::stack::{LayerPeriod, RelZ, Stack, Track, TrackError, TrackSegmentType};
+use crate::utils::{ErrorContext, ErrorHelper};
 use crate::utils::{Ptr, PtrList};
 use crate::{abstrakt, cell, validate};
 
@@ -85,8 +86,6 @@ pub struct DepOrder<'lib> {
 }
 impl<'lib> DepOrder<'lib> {
     fn order(lib: &'lib Library) -> Vec<Ptr<cell::CellBag>> {
-        // FIXME: now that this uses `name` as the `seen`-set,
-        // move to check for uniqueness of names *before* running it.
         let mut myself = Self {
             lib,
             stack: Vec::new(),
@@ -782,17 +781,33 @@ impl<'lib> RawExporter<'lib> {
         })
     }
     /// Boolean indication of whether `inst` intersects `layer` at `periodnum`
+    /// FIXME: rectangular only for now
     fn instance_intersects(
         &self,
         inst: &Instance,
         layer: &validate::ValidMetalLayer,
         periodnum: usize,
     ) -> LayoutResult<bool> {
-        // Grab the instance's [DbUnits] span, in the layer's periodic direction
+        // Grab the layer's *periodic* direction
         let dir = !layer.spec.dir;
-        let inst_min = self.db_units(inst.loc[dir]);
-        let cell = inst.cell.read()?;
-        let inst_max = inst_min + self.db_units(cell.outline()?.max(dir));
+        // Get its starting location in that dimension
+        let inst_start = self.db_units(inst.loc[dir]);
+        // Sort out whether it's been reflected in this direction
+        let reflected = match dir {
+            Dir::Horiz => inst.reflect_horiz,
+            Dir::Vert => inst.reflect_vert,
+        };
+        // Grab the span of the cell-outline
+        let span = {
+            let cell = inst.cell.read()?;
+            self.db_units(cell.outline()?.max(dir))
+        };
+        // And sort out the span of the [Instance], from its cell-outline and reflection
+        let (inst_min, inst_max) = if !reflected {
+            (inst_start, inst_start + span)
+        } else {
+            (inst_start - span, inst_start)
+        };
         // And return the boolean intersection. "Touching" edge-to-edge is *not* considered an intersection.
         Ok(inst_max > layer.pitch * periodnum && inst_min < layer.pitch * (periodnum + 1))
     }
@@ -823,7 +838,8 @@ impl<'lib> RawExporter<'lib> {
         raw::Point::new(x.0, y.0)
     }
 }
-impl HasErrors for RawExporter<'_> {
+impl ErrorHelper for RawExporter<'_> {
+    type Error = LayoutError;
     fn err(&self, msg: impl Into<String>) -> LayoutError {
         LayoutError::Export {
             message: msg.into(),

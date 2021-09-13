@@ -449,13 +449,13 @@ fn ro(unit: Ptr<cell::CellBag>) -> LayoutResult<cell::CellBag> {
 
         // For each row
         for y in 0..3 {
-            let loc = ((2 * x + 1) * unitsize.0, (2 * y + 1) * unitsize.1).into();
+            let loc = ((2 * x + 1) * unitsize.0, (2 * (y + 1)) * unitsize.1).into();
             let inst = Instance {
                 inst_name: format!("inst{}{}", x, y),
                 cell: unit.clone(),
                 loc,
                 reflect_horiz: false,
-                reflect_vert: false,
+                reflect_vert: true,
             };
             hasunits.instances.push(inst);
 
