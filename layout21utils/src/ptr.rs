@@ -62,7 +62,7 @@ use by_address::ByAddress;
 /// in which many of the nodes are shared.
 ///
 #[derive(Clone, Debug, Default)]
-pub struct Ptr<T>(ByAddress<Arc<RwLock<T>>>);
+pub struct Ptr<T: ?Sized>(ByAddress<Arc<RwLock<T>>>);
 
 impl<T> Ptr<T> {
     /// Pointer Constructor
@@ -105,11 +105,17 @@ impl<T> Hash for Ptr<T> {
 #[derive(Debug, Clone, Default)]
 pub struct PtrList<T: Clone>(Vec<Ptr<T>>);
 impl<T: Clone> PtrList<T> {
-    /// Create a [PtrList]
-    pub fn new(ptrs: Vec<Ptr<T>>) -> Self {
+    /// Create a new and empty [PtrList]
+    pub fn new() -> Self {
+        Self(Vec::new())
+    }
+    /// Create a [PtrList] from a [Vec] of [Ptr]s.
+    /// Also available via the [From]/[Into] traits.
+    pub fn from_ptrs(ptrs: Vec<Ptr<T>>) -> Self {
         Self(ptrs)
     }
-    /// Create a [PtrList] from owned [T]s
+    /// Create a [PtrList] from owned [T]s.
+    /// Also available via the [From]/[Into] traits.
     pub fn from_owned(vals: Vec<T>) -> Self {
         let ptrs = vals.into_iter().map(|v| Ptr::new(v)).collect();
         Self(ptrs)
@@ -117,7 +123,7 @@ impl<T: Clone> PtrList<T> {
     /// Add an owned [T], returning a [Ptr] to it
     pub fn add(&mut self, val: T) -> Ptr<T> {
         let rv = Ptr::new(val);
-        self.0.push(Ptr::clone(&rv));
+        self.0.push(rv.clone());
         rv
     }
     /// Alias for `add`
@@ -134,5 +140,15 @@ impl<T: Clone> Deref for PtrList<T> {
 impl<T: Clone> DerefMut for PtrList<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
+    }
+}
+impl<T: Clone> From<Vec<Ptr<T>>> for PtrList<T> {
+    fn from(v: Vec<Ptr<T>>) -> Self {
+        Self::from_ptrs(v)
+    }
+}
+impl<T: Clone> From<Vec<T>> for PtrList<T> {
+    fn from(v: Vec<T>) -> Self {
+        Self::from_owned(v)
     }
 }

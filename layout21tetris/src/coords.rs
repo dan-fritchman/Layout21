@@ -128,6 +128,23 @@ impl std::ops::Add<PrimPitches> for PrimPitches {
         }
     }
 }
+impl std::ops::Sub<PrimPitches> for PrimPitches {
+    type Output = PrimPitches;
+    /// Subtracting primitive-pitch values.
+    /// Panics if the two are not in the same direction.
+    fn sub(self, rhs: Self) -> Self::Output {
+        if self.dir != rhs.dir {
+            panic!(
+                "Invalid attempt to add opposite-direction {:?} and {:?}",
+                self, rhs
+            );
+        }
+        Self {
+            dir: self.dir,
+            num: self.num - rhs.num,
+        }
+    }
+}
 
 /// A Scalar Value in Layer-Pitches
 #[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -185,15 +202,16 @@ impl From<(Int, Int)> for Xy<DbUnits> {
 }
 impl From<(Int, Int)> for Xy<PrimPitches> {
     fn from(tup: (Int, Int)) -> Self {
-        Self {
-            x: PrimPitches {
+        Self::new(
+            PrimPitches {
                 dir: Dir::Horiz,
                 num: tup.0.into(),
             },
-            y: PrimPitches {
+            PrimPitches {
                 dir: Dir::Vert,
                 num: tup.1.into(),
             },
-        }
+        )
     }
 }
+

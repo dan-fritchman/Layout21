@@ -337,7 +337,7 @@ impl<'lib> Track<'lib> {
         let seg = &mut self.segments[segidx];
         // Check for conflicts, and get a copy of our segment-type as we will likely insert a similar segment
         let tpcopy = match seg.tp {
-            TrackSegmentType::Blockage { src } => Err(TrackError::BlockageConflict(src.clone())),
+            TrackSegmentType::Blockage { ref src } => Err(TrackError::BlockageConflict(src.clone())),
             TrackSegmentType::Cut { src } => Err(TrackError::CutConflict(src.clone())),
             TrackSegmentType::Wire { .. } => Ok(seg.tp.clone()),
             TrackSegmentType::Rail(_) => Ok(seg.tp.clone()),
@@ -373,11 +373,11 @@ impl<'lib> Track<'lib> {
     }
     /// Insert a blockage from `start` to `stop`.
     /// Fails if the region is not a contiguous wire segment.
-    pub fn block(&mut self, start: DbUnits, stop: DbUnits, src: &'lib Instance) -> TrackResult<()> {
+    pub fn block(&mut self, start: DbUnits, stop: DbUnits, src: &Ptr<Instance>) -> TrackResult<()> {
         let seg = TrackSegment {
             start,
             stop,
-            tp: TrackSegmentType::Blockage { src },
+            tp: TrackSegmentType::Blockage { src: src.clone() },
         };
         self.cut_or_block(seg)
     }
@@ -453,7 +453,7 @@ impl<'lib> LayerPeriod<'lib> {
         Ok(())
     }
     /// Block all [Track]s from `start` to `stop`,
-    pub fn block(&mut self, start: DbUnits, stop: DbUnits, src: &'lib Instance) -> TrackResult<()> {
+    pub fn block(&mut self, start: DbUnits, stop: DbUnits, src: &Ptr<Instance>) -> TrackResult<()> {
         for t in self.rails.iter_mut() {
             t.block(start, stop, src)?;
         }
@@ -476,7 +476,7 @@ pub struct TrackSegment<'lib> {
 #[derive(Debug, Clone)]
 pub enum TrackSegmentType<'lib> {
     Cut { src: &'lib TrackIntersection },
-    Blockage { src: &'lib Instance },
+    Blockage { src: Ptr<Instance> },
     Wire { src: Option<&'lib Assign> },
     Rail(RailKind),
 }
@@ -532,6 +532,6 @@ pub enum TrackError {
     OutOfBounds(DbUnits),
     Overlap(DbUnits, DbUnits),
     CutConflict(TrackIntersection),
-    BlockageConflict(Instance),
+    BlockageConflict(Ptr<Instance>),
 }
 pub type TrackResult<T> = Result<T, TrackError>;

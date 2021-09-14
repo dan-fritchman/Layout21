@@ -9,6 +9,8 @@ pub mod coords;
 pub mod interface;
 pub mod library;
 pub mod outline;
+pub mod placement;
+pub mod placer;
 pub mod rawconv;
 pub mod stack;
 pub mod validate;

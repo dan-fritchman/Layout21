@@ -8,10 +8,20 @@ use super::outline::Outline;
 use super::raw::{self, Dir, LayoutError, LayoutResult, Units};
 use super::stack::*;
 use super::{abstrakt, rawconv, validate};
-use crate::utils::Ptr;
+use crate::utils::{Ptr, PtrList};
+use crate::coords::{Xy, PrimPitches, Int};
+use crate::placement::Place;
+
+// FIXME: this would preferably live in `place.rs`, 
+// but unit tests don't seem to find it there (yet) (?).
+impl From<(Int, Int)> for Place<PrimPitches> {
+    fn from(tup: (Int, Int)) -> Self {
+        Self::Abs(Xy::from(tup))
+    }
+}
 
 /// Create a [Stack] used by a number of tests
-fn stack() -> LayoutResult<Stack> {
+pub fn stack() -> LayoutResult<Stack> {
     let mut rawlayers = raw::Layers::default();
     // Shorthands for the common purpose-numbers
     let metal_purps = [
@@ -145,7 +155,7 @@ fn empty_cell() -> LayoutResult<()> {
         name: "EmptyCell".into(),
         top_layer: 4,
         outline: Outline::rect(50, 5)?,
-        instances: Vec::new(),
+        instances: PtrList::new(),
         assignments: Vec::new(),
         cuts: Vec::new(),
     };
@@ -161,7 +171,7 @@ fn create_layout() -> LayoutResult<()> {
         name: "HereGoes".into(),
         top_layer: 3,
         outline: Outline::rect(50, 5)?,
-        instances: Vec::new(),
+        instances: PtrList::new(),
         assignments: vec![Assign {
             net: "clk".into(),
             at: TrackIntersection {
@@ -185,7 +195,7 @@ fn create_lib1() -> LayoutResult<()> {
             name: "HereGoes".into(),
             top_layer: 2,
             outline: Outline::rect(50, 5)?,
-            instances: Vec::new(),
+            instances: PtrList::new(),
             assignments: vec![Assign {
                 net: "clk".into(),
                 at: TrackIntersection {
@@ -249,7 +259,7 @@ fn create_lib2() -> LayoutResult<()> {
             top_layer: 2,
             outline: Outline::rect(100, 10)?,
 
-            instances: vec![],
+            instances: PtrList::new(),
             assignments: vec![],
             cuts: Vec::new(),
         }
@@ -267,7 +277,7 @@ fn create_lib2() -> LayoutResult<()> {
                 loc: (20, 2).into(),
                 reflect_horiz: false,
                 reflect_vert: false,
-            }],
+            }].into(),
             assignments: vec![Assign {
                 net: "clk".into(),
                 at: TrackIntersection {
@@ -373,7 +383,7 @@ fn create_lib3() -> LayoutResult<()> {
                     reflect_horiz: false,
                     reflect_vert: false,
                 },
-            ],
+            ].into(),
             assignments: Vec::new(),
             cuts: Vec::new(),
         }
@@ -457,7 +467,7 @@ fn ro(unit: Ptr<cell::CellBag>) -> LayoutResult<cell::CellBag> {
                 reflect_horiz: false,
                 reflect_vert: true,
             };
-            hasunits.instances.push(inst);
+            hasunits.instances.add(inst);
 
             // Assign the input
             let m1track = (y * 12 + 9) as usize;
@@ -541,7 +551,7 @@ fn _wrap_gds(lib: &mut Library) -> LayoutResult<Ptr<cell::CellBag>> {
         0,                                      // top_layer
         Outline::rect(unitsize.0, unitsize.1)?, // outline
     );
-    wrapper.instances.push(Instance {
+    wrapper.instances.add(Instance {
         inst_name: "wrapped".into(),
         cell: wrapped,
         loc: (0, 0).into(),
@@ -562,7 +572,7 @@ fn gds_wrapped_ro() -> LayoutResult<()> {
 }
 
 /// Export [Library] `lib` in several formats
-fn exports(lib: Library) -> LayoutResult<()> {
+pub fn exports(lib: Library) -> LayoutResult<()> {
     use crate::utils::SerializationFormat::Yaml;
 
     let raw = rawconv::RawExporter::convert(lib, stack()?)?;

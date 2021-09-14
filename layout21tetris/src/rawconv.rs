@@ -34,7 +34,7 @@ struct TempCell<'lib> {
     /// Reference to the source [Library]
     lib: &'lib Library,
     /// Instances and references to their definitions
-    instances: Vec<&'lib Instance>,
+    instances: PtrList<Instance>,
     /// Cuts, arranged by Layer
     cuts: Vec<Vec<validate::ValidCut<'lib>>>,
     /// Validated Assignments
@@ -52,7 +52,7 @@ struct TempCellLayer<'lib> {
     /// Reference to the parent cell
     cell: &'lib TempCell<'lib>,
     /// Instances which intersect with this layer and period
-    instances: Vec<&'lib Instance>,
+    instances: PtrList<Instance>,
     /// Pitch per layer-period
     pitch: DbUnits,
     /// Number of layer-periods
@@ -69,51 +69,11 @@ struct TempPeriod<'lib> {
     cell: &'lib TempCell<'lib>,
     layer: &'lib TempCellLayer<'lib>,
     /// Instance Blockages
-    blockages: Vec<(PrimPitches, PrimPitches, &'lib Instance)>,
+    blockages: Vec<(PrimPitches, PrimPitches, Ptr<Instance>)>,
     cuts: Vec<&'lib validate::ValidCut<'lib>>,
     top_assns: Vec<AssignKey>,
     bot_assns: Vec<AssignKey>,
 }
-
-/// # Dependency-Orderer
-///
-/// Ideally an iterator, but really just a struct that creates an in-order [Vec] at creation time.
-#[derive(Debug)]
-pub struct DepOrder<'lib> {
-    lib: &'lib Library,
-    stack: Vec<Ptr<cell::CellBag>>,
-    seen: HashSet<Ptr<cell::CellBag>>,
-}
-impl<'lib> DepOrder<'lib> {
-    fn order(lib: &'lib Library) -> Vec<Ptr<cell::CellBag>> {
-        let mut myself = Self {
-            lib,
-            stack: Vec::new(),
-            seen: HashSet::new(),
-        };
-        for cell in myself.lib.cells.as_slice() {
-            myself.push(cell);
-        }
-        myself.stack
-    }
-    fn push(&mut self, ptr: &Ptr<cell::CellBag>) {
-        // If the Cell hasn't already been visited, depth-first search it
-        if !self.seen.contains(&ptr) {
-            // Read the cell-pointer
-            let cell = ptr.read().unwrap();
-            // If the cell has an implementation, visit its [Instance]s before inserting it
-            if let Some(layout) = &cell.layout {
-                for inst in &layout.instances {
-                    self.push(&inst.cell);
-                }
-            }
-            // And insert the cell (pointer) itself
-            self.seen.insert(Ptr::clone(ptr));
-            self.stack.push(Ptr::clone(ptr));
-        }
-    }
-}
-
 /// # Converter from [Library] and constituent elements to [raw::Library]
 pub struct RawExporter<'lib> {
     /// Source [Library]
@@ -188,7 +148,7 @@ impl<'lib> RawExporter<'lib> {
             // Get write-access to the raw-lib
             let mut rawlib = rawlibptr.write()?;
             // Convert each defined [Cell] to a [raw::CellBag]
-            for srcptr in DepOrder::order(&self.lib).iter() {
+            for srcptr in self.lib.dep_order() {
                 let rawptr = self.export_cell(&*srcptr.read()?, &mut rawlib.cells)?;
                 self.rawcells.insert(srcptr.clone(), rawptr);
             }
@@ -265,8 +225,11 @@ impl<'lib> RawExporter<'lib> {
         let insts = layout
             .instances
             .iter()
-            .map(|inst| self.export_instance(inst).unwrap()) // FIXME: error handling
-            .collect();
+            .map(|ptr| {
+                let inst = ptr.read()?;
+                self.export_instance(&*inst)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         // Aaaand create our new [raw::CellBag]
         Ok(raw::LayoutImpl {
             name: layout.name.clone(),
@@ -294,7 +257,7 @@ impl<'lib> RawExporter<'lib> {
         Ok(raw::Instance {
             inst_name: inst.inst_name.clone(),
             cell: rawkey.clone(),
-            loc: self.export_xy(&inst.loc),
+            loc: self.export_xy(inst.loc.abs()?).into(),
             reflect_vert,
             angle,
         })
@@ -302,11 +265,7 @@ impl<'lib> RawExporter<'lib> {
     /// Create a [TempCell], organizing [Cell] data in more-convenient fashion for conversion
     fn temp_cell<'a>(&'a self, layout: &'a LayoutImpl) -> LayoutResult<TempCell<'a>> {
         // Collect references to its instances
-        let instances: Vec<&Instance> = layout
-            .instances
-            .iter()
-            // .map(|inst| &inst)
-            .collect();
+        let instances = layout.instances.clone();
         // Validate `cuts`, and arrange them by layer
         let mut cuts: Vec<Vec<validate::ValidCut>> = vec![vec![]; layout.top_layer];
         for cut in layout.cuts.iter() {
@@ -352,11 +311,11 @@ impl<'lib> RawExporter<'lib> {
             .spec
             .to_layer_period(temp_period.periodnum, temp_period.layer.span.0)?;
         // Insert blockages on each track
-        for (n1, n2, inst) in temp_period.blockages.iter() {
+        for (n1, n2, inst_ptr) in temp_period.blockages.iter() {
             // Convert primitive-pitch-based blockages to db units
             let start = self.db_units(*n1);
             let stop = self.db_units(*n2);
-            let res = layer_period.block(start, stop, inst);
+            let res = layer_period.block(start, stop, &inst_ptr);
             self.ok(
                 res,
                 format!(
@@ -677,12 +636,15 @@ impl<'lib> RawExporter<'lib> {
     ) -> LayoutResult<TempCellLayer<'a>> {
         // Sort out which of the cell's [Instance]s come up to this layer
         let mut instances = Vec::with_capacity(temp_cell.instances.len());
-        for inst in &temp_cell.instances {
+        for ptr in temp_cell.instances.iter() {
+            let inst = ptr.read()?;
             let cell = inst.cell.read()?;
             if cell.top_layer()? >= layer.index {
-                instances.push(*inst);
+                instances.push(ptr.clone());
             }
         }
+        // And convert it to a [PtrList]
+        let instances = PtrList::from_ptrs(instances);
 
         // Sort out which direction we're working across
         let cell = temp_cell.cell;
@@ -724,13 +686,14 @@ impl<'lib> RawExporter<'lib> {
         // For each row, decide which instances intersect
         // Convert these into blockage-areas for the tracks
         let mut blockages = Vec::with_capacity(temp_layer.instances.len());
-        for inst in &temp_layer.instances {
+        for ptr in temp_layer.instances.iter() {
+            let inst = &*ptr.read()?;
             if self.instance_intersects(inst, layer, periodnum)? {
                 // Create the blockage
                 let cell = inst.cell.read()?;
-                let start = inst.loc[dir];
+                let start = inst.loc.abs()?[dir];
                 let stop = start + cell.outline()?.max(dir);
-                blockages.push((start, stop, *inst));
+                blockages.push((start, stop, ptr.clone()));
             }
         }
 
@@ -791,7 +754,7 @@ impl<'lib> RawExporter<'lib> {
         // Grab the layer's *periodic* direction
         let dir = !layer.spec.dir;
         // Get its starting location in that dimension
-        let inst_start = self.db_units(inst.loc[dir]);
+        let inst_start = self.db_units(inst.loc.abs()?[dir]);
         // Sort out whether it's been reflected in this direction
         let reflected = match dir {
             Dir::Horiz => inst.reflect_horiz,

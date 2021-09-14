@@ -481,7 +481,7 @@ impl<'lib> DepOrder<'lib> {
             stack: Vec::new(),
             seen: HashSet::new(),
         };
-        for cell in myself.lib.cells.as_slice() {
+        for cell in myself.lib.cells.iter() {
             myself.push(cell);
         }
         myself.stack

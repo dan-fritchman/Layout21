@@ -211,7 +211,7 @@ mod tests {
             .into_iter()
             .collect(),
         };
-        let cells = PtrList::new(vec![Ptr::new(a.into())]);
+        let cells = vec![a.into()].into();
         let lib = Library {
             name: "to_lef_lib1".into(),
             layers: Ptr::new(layers),

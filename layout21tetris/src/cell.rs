@@ -11,9 +11,10 @@ use enum_dispatch::enum_dispatch;
 
 // Local imports
 use crate::coords::{PrimPitches, Xy};
-use crate::raw::{LayoutError, LayoutResult};
+use crate::placement::Place;
+use crate::raw::{Dir, LayoutError, LayoutResult};
 use crate::stack::{Assign, RelZ, TrackIntersection};
-use crate::utils::Ptr;
+use crate::utils::{Ptr, PtrList};
 use crate::{abstrakt, interface, outline, raw};
 
 /// # Layout Cell Implementation
@@ -29,7 +30,7 @@ pub struct LayoutImpl {
     /// Outline shape, counted in x and y pitches of `stack`
     pub outline: outline::Outline,
     /// Layout Instances
-    pub instances: Vec<Instance>,
+    pub instances: PtrList<Instance>,
     /// Net-to-track assignments
     pub assignments: Vec<Assign>,
     /// Track cuts
@@ -43,7 +44,7 @@ impl LayoutImpl {
             name,
             top_layer,
             outline,
-            instances: Vec::new(),
+            instances: PtrList::new(),
             assignments: Vec::new(),
             cuts: Vec::new(),
         }
@@ -249,10 +250,45 @@ pub struct Instance {
     pub inst_name: String,
     /// Cell Definition Reference
     pub cell: Ptr<CellBag>,
-    /// Location, in primitive pitches
-    pub loc: Xy<PrimPitches>,
+    /// Location of the Instance origin
+    /// This origin-position holds regardless of either `reflect` field.
+    /// If specified in absolute coordinates, location-units are [PrimPitches].
+    pub loc: Place<PrimPitches>,
     /// Horizontal Reflection
     pub reflect_horiz: bool,
     /// Vertical Reflection
     pub reflect_vert: bool,
+}
+impl Instance {
+    /// Retrieve this Instance's bounding rectangle, specified in [PrimPitches].
+    /// Instance location must be resolved to absolute coordinates, or this method will fail.
+    /// The first returned coordinate is the lower-left corner,
+    /// and the second is the upper-right corner.
+    pub fn boundbox(&self) -> LayoutResult<(Xy<PrimPitches>, Xy<PrimPitches>)> {
+        let loc = self.loc.abs()?;
+        let cell = self.cell.read()?;
+        let outline = cell.outline()?;
+        let (x0, x1) = match self.reflect_horiz {
+            false => (loc.x, loc.x + outline.xmax()),
+            true => (loc.x - outline.xmax(), loc.x),
+        };
+        let (y0, y1) = match self.reflect_vert {
+            false => (loc.y, loc.y + outline.ymax()),
+            true => (loc.y - outline.ymax(), loc.y),
+        };
+        Ok((Xy::new(x0, y0), Xy::new(x1, y1)))
+    }
+    /// Size of the Instance's rectangular `boundbox`, i.e. the zero-origin `boundbox` of its `cell`.
+    pub fn boundbox_size(&self) -> LayoutResult<Xy<PrimPitches>> {
+        let cell = self.cell.read()?;
+        let outline = cell.outline()?;
+        Ok(Xy::new(outline.xmax(), outline.ymax()))
+    }
+    /// Boolean indication of whether this Instance is reflected in direction `dir`
+    pub fn reflected(&self, dir: Dir) -> bool {
+        match dir {
+            Dir::Horiz => self.reflect_horiz,
+            Dir::Vert => self.reflect_vert,
+        }
+    }
 }
