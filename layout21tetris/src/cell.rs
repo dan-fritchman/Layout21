@@ -10,6 +10,7 @@
 use enum_dispatch::enum_dispatch;
 
 // Local imports
+use crate::bbox::{BoundBox, HasBoundBox};
 use crate::coords::{PrimPitches, Xy};
 use crate::placement::Place;
 use crate::raw::{Dir, LayoutError, LayoutResult};
@@ -260,11 +261,26 @@ pub struct Instance {
     pub reflect_vert: bool,
 }
 impl Instance {
+    /// Boolean indication of whether this Instance is reflected in direction `dir`
+    pub fn reflected(&self, dir: Dir) -> bool {
+        match dir {
+            Dir::Horiz => self.reflect_horiz,
+            Dir::Vert => self.reflect_vert,
+        }
+    }
+    /// Size of the Instance's rectangular `boundbox`, i.e. the zero-origin `boundbox` of its `cell`.
+    pub fn boundbox_size(&self) -> LayoutResult<Xy<PrimPitches>> {
+        let cell = self.cell.read()?;
+        let outline = cell.outline()?;
+        Ok(Xy::new(outline.xmax(), outline.ymax()))
+    }
+}
+impl HasBoundBox for Instance {
+    type Units = PrimPitches;
+    type Error = LayoutError;
     /// Retrieve this Instance's bounding rectangle, specified in [PrimPitches].
     /// Instance location must be resolved to absolute coordinates, or this method will fail.
-    /// The first returned coordinate is the lower-left corner,
-    /// and the second is the upper-right corner.
-    pub fn boundbox(&self) -> LayoutResult<(Xy<PrimPitches>, Xy<PrimPitches>)> {
+    fn boundbox(&self) -> LayoutResult<BoundBox<PrimPitches>> {
         let loc = self.loc.abs()?;
         let cell = self.cell.read()?;
         let outline = cell.outline()?;
@@ -276,19 +292,6 @@ impl Instance {
             false => (loc.y, loc.y + outline.ymax()),
             true => (loc.y - outline.ymax(), loc.y),
         };
-        Ok((Xy::new(x0, y0), Xy::new(x1, y1)))
-    }
-    /// Size of the Instance's rectangular `boundbox`, i.e. the zero-origin `boundbox` of its `cell`.
-    pub fn boundbox_size(&self) -> LayoutResult<Xy<PrimPitches>> {
-        let cell = self.cell.read()?;
-        let outline = cell.outline()?;
-        Ok(Xy::new(outline.xmax(), outline.ymax()))
-    }
-    /// Boolean indication of whether this Instance is reflected in direction `dir`
-    pub fn reflected(&self, dir: Dir) -> bool {
-        match dir {
-            Dir::Horiz => self.reflect_horiz,
-            Dir::Vert => self.reflect_vert,
-        }
+        Ok(BoundBox::new(Xy::new(x0, y0), Xy::new(x1, y1)))
     }
 }

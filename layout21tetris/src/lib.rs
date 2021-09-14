@@ -4,6 +4,7 @@
 
 // Modules
 pub mod abstrakt;
+pub mod bbox;
 pub mod cell;
 pub mod coords;
 pub mod interface;

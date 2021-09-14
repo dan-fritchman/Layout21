@@ -2,16 +2,12 @@
 //! # Layout21 Placement Module
 //!
 
-// Crates.io
-use serde::{Deserialize, Serialize};
-
 // Local imports
 use crate::cell::Instance;
-use crate::coords::{HasUnits, Int, UnitSpeced, Xy};
+use crate::coords::{HasUnits, UnitSpeced, Xy};
 use crate::raw::{LayoutError, LayoutResult};
-use crate::stack::{Assign, RelZ, TrackIntersection};
+use crate::stack::TrackIntersection;
 use crate::utils::Ptr;
-use crate::{abstrakt, coords, interface, outline, raw};
 
 /// # Placement Enumeration
 ///
@@ -50,8 +46,6 @@ impl<T: HasUnits> From<RelativePlace> for Place<T> {
         Self::Rel(rel)
     }
 }
-
-
 
 #[derive(Debug, Clone)]
 pub struct RelativePlace {
@@ -118,4 +112,3 @@ pub struct Array {
 /// FIXME!
 #[derive(Debug, Clone)]
 pub struct PortRef;
-

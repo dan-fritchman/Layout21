@@ -337,7 +337,9 @@ impl<'lib> Track<'lib> {
         let seg = &mut self.segments[segidx];
         // Check for conflicts, and get a copy of our segment-type as we will likely insert a similar segment
         let tpcopy = match seg.tp {
-            TrackSegmentType::Blockage { ref src } => Err(TrackError::BlockageConflict(src.clone())),
+            TrackSegmentType::Blockage { ref src } => {
+                Err(TrackError::BlockageConflict(src.clone()))
+            }
             TrackSegmentType::Cut { src } => Err(TrackError::CutConflict(src.clone())),
             TrackSegmentType::Wire { .. } => Ok(seg.tp.clone()),
             TrackSegmentType::Rail(_) => Ok(seg.tp.clone()),
@@ -525,6 +527,12 @@ pub enum PrimitiveMode {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PrimitiveLayer {
     pub pitches: Xy<DbUnits>,
+}
+impl PrimitiveLayer {
+    /// Create a new [PrimitiveLayer] with the given pitches
+    pub fn new(pitches: Xy<DbUnits>) -> Self {
+        Self { pitches }
+    }
 }
 
 #[derive(Debug)]

@@ -8,11 +8,11 @@ use super::outline::Outline;
 use super::raw::{self, Dir, LayoutError, LayoutResult, Units};
 use super::stack::*;
 use super::{abstrakt, rawconv, validate};
-use crate::utils::{Ptr, PtrList};
-use crate::coords::{Xy, PrimPitches, Int};
+use crate::coords::{Int, PrimPitches, Xy};
 use crate::placement::Place;
+use crate::utils::{Ptr, PtrList};
 
-// FIXME: this would preferably live in `place.rs`, 
+// FIXME: this would preferably live in `place.rs`,
 // but unit tests don't seem to find it there (yet) (?).
 impl From<(Int, Int)> for Place<PrimPitches> {
     fn from(tup: (Int, Int)) -> Self {
@@ -20,131 +20,160 @@ impl From<(Int, Int)> for Place<PrimPitches> {
     }
 }
 
-/// Create a [Stack] used by a number of tests
-pub fn stack() -> LayoutResult<Stack> {
-    let mut rawlayers = raw::Layers::default();
-    // Shorthands for the common purpose-numbers
-    let metal_purps = [
-        (255, raw::LayerPurpose::Obstruction),
-        (20, raw::LayerPurpose::Drawing),
-        (5, raw::LayerPurpose::Label),
-        (16, raw::LayerPurpose::Pin),
-    ];
-    let via_purps = [
-        (255, raw::LayerPurpose::Obstruction),
-        (44, raw::LayerPurpose::Drawing),
-        (5, raw::LayerPurpose::Label),
-        (16, raw::LayerPurpose::Pin),
-    ];
-    // Add a few base-layers that we are used in imported cells,
-    // But not in our stack
-    rawlayers.add(raw::Layer::new(64, "nwell").add_pairs(&metal_purps)?);
-    rawlayers.add(raw::Layer::new(67, "li1").add_pairs(&metal_purps)?);
-    // Create the test stack
-    let stack = Stack {
-        units: Units::Nano,
-        boundary_layer: Some(rawlayers.add(raw::Layer::from_pairs(
-            236,
+/// # Sample Stacks
+/// Namespace for commonly re-used [Stack]s for testing.
+pub struct SampleStacks;
+
+impl SampleStacks {
+    /// As nearly empty a [Stack] as possible, while being raw-exportable.
+    /// Includes:
+    /// * A `boundary_layer`
+    /// * [raw::Layers] containing solely that boundary layer
+    /// * No metals or via layers
+    /// Generally useful for placement activities, particularly among [Instace]s.
+    pub fn empty() -> LayoutResult<Stack> {
+        let mut rawlayers = raw::Layers::default();
+        let boundary_layer = Some(rawlayers.add(raw::Layer::from_pairs(
+            0,
             &[(0, raw::LayerPurpose::Outline)],
-        )?)),
-        prim: PrimitiveLayer {
-            pitches: (460, 2720).into(),
-        },
-        layers: vec![
-            Layer {
-                name: "met1".into(),
-                entries: vec![
-                    TrackSpec::gnd(480),
-                    TrackSpec::pat(vec![TrackEntry::gap(200), TrackEntry::sig(140)], 6),
-                    TrackSpec::gap(200),
-                    TrackSpec::pwr(480),
-                ],
-                dir: Dir::Horiz,
-                offset: (-240).into(),
-                cutsize: (250).into(),
-                overlap: (480).into(),
-                raw: Some(rawlayers.add(raw::Layer::from_pairs(68, &metal_purps)?)),
-                flip: FlipMode::EveryOther,
-                prim: PrimitiveMode::Partial,
+        )?));
+        let stack = Stack {
+            units: Units::default(),
+            boundary_layer,
+            prim: PrimitiveLayer::new((100, 100).into()),
+            layers: Vec::new(), // No metal layers
+            vias: Vec::new(),   // No vias
+            rawlayers: Some(Ptr::new(rawlayers)),
+        };
+        Ok(stack)
+    }
+    /// Real(istic) PDK [Stack]
+    pub fn pdka() -> LayoutResult<Stack> {
+        let mut rawlayers = raw::Layers::default();
+        // Shorthands for the common purpose-numbers
+        let metal_purps = [
+            (255, raw::LayerPurpose::Obstruction),
+            (20, raw::LayerPurpose::Drawing),
+            (5, raw::LayerPurpose::Label),
+            (16, raw::LayerPurpose::Pin),
+        ];
+        let via_purps = [
+            (255, raw::LayerPurpose::Obstruction),
+            (44, raw::LayerPurpose::Drawing),
+            (5, raw::LayerPurpose::Label),
+            (16, raw::LayerPurpose::Pin),
+        ];
+        // Add a few base-layers that we are used in imported/ primitive cells, but not in our stack
+        rawlayers.add(raw::Layer::new(64, "nwell").add_pairs(&metal_purps)?);
+        rawlayers.add(raw::Layer::new(67, "li1").add_pairs(&metal_purps)?);
+        // Create the test stack
+        let stack = Stack {
+            units: Units::Nano,
+            boundary_layer: Some(rawlayers.add(raw::Layer::from_pairs(
+                236,
+                &[(0, raw::LayerPurpose::Outline)],
+            )?)),
+            prim: PrimitiveLayer {
+                pitches: (460, 2720).into(),
             },
-            Layer {
-                name: "met2".into(),
-                entries: vec![TrackSpec::sig(140), TrackSpec::gap(320)],
-                dir: Dir::Vert,
-                cutsize: (250).into(),
-                offset: (-70).into(),
-                overlap: (0).into(),
-                raw: Some(rawlayers.add(raw::Layer::from_pairs(69, &metal_purps)?)),
-                flip: FlipMode::None,
-                prim: PrimitiveMode::None,
-            },
-            Layer {
-                name: "met3".into(),
-                entries: vec![
-                    TrackSpec::gnd(480),
-                    TrackSpec::pat(vec![TrackEntry::gap(200), TrackEntry::sig(140)], 6),
-                    TrackSpec::gap(200),
-                    TrackSpec::pwr(480),
-                ],
-                dir: Dir::Horiz,
-                offset: (-240).into(),
-                cutsize: (250).into(),
-                overlap: (480).into(),
-                raw: Some(rawlayers.add(raw::Layer::from_pairs(70, &metal_purps)?)),
-                flip: FlipMode::EveryOther,
-                prim: PrimitiveMode::None,
-            },
-            Layer {
-                name: "met4".into(),
-                entries: vec![
-                    TrackSpec::gnd(510),
-                    TrackSpec::pat(vec![TrackEntry::gap(410), TrackEntry::sig(50)], 8),
-                    TrackSpec::gap(410),
-                    TrackSpec::pwr(510),
-                ],
-                dir: Dir::Vert,
-                cutsize: (250).into(),
-                offset: (-255).into(),
-                overlap: (510).into(),
-                raw: Some(rawlayers.add(raw::Layer::from_pairs(71, &metal_purps)?)),
-                flip: FlipMode::EveryOther,
-                prim: PrimitiveMode::None,
-            },
-        ],
-        vias: vec![
-            ViaLayer {
-                name: "mcon".into(),
-                between: (0, 1),
-                size: (240, 240).into(),
-                raw: Some(rawlayers.add(raw::Layer::from_pairs(67, &via_purps)?)),
-            },
-            ViaLayer {
-                name: "via1".into(),
-                between: (1, 2),
-                size: (240, 240).into(),
-                raw: Some(rawlayers.add(raw::Layer::from_pairs(68, &via_purps)?)),
-            },
-            ViaLayer {
-                name: "via2".into(),
-                between: (2, 3),
-                size: (240, 240).into(),
-                raw: Some(rawlayers.add(raw::Layer::from_pairs(69, &via_purps)?)),
-            },
-            ViaLayer {
-                name: "via3".into(),
-                between: (3, 4),
-                size: (240, 240).into(),
-                raw: Some(rawlayers.add(raw::Layer::from_pairs(70, &via_purps)?)),
-            },
-        ],
-        rawlayers: Some(Ptr::new(rawlayers)),
-    };
-    Ok(stack)
+            layers: vec![
+                Layer {
+                    name: "met1".into(),
+                    entries: vec![
+                        TrackSpec::gnd(480),
+                        TrackSpec::pat(vec![TrackEntry::gap(200), TrackEntry::sig(140)], 6),
+                        TrackSpec::gap(200),
+                        TrackSpec::pwr(480),
+                    ],
+                    dir: Dir::Horiz,
+                    offset: (-240).into(),
+                    cutsize: (250).into(),
+                    overlap: (480).into(),
+                    raw: Some(rawlayers.add(raw::Layer::from_pairs(68, &metal_purps)?)),
+                    flip: FlipMode::EveryOther,
+                    prim: PrimitiveMode::Partial,
+                },
+                Layer {
+                    name: "met2".into(),
+                    entries: vec![TrackSpec::sig(140), TrackSpec::gap(320)],
+                    dir: Dir::Vert,
+                    cutsize: (250).into(),
+                    offset: (-70).into(),
+                    overlap: (0).into(),
+                    raw: Some(rawlayers.add(raw::Layer::from_pairs(69, &metal_purps)?)),
+                    flip: FlipMode::None,
+                    prim: PrimitiveMode::None,
+                },
+                Layer {
+                    name: "met3".into(),
+                    entries: vec![
+                        TrackSpec::gnd(480),
+                        TrackSpec::pat(vec![TrackEntry::gap(200), TrackEntry::sig(140)], 6),
+                        TrackSpec::gap(200),
+                        TrackSpec::pwr(480),
+                    ],
+                    dir: Dir::Horiz,
+                    offset: (-240).into(),
+                    cutsize: (250).into(),
+                    overlap: (480).into(),
+                    raw: Some(rawlayers.add(raw::Layer::from_pairs(70, &metal_purps)?)),
+                    flip: FlipMode::EveryOther,
+                    prim: PrimitiveMode::None,
+                },
+                Layer {
+                    name: "met4".into(),
+                    entries: vec![
+                        TrackSpec::gnd(510),
+                        TrackSpec::pat(vec![TrackEntry::gap(410), TrackEntry::sig(50)], 8),
+                        TrackSpec::gap(410),
+                        TrackSpec::pwr(510),
+                    ],
+                    dir: Dir::Vert,
+                    cutsize: (250).into(),
+                    offset: (-255).into(),
+                    overlap: (510).into(),
+                    raw: Some(rawlayers.add(raw::Layer::from_pairs(71, &metal_purps)?)),
+                    flip: FlipMode::EveryOther,
+                    prim: PrimitiveMode::None,
+                },
+            ],
+            vias: vec![
+                ViaLayer {
+                    name: "mcon".into(),
+                    between: (0, 1),
+                    size: (240, 240).into(),
+                    raw: Some(rawlayers.add(raw::Layer::from_pairs(67, &via_purps)?)),
+                },
+                ViaLayer {
+                    name: "via1".into(),
+                    between: (1, 2),
+                    size: (240, 240).into(),
+                    raw: Some(rawlayers.add(raw::Layer::from_pairs(68, &via_purps)?)),
+                },
+                ViaLayer {
+                    name: "via2".into(),
+                    between: (2, 3),
+                    size: (240, 240).into(),
+                    raw: Some(rawlayers.add(raw::Layer::from_pairs(69, &via_purps)?)),
+                },
+                ViaLayer {
+                    name: "via3".into(),
+                    between: (3, 4),
+                    size: (240, 240).into(),
+                    raw: Some(rawlayers.add(raw::Layer::from_pairs(70, &via_purps)?)),
+                },
+            ],
+            rawlayers: Some(Ptr::new(rawlayers)),
+        };
+        Ok(stack)
+    }
 }
-/// Run the test-stack through validation
+/// Run the test-stacks through validation
 #[test]
 fn validate_stack() -> LayoutResult<()> {
-    let s = stack()?;
+    let s = SampleStacks::empty()?;
+    validate::StackValidator::validate(s)?;
+    let s = SampleStacks::pdka()?;
     validate::StackValidator::validate(s)?;
     Ok(())
 }
@@ -161,7 +190,7 @@ fn empty_cell() -> LayoutResult<()> {
     };
     let mut lib = Library::new("EmptyCellLib");
     let _c2 = lib.cells.insert(cell::CellBag::from(c));
-    exports(lib)?;
+    exports(lib, SampleStacks::pdka()?)?;
     Ok(())
 }
 /// Create a layout-implementation
@@ -246,7 +275,7 @@ fn create_lib1() -> LayoutResult<()> {
         }
         .into(),
     );
-    exports(lib)
+    exports(lib, SampleStacks::pdka()?)
 }
 /// Create a cell with instances
 #[test]
@@ -277,7 +306,8 @@ fn create_lib2() -> LayoutResult<()> {
                 loc: (20, 2).into(),
                 reflect_horiz: false,
                 reflect_vert: false,
-            }].into(),
+            }]
+            .into(),
             assignments: vec![Assign {
                 net: "clk".into(),
                 at: TrackIntersection {
@@ -291,7 +321,7 @@ fn create_lib2() -> LayoutResult<()> {
         }
         .into(),
     );
-    exports(lib)
+    exports(lib, SampleStacks::pdka()?)
 }
 
 /// Create an abstract layout, with its variety of supported port types
@@ -383,13 +413,14 @@ fn create_lib3() -> LayoutResult<()> {
                     reflect_horiz: false,
                     reflect_vert: false,
                 },
-            ].into(),
+            ]
+            .into(),
             assignments: Vec::new(),
             cuts: Vec::new(),
         }
         .into(),
     );
-    exports(lib)
+    exports(lib, SampleStacks::pdka()?)
 }
 
 /// Create a cell with abstract instances
@@ -400,7 +431,7 @@ fn create_lib4() -> LayoutResult<()> {
     let unit = lib.cells.insert(unit); // Insert and get a shared-pointer
     let ro = ro(unit)?; // Create the RO level
     lib.cells.insert(ro); // And insert it
-    exports(lib)
+    exports(lib, SampleStacks::pdka()?)
 }
 fn abstract_unit() -> Result<abstrakt::LayoutAbstract, LayoutError> {
     let unitsize = (18, 1);
@@ -520,7 +551,7 @@ fn ro(unit: Ptr<cell::CellBag>) -> LayoutResult<cell::CellBag> {
 fn wrap_gds() -> LayoutResult<()> {
     let mut lib = Library::new("wrap_gds");
     _wrap_gds(&mut lib)?;
-    exports(lib)
+    exports(lib, SampleStacks::pdka()?)
 }
 /// Most internal implementation of the `wrap_gds` test
 fn _wrap_gds(lib: &mut Library) -> LayoutResult<Ptr<cell::CellBag>> {
@@ -528,7 +559,7 @@ fn _wrap_gds(lib: &mut Library) -> LayoutResult<Ptr<cell::CellBag>> {
     let gds_fname = resource("ginv.gds");
     let gds = raw::gds::gds21::GdsLibrary::load(&gds_fname)?;
 
-    let stack = stack()?;
+    let stack = SampleStacks::pdka()?;
 
     let rawlib = raw::Library::from_gds(&gds, Some(Ptr::clone(&stack.rawlayers.unwrap())))?;
     assert_eq!(rawlib.cells.len(), 1);
@@ -568,14 +599,14 @@ fn gds_wrapped_ro() -> LayoutResult<()> {
     let unit = _wrap_gds(&mut lib)?;
     let ro = ro(unit)?; // Create the RO level
     lib.cells.insert(ro); // And add it to the Library
-    exports(lib)
+    exports(lib, SampleStacks::pdka()?)
 }
 
 /// Export [Library] `lib` in several formats
-pub fn exports(lib: Library) -> LayoutResult<()> {
+pub fn exports(lib: Library, stack: Stack) -> LayoutResult<()> {
     use crate::utils::SerializationFormat::Yaml;
 
-    let raw = rawconv::RawExporter::convert(lib, stack()?)?;
+    let raw = rawconv::RawExporter::convert(lib, stack)?;
     let raw = raw.read()?;
 
     // Export to ProtoBuf, save as YAML and binary

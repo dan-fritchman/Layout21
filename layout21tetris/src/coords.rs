@@ -1,4 +1,6 @@
-//! # Layout21 Coordinate System(s)
+//!
+//! # Tetris Coordinate System(s)
+//!
 
 // Std-lib imports
 use std::convert::TryFrom;
@@ -214,4 +216,3 @@ impl From<(Int, Int)> for Xy<PrimPitches> {
         )
     }
 }
-

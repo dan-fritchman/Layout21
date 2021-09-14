@@ -3,7 +3,7 @@
 //!
 
 // Std-lib
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fmt::Debug;
 

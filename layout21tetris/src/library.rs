@@ -3,7 +3,7 @@
 //!
 
 // Std-lib
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 // Local imports
 use crate::raw::LayoutResult;

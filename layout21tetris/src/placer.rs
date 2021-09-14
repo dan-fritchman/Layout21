@@ -5,14 +5,15 @@
 //!
 
 // Std-lib
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 // Local imports
-use crate::cell::{CellBag, Instance, LayoutImpl};
+use crate::bbox::HasBoundBox;
+use crate::cell::{Instance, LayoutImpl};
 use crate::coords::{PrimPitches, Xy};
 use crate::library::Library;
 use crate::placement::{Place, Placeable, RelativePlace, Side};
-use crate::raw::{Dir, LayoutResult};
+use crate::raw::{Dir, LayoutError, LayoutResult};
 use crate::stack::Stack;
 use crate::utils::Ptr;
 
@@ -45,7 +46,7 @@ impl Placer {
     fn place_layout(&mut self, layout: &LayoutImpl) -> LayoutResult<()> {
         // Iterate over the layout's instances in dependency order,
         // updating any relative-places to absolute.
-        for inst_ptr in DepOrder::order(layout).iter() {
+        for inst_ptr in DepOrder::order(layout)?.iter() {
             let mut inst = inst_ptr.write()?;
             inst.loc = match &inst.loc {
                 Place::Abs(a) => Place::Abs(*a), // Already done
@@ -58,7 +59,7 @@ impl Placer {
         }
         Ok(())
     }
-    ///
+    /// Resolve a location of [Instance] `inst` relative to its [RelativePlace] `rel`.
     fn resolve_instance_place(
         &mut self,
         inst: &Instance,
@@ -68,50 +69,43 @@ impl Placer {
             Placeable::Instance(ref ptr) => ptr,
             _ => unimplemented!(), // FIXME: other variants TBC
         };
-        let to_inst = to.read()?;
-        let bbox = to_inst.boundbox()?;
-
+        // The coordinate axes here are referred to as `side`, corresponding to `rel.side`, and `align`, corresponding to `rel.align`.
+        // Mapping these back to (x,y) happens at the very end.
         // FIXME: checks that `side` and `align` are orthogonal should come earlier
 
-        // The coordinate axes here are referred to as `adjacent`, corresponding to `rel.side`,
-        // and `align`, corresponding to `rel.align`.
-        // Mapping these back to (x,y) happens at the very end.
-        let adjacent_axis = match rel.side {
+        // Get the relative-to instance's bounding box
+        let to_inst = to.read()?;
+        let bbox = to_inst.boundbox()?;
+        // Get its edge-coordinates in each axis
+        let mut side_coord = bbox.side(rel.side);
+        let mut align_coord = bbox.side(rel.align);
+        let side_axis = match rel.side {
             Side::Left | Side::Right => Dir::Horiz,
             Side::Top | Side::Bottom => Dir::Vert,
         };
-        let align_axis = adjacent_axis.other();
-
-        let something = match rel.side {
-            Side::Left | Side::Bottom => bbox.0,
-            Side::Top | Side::Right => bbox.1,
-        };
-        let (mut adjacent_coord, mut align_coord) = match adjacent_axis {
-            Dir::Horiz => (something.x, something.y),
-            Dir::Vert => (something.y, something.x),
-        };
-        // Sort out whether the instance needs an offset in each axis
-        let offset_adjacent = match rel.side {
-            Side::Left | Side::Bottom => !inst.reflected(adjacent_axis),
-            Side::Top | Side::Right => inst.reflected(adjacent_axis),
+        let align_axis = side_axis.other();
+        // Sort out whether the instance needs a reflection-based offset in each axis
+        let offset_side = match rel.side {
+            Side::Left | Side::Bottom => !inst.reflected(side_axis),
+            Side::Top | Side::Right => inst.reflected(side_axis),
         };
         let offset_align = match rel.align {
-            Side::Left | Side::Bottom => !inst.reflected(align_axis),
-            Side::Top | Side::Right => inst.reflected(align_axis),
+            Side::Left | Side::Bottom => inst.reflected(align_axis),
+            Side::Top | Side::Right => !inst.reflected(align_axis),
         };
         // Add in any reflection-based offsets
-        if offset_adjacent || offset_align {
+        if offset_side || offset_align {
             let inst_size = inst.boundbox_size()?;
-            if offset_adjacent {
-                adjacent_coord = adjacent_coord + inst_size[adjacent_axis];
+            if offset_side {
+                side_coord = side_coord - inst_size[side_axis];
             }
             if offset_align {
                 align_coord = align_coord - inst_size[align_axis];
             }
         }
         let res = match rel.side {
-            Side::Left | Side::Right => Xy::new(adjacent_coord, align_coord),
-            Side::Top | Side::Bottom => Xy::new(align_coord, adjacent_coord),
+            Side::Left | Side::Right => Xy::new(side_coord, align_coord),
+            Side::Top | Side::Bottom => Xy::new(align_coord, side_coord),
         };
         Ok(res)
     }
@@ -125,48 +119,63 @@ impl Placer {
 /// then returns an ordered vector of pointers to its [Instance]s.
 ///
 #[derive(Debug)]
-pub struct DepOrder<'c> {
-    layout: &'c LayoutImpl,
+pub struct DepOrder {
+    /// Ordered, completed items
     stack: Vec<Ptr<Instance>>,
+    /// Hash-set of completed items, for quick membership tests
     seen: HashSet<Ptr<Instance>>,
+    /// Hash-set of pending items, for cycle detection
+    pending: HashSet<Ptr<Instance>>,
 }
-impl<'c> DepOrder<'c> {
-    fn order(layout: &'c LayoutImpl) -> Vec<Ptr<Instance>> {
+impl DepOrder {
+    fn order(layout: &LayoutImpl) -> LayoutResult<Vec<Ptr<Instance>>> {
+        let len = layout.instances.len();
         let mut this = Self {
-            layout,
-            stack: Vec::new(),
-            seen: HashSet::new(),
+            stack: Vec::with_capacity(len),
+            seen: HashSet::with_capacity(len),
+            pending: HashSet::new(),
         };
         for inst in layout.instances.iter() {
-            this.push(inst);
+            this.push(inst)?;
         }
-        this.stack
+        Ok(this.stack)
     }
-    fn push(&mut self, ptr: &Ptr<Instance>) {
+    fn push(&mut self, ptr: &Ptr<Instance>) -> LayoutResult<()> {
         // Depth-first search dependent Instance placements
-        // FIXME: cycle detection
         if !self.seen.contains(ptr) {
+            // Check for cycles, indicated if `ptr` is in the pending-set, i.e. an open recursive stack-frame.
+            if self.pending.contains(ptr) {
+                return Err(LayoutError::Tbd);
+            }
+            self.pending.insert(ptr.clone());
             // Process the Instance, particularly its dependencies
-            self.process(ptr);
+            self.process(ptr)?;
+            // Check that `ptr` hasn't (somehow) been removed from the pending-set
+            let removed = self.pending.remove(ptr);
+            if !removed {
+                return Err(LayoutError::Tbd);
+            }
             // And insert the Instance (pointer) itself
             self.seen.insert(ptr.clone());
             self.stack.push(ptr.clone());
         }
+        Ok(())
     }
     /// Process `item`
-    fn process(&mut self, item: &Ptr<Instance>) {
+    fn process(&mut self, item: &Ptr<Instance>) -> LayoutResult<()> {
         // Read the instance-pointer
-        let inst = item.read().unwrap();
+        let inst = item.read()?;
         // If its place is relative, visit its dependencies first
         match &inst.loc {
             Place::Rel(rel) => {
                 match rel.to {
-                    Placeable::Instance(ref ptr) => self.push(ptr),
+                    Placeable::Instance(ref ptr) => self.push(ptr)?,
                     _ => unimplemented!(), // FIXME: other variants TBC
                 };
             }
             Place::Abs(_) => (), // Nothing to traverse
         }
+        Ok(())
     }
 }
 
@@ -174,23 +183,22 @@ impl<'c> DepOrder<'c> {
 mod tests {
     use super::*;
     use crate::outline::Outline;
-    use crate::tests::{exports, stack};
+    use crate::tests::{exports, SampleStacks};
 
     #[test]
     fn test_place1() -> LayoutResult<()> {
-        // Most-basic smoke-test
-        let stack = stack()?;
-        Placer::place(Library::new("plib"), stack)?;
+        // Most basic smoke-test
+        Placer::place(Library::new("plib"), SampleStacks::empty()?)?;
         Ok(())
     }
     #[test]
     fn test_place2() -> LayoutResult<()> {
         // Initial test of relative placement
-        let mut lib = Library::new("plib");
+        let mut lib = Library::new("test_place2");
         // Create a unit cell which we'll instantiate a few times
         let unit = LayoutImpl::new("unit", 0, Outline::rect(3, 7)?).into();
         let unit = lib.cells.add(unit);
-        // Create an initial instance, at the origin
+        // Create an initial instance
         let i0 = Instance {
             inst_name: "i0".into(),
             cell: unit.clone(),
@@ -201,7 +209,7 @@ mod tests {
         // Create the parent cell which instantiates it
         let mut parent = LayoutImpl::new("parent", 0, Outline::rect(100, 100)?);
         let i0 = parent.instances.add(i0);
-        // Now the new stuff: relative placements
+        // Create another Instance, placed relative to `i0`
         let i1 = Instance {
             inst_name: "i1".into(),
             cell: unit.clone(),
@@ -215,22 +223,121 @@ mod tests {
         };
         let i1 = parent.instances.add(i1);
         let parent = lib.cells.add(parent.into());
-        let (lib, _stack) = Placer::place(lib, stack()?)?;
+
+        // The real code-under-test: run placement
+        let (lib, stack) = Placer::place(lib, SampleStacks::empty()?)?;
+
+        // Checks on results
         assert_eq!(lib.cells.len(), 2);
         // Note these next two checks do *pointer* equality, not value equality
         assert_eq!(lib.cells[0], unit);
         assert_eq!(lib.cells[1], parent);
         // Now check the locations
-        let i0read = i0.read()?;
-        assert_eq!(*i0read.loc.abs()?, Xy::<PrimPitches>::from((47, 51)));
-        let i1read = i1.read()?;
-        assert_eq!(*i1read.loc.abs()?, Xy::<PrimPitches>::from((50, 51)));
-        exports(lib)
+        {
+            let inst = i0.read()?;
+            assert_eq!(*inst.loc.abs()?, Xy::<PrimPitches>::from((47, 51)));
+        }
+        {
+            let inst = i1.read()?;
+            assert_eq!(*inst.loc.abs()?, Xy::<PrimPitches>::from((50, 51)));
+        }
+        exports(lib, stack)
     }
     #[test]
     fn test_place3() -> LayoutResult<()> {
-        // FIXME: Test each relative side, alignment, and orientation
-        /// ## !?!?! ## Start here ## !?!?! ##
-        Ok(())
+        // Test each relative side and alignment
+        let mut lib = Library::new("test_place3");
+        // Create a big center cell
+        let big = LayoutImpl::new("big", 0, Outline::rect(75, 25)?).into();
+        let big = lib.cells.add(big);
+        // Create the parent cell which instantiates it
+        let mut parent = LayoutImpl::new("parent", 0, Outline::rect(225, 75)?);
+        // Create an initial instance
+        let ibig = Instance {
+            inst_name: "ibig".into(),
+            cell: big.clone(),
+            loc: (30, 20).into(),
+            reflect_horiz: false,
+            reflect_vert: false,
+        };
+        let ibig = parent.instances.add(ibig);
+        // Create a unit cell which we'll instantiate a few times around `ibig`
+        let lil = LayoutImpl::new("lil", 0, Outline::rect(11, 4)?).into();
+        let lil = lib.cells.add(lil);
+
+        // Relative-placement-adder closure
+        let mut add_inst = |inst_name: &str, side, align| {
+            let i = Instance {
+                inst_name: inst_name.into(),
+                cell: lil.clone(),
+                loc: Place::Rel(RelativePlace {
+                    to: Placeable::Instance(ibig.clone()),
+                    side,
+                    align,
+                }),
+                reflect_horiz: false,
+                reflect_vert: false,
+            };
+            parent.instances.add(i)
+        };
+        // Add a bunch of em
+        let i1 = add_inst("i1", Side::Left, Side::Bottom);
+        let i2 = add_inst("i2", Side::Right, Side::Bottom);
+        let i3 = add_inst("i3", Side::Bottom, Side::Left);
+        let i4 = add_inst("i4", Side::Bottom, Side::Right);
+        let i5 = add_inst("i5", Side::Left, Side::Top);
+        let i6 = add_inst("i6", Side::Right, Side::Top);
+        let i7 = add_inst("i7", Side::Top, Side::Left);
+        let i8 = add_inst("i8", Side::Top, Side::Right);
+
+        // Add `parent` to the library
+        let _parent = lib.cells.add(parent.into());
+
+        // The real code under test: run placement
+        let (lib, stack) = Placer::place(lib, SampleStacks::empty()?)?;
+
+        // And test the placed results
+        let bigbox = ibig.read()?.boundbox()?;
+        {
+            let ibox = i1.read()?.boundbox()?;
+            assert_eq!(ibox.side(Side::Right), bigbox.side(Side::Left));
+            assert_eq!(ibox.side(Side::Bottom), bigbox.side(Side::Bottom));
+        }
+        {
+            let ibox = i2.read()?.boundbox()?;
+            assert_eq!(ibox.side(Side::Left), bigbox.side(Side::Right));
+            assert_eq!(ibox.side(Side::Bottom), bigbox.side(Side::Bottom));
+        }
+        {
+            let ibox = i3.read()?.boundbox()?;
+            assert_eq!(ibox.side(Side::Top), bigbox.side(Side::Bottom));
+            assert_eq!(ibox.side(Side::Left), bigbox.side(Side::Left));
+        }
+        {
+            let ibox = i4.read()?.boundbox()?;
+            assert_eq!(ibox.side(Side::Top), bigbox.side(Side::Bottom));
+            assert_eq!(ibox.side(Side::Right), bigbox.side(Side::Right));
+        }
+        {
+            let ibox = i5.read()?.boundbox()?;
+            assert_eq!(ibox.side(Side::Right), bigbox.side(Side::Left));
+            assert_eq!(ibox.side(Side::Top), bigbox.side(Side::Top));
+        }
+        {
+            let ibox = i6.read()?.boundbox()?;
+            assert_eq!(ibox.side(Side::Left), bigbox.side(Side::Right));
+            assert_eq!(ibox.side(Side::Top), bigbox.side(Side::Top));
+        }
+        {
+            let ibox = i7.read()?.boundbox()?;
+            assert_eq!(ibox.side(Side::Bottom), bigbox.side(Side::Top));
+            assert_eq!(ibox.side(Side::Left), bigbox.side(Side::Left));
+        }
+        {
+            let ibox = i8.read()?.boundbox()?;
+            assert_eq!(ibox.side(Side::Bottom), bigbox.side(Side::Top));
+            assert_eq!(ibox.side(Side::Right), bigbox.side(Side::Right));
+        }
+        exports(lib, stack)
     }
 }
