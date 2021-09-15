@@ -12,7 +12,7 @@ use enum_dispatch::enum_dispatch;
 // Local imports
 use crate::bbox::{BoundBox, HasBoundBox};
 use crate::coords::{PrimPitches, Xy};
-use crate::placement::Place;
+use crate::placement::{Place, Placeable};
 use crate::raw::{Dir, LayoutError, LayoutResult};
 use crate::stack::{Assign, RelZ, TrackIntersection};
 use crate::utils::{Ptr, PtrList};
@@ -36,6 +36,8 @@ pub struct LayoutImpl {
     pub assignments: Vec<Assign>,
     /// Track cuts
     pub cuts: Vec<TrackIntersection>,
+    /// Placeable objects
+    pub places: PtrList<Placeable>,
 }
 impl LayoutImpl {
     /// Create a new [LayoutImpl]
@@ -48,6 +50,7 @@ impl LayoutImpl {
             instances: PtrList::new(),
             assignments: Vec::new(),
             cuts: Vec::new(),
+            places: PtrList::new(),
         }
     }
     /// Assign a net at the given coordinates.
@@ -181,6 +184,11 @@ impl CellBag {
             Err(LayoutError::Tbd)
         }
     }
+    /// Size of the [Cell]'s rectangular `boundbox`.
+    pub fn boundbox_size(&self) -> LayoutResult<Xy<PrimPitches>> {
+        let outline = self.outline()?;
+        Ok(Xy::new(outline.xmax(), outline.ymax()))
+    }
     /// Return whichever view highest-prioritorily dictates the top-layer
     pub fn top_layer(&self) -> LayoutResult<usize> {
         // FIXME: same commentary as `outline` above
@@ -271,8 +279,7 @@ impl Instance {
     /// Size of the Instance's rectangular `boundbox`, i.e. the zero-origin `boundbox` of its `cell`.
     pub fn boundbox_size(&self) -> LayoutResult<Xy<PrimPitches>> {
         let cell = self.cell.read()?;
-        let outline = cell.outline()?;
-        Ok(Xy::new(outline.xmax(), outline.ymax()))
+        cell.boundbox_size()
     }
 }
 impl HasBoundBox for Instance {

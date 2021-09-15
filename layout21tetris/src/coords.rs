@@ -87,12 +87,6 @@ impl std::ops::Rem<DbUnits> for DbUnits {
         self.raw().rem(rhs.raw())
     }
 }
-impl std::ops::Mul<DbUnits> for DbUnits {
-    type Output = Self;
-    fn mul(self, rhs: DbUnits) -> Self::Output {
-        Self(self.0 & rhs.0)
-    }
-}
 impl std::ops::Mul<Int> for DbUnits {
     type Output = Self;
     fn mul(self, rhs: Int) -> Self::Output {
@@ -112,11 +106,21 @@ pub struct PrimPitches {
     pub dir: Dir,
     pub num: Int,
 }
+impl PrimPitches {
+    /// Create a new [PrimPitches]
+    pub fn new(dir: Dir, num: Int) -> Self {
+        Self { dir, num }
+    }
+    /// Create a new [PrimPitches] with opposite sign of `self.num`
+    pub fn negate(&self) -> Self {
+        Self::new(self.dir, -self.num)
+    }
+}
 impl HasUnits for PrimPitches {}
+/// Numeric operations between primitive-pitch values.
+/// Generally panic if operating on two [PrimPitches] with different directions.
 impl std::ops::Add<PrimPitches> for PrimPitches {
     type Output = PrimPitches;
-    /// Adding primitive-pitch values.
-    /// Panics if the two are not in the same direction.
     fn add(self, rhs: Self) -> Self::Output {
         if self.dir != rhs.dir {
             panic!(
@@ -132,8 +136,6 @@ impl std::ops::Add<PrimPitches> for PrimPitches {
 }
 impl std::ops::Sub<PrimPitches> for PrimPitches {
     type Output = PrimPitches;
-    /// Subtracting primitive-pitch values.
-    /// Panics if the two are not in the same direction.
     fn sub(self, rhs: Self) -> Self::Output {
         if self.dir != rhs.dir {
             panic!(
@@ -145,6 +147,19 @@ impl std::ops::Sub<PrimPitches> for PrimPitches {
             dir: self.dir,
             num: self.num - rhs.num,
         }
+    }
+}
+/// Numeric operations between primitive-pitch values and regular numerics.
+impl std::ops::Mul<Int> for PrimPitches {
+    type Output = Self;
+    fn mul(self, rhs: Int) -> Self::Output {
+        Self::new(self.dir, self.num * rhs)
+    }
+}
+impl std::ops::Mul<usize> for PrimPitches {
+    type Output = Self;
+    fn mul(self, rhs: usize) -> Self::Output {
+        Self::new(self.dir, self.num * Int::try_from(rhs).unwrap())
     }
 }
 
@@ -182,6 +197,14 @@ impl<T: HasUnits> Xy<T> {
         Self {
             y: self.x,
             x: self.y,
+        }
+    }
+    /// Get the dimension in direction `dir`
+    /// Also available via the [Index] trait.
+    pub fn dir(&self, dir: Dir) -> &T {
+        match dir {
+            Dir::Horiz => &self.x,
+            Dir::Vert => &self.y,
         }
     }
 }

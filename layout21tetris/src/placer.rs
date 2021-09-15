@@ -9,13 +9,13 @@ use std::collections::HashSet;
 
 // Local imports
 use crate::bbox::HasBoundBox;
-use crate::cell::{Instance, LayoutImpl};
-use crate::coords::{PrimPitches, Xy};
+use crate::cell::{CellBag, Instance, LayoutImpl};
+use crate::coords::{PrimPitches, UnitSpeced, Xy};
 use crate::library::Library;
-use crate::placement::{Place, Placeable, RelativePlace, Side};
+use crate::placement::{Place, Placeable, RelativePlace, SepBy, Separation, Side};
 use crate::raw::{Dir, LayoutError, LayoutResult};
 use crate::stack::Stack;
-use crate::utils::Ptr;
+use crate::utils::{DepOrder, DepOrderer, Ptr};
 
 pub struct Placer {
     lib: Library,
@@ -46,7 +46,7 @@ impl Placer {
     fn place_layout(&mut self, layout: &LayoutImpl) -> LayoutResult<()> {
         // Iterate over the layout's instances in dependency order,
         // updating any relative-places to absolute.
-        for inst_ptr in DepOrder::order(layout)?.iter() {
+        for inst_ptr in InstPlaceOrder::order(layout.instances.as_slice())? {
             let mut inst = inst_ptr.write()?;
             inst.loc = match &inst.loc {
                 Place::Abs(a) => Place::Abs(*a), // Already done
@@ -103,6 +103,46 @@ impl Placer {
                 align_coord = align_coord - inst_size[align_axis];
             }
         }
+        // Add in our separation
+        if rel.sep.z.is_some() {
+            // Z-axis separation is invalid for [Instance]s
+            return Err(LayoutError::Tbd);
+        }
+        if rel.sep.dir(align_axis).is_some() {
+            // Separation in the alignment-axis is invalid for [Instance]s
+            return Err(LayoutError::Tbd);
+        }
+        // Get the side-axis separation
+        let sep_side_axis = match &rel.sep.dir(side_axis) {
+            None => PrimPitches::new(side_axis, 0),
+            Some(SepBy::SizeOf(cellptr)) => {
+                let cell = cellptr.read()?;
+                cell.boundbox_size()?[side_axis]
+            }
+            Some(SepBy::UnitSpeced(ref u)) => {
+                match u {
+                    UnitSpeced::DbUnits(_) => return Err(LayoutError::Tbd),
+                    UnitSpeced::LayerPitches(_) => {
+                        // Do a buncha coordinate transformations
+                        todo!()
+                    }
+                    UnitSpeced::PrimPitches(ref p) => {
+                        if p.dir != side_axis {
+                            return Err(LayoutError::Tbd);
+                        }
+                        p.clone()
+                    }
+                }
+            }
+        };
+        // Invert the separation if necessary
+        let sep_side_axis = match &rel.side {
+            Side::Top | Side::Right => sep_side_axis,
+            Side::Left | Side::Bottom => sep_side_axis.negate(),
+        };
+        // And finally add it in
+        side_coord = side_coord + sep_side_axis;
+        // Move back to (x,y) coordinates
         let res = match rel.side {
             Side::Left | Side::Right => Xy::new(side_coord, align_coord),
             Side::Top | Side::Bottom => Xy::new(align_coord, side_coord),
@@ -111,71 +151,29 @@ impl Placer {
     }
 }
 
-///
-/// # Placement Dependency-Orderer
-///
-/// Orders the [Instance]s in a [LayoutImpl] by their placement dependencies.
-/// Holds a shared reference to the [LayoutImpl] during traversal,
-/// then returns an ordered vector of pointers to its [Instance]s.
-///
-#[derive(Debug)]
-pub struct DepOrder {
-    /// Ordered, completed items
-    stack: Vec<Ptr<Instance>>,
-    /// Hash-set of completed items, for quick membership tests
-    seen: HashSet<Ptr<Instance>>,
-    /// Hash-set of pending items, for cycle detection
-    pending: HashSet<Ptr<Instance>>,
-}
-impl DepOrder {
-    fn order(layout: &LayoutImpl) -> LayoutResult<Vec<Ptr<Instance>>> {
-        let len = layout.instances.len();
-        let mut this = Self {
-            stack: Vec::with_capacity(len),
-            seen: HashSet::with_capacity(len),
-            pending: HashSet::new(),
-        };
-        for inst in layout.instances.iter() {
-            this.push(inst)?;
-        }
-        Ok(this.stack)
-    }
-    fn push(&mut self, ptr: &Ptr<Instance>) -> LayoutResult<()> {
-        // Depth-first search dependent Instance placements
-        if !self.seen.contains(ptr) {
-            // Check for cycles, indicated if `ptr` is in the pending-set, i.e. an open recursive stack-frame.
-            if self.pending.contains(ptr) {
-                return Err(LayoutError::Tbd);
-            }
-            self.pending.insert(ptr.clone());
-            // Process the Instance, particularly its dependencies
-            self.process(ptr)?;
-            // Check that `ptr` hasn't (somehow) been removed from the pending-set
-            let removed = self.pending.remove(ptr);
-            if !removed {
-                return Err(LayoutError::Tbd);
-            }
-            // And insert the Instance (pointer) itself
-            self.seen.insert(ptr.clone());
-            self.stack.push(ptr.clone());
-        }
-        Ok(())
-    }
-    /// Process `item`
-    fn process(&mut self, item: &Ptr<Instance>) -> LayoutResult<()> {
+struct InstPlaceOrder;
+impl DepOrder for InstPlaceOrder {
+    type Item = Ptr<Instance>;
+    type Error = LayoutError;
+
+    /// Process [Instance]-pointer `item`
+    fn process(item: &Ptr<Instance>, orderer: &mut DepOrderer<Self>) -> LayoutResult<()> {
         // Read the instance-pointer
         let inst = item.read()?;
         // If its place is relative, visit its dependencies first
         match &inst.loc {
             Place::Rel(rel) => {
                 match rel.to {
-                    Placeable::Instance(ref ptr) => self.push(ptr)?,
+                    Placeable::Instance(ref ptr) => orderer.push(ptr)?,
                     _ => unimplemented!(), // FIXME: other variants TBC
                 };
             }
             Place::Abs(_) => (), // Nothing to traverse
         }
         Ok(())
+    }
+    fn fail() -> Result<(), Self::Error> {
+        Err(LayoutError::msg("Error "))
     }
 }
 
@@ -194,6 +192,7 @@ mod tests {
     #[test]
     fn test_place2() -> LayoutResult<()> {
         // Initial test of relative placement
+
         let mut lib = Library::new("test_place2");
         // Create a unit cell which we'll instantiate a few times
         let unit = LayoutImpl::new("unit", 0, Outline::rect(3, 7)?).into();
@@ -217,6 +216,7 @@ mod tests {
                 to: Placeable::Instance(i0.clone()),
                 side: Side::Right,
                 align: Side::Bottom,
+                sep: Separation::default(),
             }),
             reflect_horiz: false,
             reflect_vert: false,
@@ -246,24 +246,16 @@ mod tests {
     #[test]
     fn test_place3() -> LayoutResult<()> {
         // Test each relative side and alignment
-        let mut lib = Library::new("test_place3");
-        // Create a big center cell
-        let big = LayoutImpl::new("big", 0, Outline::rect(75, 25)?).into();
-        let big = lib.cells.add(big);
-        // Create the parent cell which instantiates it
-        let mut parent = LayoutImpl::new("parent", 0, Outline::rect(225, 75)?);
-        // Create an initial instance
-        let ibig = Instance {
-            inst_name: "ibig".into(),
-            cell: big.clone(),
-            loc: (30, 20).into(),
-            reflect_horiz: false,
-            reflect_vert: false,
-        };
-        let ibig = parent.instances.add(ibig);
-        // Create a unit cell which we'll instantiate a few times around `ibig`
-        let lil = LayoutImpl::new("lil", 0, Outline::rect(11, 4)?).into();
-        let lil = lib.cells.add(lil);
+
+        // Get the sample data
+        let SampleLib {
+            ibig,
+            big,
+            lil,
+            mut lib,
+            mut parent,
+        } = SampleLib::get()?;
+        lib.name = "test_place3".into();
 
         // Relative-placement-adder closure
         let mut add_inst = |inst_name: &str, side, align| {
@@ -274,6 +266,7 @@ mod tests {
                     to: Placeable::Instance(ibig.clone()),
                     side,
                     align,
+                    sep: Separation::default(),
                 }),
                 reflect_horiz: false,
                 reflect_vert: false,
@@ -298,46 +291,192 @@ mod tests {
 
         // And test the placed results
         let bigbox = ibig.read()?.boundbox()?;
-        {
-            let ibox = i1.read()?.boundbox()?;
-            assert_eq!(ibox.side(Side::Right), bigbox.side(Side::Left));
-            assert_eq!(ibox.side(Side::Bottom), bigbox.side(Side::Bottom));
-        }
-        {
-            let ibox = i2.read()?.boundbox()?;
-            assert_eq!(ibox.side(Side::Left), bigbox.side(Side::Right));
-            assert_eq!(ibox.side(Side::Bottom), bigbox.side(Side::Bottom));
-        }
-        {
-            let ibox = i3.read()?.boundbox()?;
-            assert_eq!(ibox.side(Side::Top), bigbox.side(Side::Bottom));
-            assert_eq!(ibox.side(Side::Left), bigbox.side(Side::Left));
-        }
-        {
-            let ibox = i4.read()?.boundbox()?;
-            assert_eq!(ibox.side(Side::Top), bigbox.side(Side::Bottom));
-            assert_eq!(ibox.side(Side::Right), bigbox.side(Side::Right));
-        }
-        {
-            let ibox = i5.read()?.boundbox()?;
-            assert_eq!(ibox.side(Side::Right), bigbox.side(Side::Left));
-            assert_eq!(ibox.side(Side::Top), bigbox.side(Side::Top));
-        }
-        {
-            let ibox = i6.read()?.boundbox()?;
-            assert_eq!(ibox.side(Side::Left), bigbox.side(Side::Right));
-            assert_eq!(ibox.side(Side::Top), bigbox.side(Side::Top));
-        }
-        {
-            let ibox = i7.read()?.boundbox()?;
-            assert_eq!(ibox.side(Side::Bottom), bigbox.side(Side::Top));
-            assert_eq!(ibox.side(Side::Left), bigbox.side(Side::Left));
-        }
-        {
-            let ibox = i8.read()?.boundbox()?;
-            assert_eq!(ibox.side(Side::Bottom), bigbox.side(Side::Top));
-            assert_eq!(ibox.side(Side::Right), bigbox.side(Side::Right));
-        }
+        let ibox = i1.read()?.boundbox()?;
+        assert_eq!(ibox.side(Side::Right), bigbox.side(Side::Left));
+        assert_eq!(ibox.side(Side::Bottom), bigbox.side(Side::Bottom));
+        let ibox = i2.read()?.boundbox()?;
+        assert_eq!(ibox.side(Side::Left), bigbox.side(Side::Right));
+        assert_eq!(ibox.side(Side::Bottom), bigbox.side(Side::Bottom));
+        let ibox = i3.read()?.boundbox()?;
+        assert_eq!(ibox.side(Side::Top), bigbox.side(Side::Bottom));
+        assert_eq!(ibox.side(Side::Left), bigbox.side(Side::Left));
+        let ibox = i4.read()?.boundbox()?;
+        assert_eq!(ibox.side(Side::Top), bigbox.side(Side::Bottom));
+        assert_eq!(ibox.side(Side::Right), bigbox.side(Side::Right));
+        let ibox = i5.read()?.boundbox()?;
+        assert_eq!(ibox.side(Side::Right), bigbox.side(Side::Left));
+        assert_eq!(ibox.side(Side::Top), bigbox.side(Side::Top));
+        let ibox = i6.read()?.boundbox()?;
+        assert_eq!(ibox.side(Side::Left), bigbox.side(Side::Right));
+        assert_eq!(ibox.side(Side::Top), bigbox.side(Side::Top));
+        let ibox = i7.read()?.boundbox()?;
+        assert_eq!(ibox.side(Side::Bottom), bigbox.side(Side::Top));
+        assert_eq!(ibox.side(Side::Left), bigbox.side(Side::Left));
+        let ibox = i8.read()?.boundbox()?;
+        assert_eq!(ibox.side(Side::Bottom), bigbox.side(Side::Top));
+        assert_eq!(ibox.side(Side::Right), bigbox.side(Side::Right));
         exports(lib, stack)
+    }
+    #[test]
+    fn test_place4() -> LayoutResult<()> {
+        // Test size-of separation
+
+        // Get the sample data
+        let SampleLib {
+            ibig,
+            big,
+            lil,
+            mut lib,
+            mut parent,
+        } = SampleLib::get()?;
+        lib.name = "test_place4".into();
+
+        // Relative-placement-adder closure
+        let mut add_inst = |inst_name: &str, side, sep| {
+            let i = Instance {
+                inst_name: inst_name.into(),
+                cell: lil.clone(),
+                loc: Place::Rel(RelativePlace {
+                    to: Placeable::Instance(ibig.clone()),
+                    side,
+                    align: side.cw_90(), // Leave out `align` as an arg, set one-turn CW of `side`
+                    sep,
+                }),
+                reflect_horiz: false,
+                reflect_vert: false,
+            };
+            parent.instances.add(i)
+        };
+        // Add a bunch of em
+        let sep_x = Separation::x(SepBy::SizeOf(lil.clone()));
+        let i1 = add_inst("i1", Side::Left, sep_x.clone());
+        let i2 = add_inst("i2", Side::Right, sep_x.clone());
+        let sep_y = Separation::y(SepBy::SizeOf(lil.clone()));
+        let i3 = add_inst("i3", Side::Bottom, sep_y.clone());
+        let i4 = add_inst("i4", Side::Top, sep_y.clone());
+        // Add `parent` to the library
+        let _parent = lib.cells.add(parent.into());
+
+        // The real code under test: run placement
+        let (lib, stack) = Placer::place(lib, SampleStacks::empty()?)?;
+
+        // And test the placed results
+        let lilsize = lil.read()?.boundbox_size()?;
+        let bigbox = ibig.read()?.boundbox()?;
+        let ibox = i1.read()?.boundbox()?;
+        assert_eq!(ibox.side(Side::Top), bigbox.side(Side::Top));
+        assert_eq!(ibox.side(Side::Right), bigbox.side(Side::Left) - lilsize.x);
+        let ibox = i2.read()?.boundbox()?;
+        assert_eq!(ibox.side(Side::Bottom), bigbox.side(Side::Bottom));
+        assert_eq!(ibox.side(Side::Left), bigbox.side(Side::Right) + lilsize.x);
+        let ibox = i3.read()?.boundbox()?;
+        assert_eq!(ibox.side(Side::Left), bigbox.side(Side::Left));
+        assert_eq!(ibox.side(Side::Top), bigbox.side(Side::Bottom) - lilsize.y);
+        let ibox = i4.read()?.boundbox()?;
+        assert_eq!(ibox.side(Side::Right), bigbox.side(Side::Right));
+        assert_eq!(ibox.side(Side::Bottom), bigbox.side(Side::Top) + lilsize.y);
+
+        exports(lib, stack)
+    }
+    #[test]
+    fn test_place5() -> LayoutResult<()> {
+        // Test separation by units
+
+        // Get the sample data
+        let SampleLib {
+            ibig,
+            big,
+            lil,
+            mut lib,
+            mut parent,
+        } = SampleLib::get()?;
+        lib.name = "test_place5".into();
+
+        // Relative-placement-adder closure
+        let mut add_inst = |inst_name: &str, side, sep| {
+            let i = Instance {
+                inst_name: inst_name.into(),
+                cell: lil.clone(),
+                loc: Place::Rel(RelativePlace {
+                    to: Placeable::Instance(ibig.clone()),
+                    side,
+                    align: side.ccw_90(), // Leave out `align` as an arg, set one-turn CCW of `side`
+                    sep,
+                }),
+                reflect_horiz: false,
+                reflect_vert: false,
+            };
+            parent.instances.add(i)
+        };
+        // Add a bunch of em
+        let dx = PrimPitches::new(Dir::Horiz, 1);
+        let sep_x = Separation::x(SepBy::UnitSpeced(dx.clone().into()));
+        let i1 = add_inst("i1", Side::Left, sep_x.clone());
+        let i2 = add_inst("i2", Side::Right, sep_x.clone());
+        let dy = PrimPitches::new(Dir::Vert, 5);
+        let sep_y = Separation::y(SepBy::UnitSpeced(dy.clone().into()));
+        let i3 = add_inst("i3", Side::Bottom, sep_y.clone());
+        let i4 = add_inst("i4", Side::Top, sep_y.clone());
+        // Add `parent` to the library
+        let _parent = lib.cells.add(parent.into());
+
+        // The real code under test: run placement
+        let (lib, stack) = Placer::place(lib, SampleStacks::empty()?)?;
+
+        // And test the placed results
+        let lilsize = lil.read()?.boundbox_size()?;
+        let bigbox = ibig.read()?.boundbox()?;
+        let ibox = i1.read()?.boundbox()?;
+        assert_eq!(ibox.side(Side::Bottom), bigbox.side(Side::Bottom));
+        assert_eq!(ibox.side(Side::Right), bigbox.side(Side::Left) - dx);
+        let ibox = i2.read()?.boundbox()?;
+        assert_eq!(ibox.side(Side::Top), bigbox.side(Side::Top));
+        assert_eq!(ibox.side(Side::Left), bigbox.side(Side::Right) + dx);
+        let ibox = i3.read()?.boundbox()?;
+        assert_eq!(ibox.side(Side::Right), bigbox.side(Side::Right));
+        assert_eq!(ibox.side(Side::Top), bigbox.side(Side::Bottom) - dy);
+        let ibox = i4.read()?.boundbox()?;
+        assert_eq!(ibox.side(Side::Left), bigbox.side(Side::Left));
+        assert_eq!(ibox.side(Side::Bottom), bigbox.side(Side::Top) + dy);
+
+        exports(lib, stack)
+    }
+    pub struct SampleLib {
+        pub lib: Library,
+        pub big: Ptr<CellBag>,
+        pub ibig: Ptr<Instance>,
+        pub lil: Ptr<CellBag>,
+        pub parent: LayoutImpl,
+    }
+    impl SampleLib {
+        /// Get a sample library with test cells `big`, `lil`, and `parent`.
+        /// Designed for adding instances of `lil` relative to `big` all around `parent`.
+        pub fn get() -> LayoutResult<SampleLib> {
+            let mut lib = Library::new("_rename_me_plz_");
+            // Create a big center cell
+            let big = LayoutImpl::new("big", 0, Outline::rect(11, 12)?).into();
+            let big = lib.cells.add(big);
+            // Create the parent cell which instantiates it
+            let mut parent = LayoutImpl::new("parent", 0, Outline::rect(40, 35)?);
+            // Create an initial instance
+            let ibig = Instance {
+                inst_name: "ibig".into(),
+                cell: big.clone(),
+                loc: (16, 15).into(),
+                reflect_horiz: false,
+                reflect_vert: false,
+            };
+            let ibig = parent.instances.add(ibig);
+            // Create a unit cell which we'll instantiate a few times around `ibig`
+            let lil = LayoutImpl::new("lil", 0, Outline::rect(2, 1)?).into();
+            let lil = lib.cells.add(lil);
+            Ok(SampleLib {
+                lib,
+                big,
+                ibig,
+                lil,
+                parent,
+            })
+        }
     }
 }

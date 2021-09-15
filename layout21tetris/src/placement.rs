@@ -3,9 +3,9 @@
 //!
 
 // Local imports
-use crate::cell::Instance;
+use crate::cell::{CellBag, Instance};
 use crate::coords::{HasUnits, UnitSpeced, Xy};
-use crate::raw::{LayoutError, LayoutResult};
+use crate::raw::{Dir, LayoutError, LayoutResult};
 use crate::stack::TrackIntersection;
 use crate::utils::Ptr;
 
@@ -47,15 +47,17 @@ impl<T: HasUnits> From<RelativePlace> for Place<T> {
     }
 }
 
+/// # Relative Placement
 #[derive(Debug, Clone)]
 pub struct RelativePlace {
     /// Placement is relative `to` this
     pub to: Placeable,
-
-    /// Spacing between the placement and the `to`
+    /// Placed on this `side` of `to`
     pub side: Side,
-    pub align: Side,
-    // pub by: RelativeBy,
+    /// Aligned to this aspect of `to`
+    pub align: Side, // FIXME: move to [Align]
+    /// Separation between the placement and the `to`
+    pub sep: Separation,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -65,20 +67,76 @@ pub enum Side {
     Left,
     Right,
 }
+impl Side {
+    /// Get the side rotated 90 degrees clockwise
+    pub fn cw_90(&self) -> Self {
+        match self {
+            Self::Top => Self::Right,
+            Self::Right => Self::Bottom,
+            Self::Bottom => Self::Left,
+            Self::Left => Self::Top,
+        }
+    }
+    /// Get the side rotated 90 degrees counter-clockwise
+    pub fn ccw_90(&self) -> Self {
+        match self {
+            Self::Top => Self::Left,
+            Self::Left => Self::Bottom,
+            Self::Bottom => Self::Right,
+            Self::Right => Self::Top,
+        }
+    }
+}
+#[derive(Debug, Clone)]
+pub enum Align {
+    /// Side-to-side alignment
+    Side(Side),
+    /// Center-aligned
+    Center,
+    /// Port-to-port alignment
+    Ports(String, String),
+}
 
-#[derive(Debug, Clone)]
-pub struct AbsRelativeBy {
-    x: Option<UnitSpeced>,
-    y: Option<UnitSpeced>,
-    z: Option<usize>,
+/// Enumerated means of specifying relative-placement separation
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SepBy {
+    /// Separated by [UnitSpeced]-distance in x and y, and by layers in z
+    UnitSpeced(UnitSpeced),
+    /// Separated by the size of another Cell
+    SizeOf(Ptr<CellBag>),
 }
-// pub trait Sizable: std::fmt::Debug + std::clone::Clone {} // FIXME!
-#[derive(Debug, Clone)]
-pub enum RelativeBy {
-    // alignment from this instance's pin `x` to another instance's pin `y`
-    Abs(AbsRelativeBy),
-    // SizeOf(Ptr<dyn Sizable>),
+/// Three-dimensional separation units
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Separation {
+    pub x: Option<SepBy>,
+    pub y: Option<SepBy>,
+    pub z: Option<isize>,
 }
+impl Separation {
+    pub fn new(x: Option<SepBy>, y: Option<SepBy>, z: Option<isize>) -> Self {
+        Self { x, y, z }
+    }
+    pub fn x(x: SepBy) -> Self {
+        Self {
+            x: Some(x),
+            ..Default::default()
+        }
+    }
+    pub fn y(y: SepBy) -> Self {
+        Self {
+            y: Some(y),
+            ..Default::default()
+        }
+    }
+    /// Get the separation in direction `dir`
+    pub fn dir(&self, dir: Dir) -> &Option<SepBy> {
+        match dir {
+            Dir::Horiz => &self.x,
+            Dir::Vert => &self.y,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Placeable {
     /// Instance of another cell
@@ -93,6 +151,7 @@ pub enum Placeable {
     Group(Ptr<Group>),
 }
 
+/// Named group of placeable elements
 #[derive(Debug, Clone)]
 pub struct Group {
     name: Option<String>,
@@ -106,7 +165,7 @@ pub struct Array {
     unit: Placeable,
     loc: UnitSpeced,
     count: usize,
-    by: RelativeBy,
+    sep: Separation,
 }
 
 /// FIXME!

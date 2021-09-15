@@ -187,6 +187,7 @@ fn empty_cell() -> LayoutResult<()> {
         instances: PtrList::new(),
         assignments: Vec::new(),
         cuts: Vec::new(),
+        places: PtrList::new(),
     };
     let mut lib = Library::new("EmptyCellLib");
     let _c2 = lib.cells.insert(cell::CellBag::from(c));
@@ -211,6 +212,7 @@ fn create_layout() -> LayoutResult<()> {
             },
         }],
         cuts: Vec::new(),
+        places: PtrList::new(),
     };
     Ok(())
 }
@@ -272,6 +274,7 @@ fn create_lib1() -> LayoutResult<()> {
                     relz: RelZ::Below,
                 },
             ],
+            places: PtrList::new(),
         }
         .into(),
     );
@@ -281,19 +284,8 @@ fn create_lib1() -> LayoutResult<()> {
 #[test]
 fn create_lib2() -> LayoutResult<()> {
     let mut lib = Library::new("lib2");
-
-    let c2 = lib.cells.insert(
-        LayoutImpl {
-            name: "IsInst".into(),
-            top_layer: 2,
-            outline: Outline::rect(100, 10)?,
-
-            instances: PtrList::new(),
-            assignments: vec![],
-            cuts: Vec::new(),
-        }
-        .into(),
-    );
+    let c2 = LayoutImpl::new("IsInst", 2, Outline::rect(100, 10)?).into();
+    let c2 = lib.cells.insert(c2);
 
     lib.cells.insert(
         LayoutImpl {
@@ -318,6 +310,7 @@ fn create_lib2() -> LayoutResult<()> {
                 },
             }],
             cuts: Vec::new(),
+            places: PtrList::new(),
         }
         .into(),
     );
@@ -417,6 +410,7 @@ fn create_lib3() -> LayoutResult<()> {
             .into(),
             assignments: Vec::new(),
             cuts: Vec::new(),
+            places: PtrList::new(),
         }
         .into(),
     );
