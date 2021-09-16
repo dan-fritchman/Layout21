@@ -6,6 +6,6 @@ members = [
   "layout21protos",
   "layout21raw",
   "layout21tetris",
-  "layout21meta",
+  "layout21",
   "layout21utils",
 ]

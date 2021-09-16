@@ -2,6 +2,10 @@
 //! # Gds21 Reading & Scanning
 //!
 
+// Crates.io
+use memmap::Mmap;
+
+// Local imports
 use super::*;
 
 /// Size (in bytes) of the read/decode buffer array

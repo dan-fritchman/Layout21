@@ -160,6 +160,7 @@ impl<'lib> ProtoExporter<'lib> {
         // Collect up shapes by layer
         // FIXME: should we store them here this way in the first place? Perhaps.
         let mut layers: HashMap<(i16, i16), Vec<&Element>> = HashMap::new();
+        let mut layerorder: Vec<(i16, i16)> = Vec::new();
         for elem in &cell.elems {
             let selflayers = self.lib.layers.read()?;
             let layer = selflayers.get(elem.layer).ok_or("Invalid Layer")?;
@@ -172,14 +173,16 @@ impl<'lib> ProtoExporter<'lib> {
                 layers.get_mut(&(number, purpose)).unwrap().push(elem);
             } else {
                 layers.insert((number, purpose), vec![elem]);
+                layerorder.push((number, purpose));
             }
         }
         // Now turn those into [proto::LayerShape]s
-        for (layernum, elems) in layers {
+        for layernums in layerorder {
+            let elems = layers.get(&layernums).unwrap();
             let mut layershape = proto::LayerShapes::default();
             layershape.layer = Some(proto::Layer {
-                number: layernum.0 as i64,
-                purpose: layernum.1 as i64,
+                number: layernums.0 as i64,
+                purpose: layernums.1 as i64,
             });
             for elem in elems {
                 // Also sort into the proto-schema's by-shape-type vectors

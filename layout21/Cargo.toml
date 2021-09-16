@@ -1,6 +1,6 @@
 [package]
-description = "Layout21 Meta-Crate, re-exporting all internally defined crates"
-name = "layout21meta"
+description = "Layout21 Integrated Circuit Layout. Meta-crate, re-exporting several internally defined crates"
+name = "layout21"
 # Shared layout21 attributes
 authors = ["Dan Fritchman <dan@fritch.mn>"]
 edition = "2018"

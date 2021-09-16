@@ -68,19 +68,28 @@ fn resource(fname: &str) -> String {
 #[cfg(all(feature = "gds", feature = "proto"))]
 #[test]
 fn test_gds_to_proto1() -> LayoutResult<()> {
-    let samp = resource("sample1.gds");
-    // let samp = "/Users/dan/dev/ucb/osci/OsciBear/gds/user_analog_project_wrapper.gds";
+    // Read a GDS file
+    let samp = resource("dff1_lib.gds");
     let gds = gds::gds21::GdsLibrary::load(&samp)?;
+
+    // Convert to Layout21::Raw
     let lib = gds::GdsImporter::import(&gds, None)?;
     assert_eq!(lib.name, "dff1_lib");
     assert_eq!(lib.cells.len(), 1);
+
+    // Get the first (and only) cell
     let cell = lib.cells.first().unwrap().clone();
     let cell = cell.read()?;
     assert_eq!(cell.name, "dff1");
+
+    // Convert to ProtoBuf
     let p = proto::ProtoExporter::export(&lib)?;
     assert_eq!(p.domain, "dff1_lib");
-    proto::proto::save(&p, &resource("something.bin")).unwrap();
-    let p2 = proto::proto::open(&resource("something.bin")).unwrap();
+    let p2 = proto::ProtoExporter::export(&lib)?;
+    assert_eq!(p, p2);
+
+    // And compare against the golden version
+    let p2 = proto::proto::open(&resource("dff1_lib.bin")).unwrap();
     assert_eq!(p, p2);
     Ok(())
 }
