@@ -1,8 +1,13 @@
 [package]
+name = "layout21raw"
+desc = "Layout21 Raw-Format Integrated Circuit Layout"
+# Shared layout21 attributes
 authors = ["Dan Fritchman <dan@fritch.mn>"]
 edition = "2018"
-name = "layout21raw"
-version = "0.1.0"
+license = "BSD-3-Clause"
+repository = "https://github.com/dan-fritchman/Layout21"
+version = "0.2.0"
+workspace = "../"
 
 [dependencies]
 # Local workspace dependencies

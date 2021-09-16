@@ -1,8 +1,12 @@
 [package]
+desc = "Layout21 Gridded 'Tetris' Integrated Circuit Layout"
+name = "layout21tetris"
+# Shared layout21 attributes
 authors = ["Dan Fritchman <dan@fritch.mn>"]
 edition = "2018"
-name = "layout21"
-version = "0.1.0"
+license = "BSD-3-Clause"
+repository = "https://github.com/dan-fritchman/Layout21"
+version = "0.2.0"
 workspace = "../"
 
 [dependencies]
@@ -16,7 +20,4 @@ num-integer = "0.1"
 num-traits = "0.2"
 serde = {version = "1.0", features = ["derive"]}
 serde_derive = "1.0.88"
-serde_json = "1.0"
-serde_yaml = "0.8"
 slotmap = {version = "1.0", features = ["serde"]}
-toml = "0.5.7"

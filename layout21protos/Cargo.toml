@@ -1,8 +1,13 @@
 [package]
+name = "layout21protos"
+desc = "Layout21 ProtoBuf Definitions"
+# Shared layout21 attributes
 authors = ["Dan Fritchman <dan@fritch.mn>"]
 edition = "2018"
-name = "layout21protos"
-version = "0.1.0"
+license = "BSD-3-Clause"
+repository = "https://github.com/dan-fritchman/Layout21"
+version = "0.2.0"
+workspace = "../"
 
 [dependencies]
 prost = "0.8.0"

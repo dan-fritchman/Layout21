@@ -1,11 +1,12 @@
 [package]
-authors = ["Dan Fritchman <dan@fritch.mn>"]
 description = "Library Exchange Format (LEF) Integrated Circuit Layout Parser & Writer"
+name = "lef21"
+# Shared layout21 attributes
+authors = ["Dan Fritchman <dan@fritch.mn>"]
 edition = "2018"
 license = "BSD-3-Clause"
-name = "lef21"
 repository = "https://github.com/dan-fritchman/Layout21"
-version = "0.1.0"
+version = "0.2.0"
 workspace = "../"
 
 [dependencies]
@@ -19,6 +20,3 @@ num-traits = "0.2"
 rust_decimal = {version = "1.14.3"}
 serde = {version = "1.0", features = ["derive"]}
 serde_derive = "1.0.88"
-serde_json = "1.0"
-serde_yaml = "0.8"
-toml = "0.5.7"

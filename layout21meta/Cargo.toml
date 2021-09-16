@@ -1,13 +1,18 @@
 [package]
-authors = ["Dan Fritchman <dan@fritch.mn>"]
-description = "Layout21 meta-crate"
-edition = "2018"
+description = "Layout21 Meta-Crate, re-exporting all internally defined crates"
 name = "layout21meta"
-version = "0.1.0"
+# Shared layout21 attributes
+authors = ["Dan Fritchman <dan@fritch.mn>"]
+edition = "2018"
+license = "BSD-3-Clause"
+repository = "https://github.com/dan-fritchman/Layout21"
+version = "0.2.0"
 workspace = "../"
 
 [dependencies]
 gds21 = {path = "../gds21", features = ["selftest"]}
 layout21protos = {path = "../layout21protos"}
 layout21raw = {path = "../layout21raw"}
+layout21tetris = {path = "../layout21tetris"}
+layout21utils = {path = "../layout21utils"}
 lef21 = {path = "../lef21"}

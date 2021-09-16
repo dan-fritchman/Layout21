@@ -1,11 +1,13 @@
 [package]
-name = "gds21"
-version = "0.1.1"
 description = "Gds21 Integrated Circuit Layout Parser & Writer"
+name = "gds21"
+# Shared layout21 attributes
+authors = ["Dan Fritchman <dan@fritch.mn>"]
 edition = "2018"
 license = "BSD-3-Clause"
 repository = "https://github.com/dan-fritchman/Layout21"
-authors = ["Dan Fritchman <dan@fritch.mn>"]
+version = "0.2.0"
+workspace = "../"
 
 [dependencies]
 # Local workspace dependencies

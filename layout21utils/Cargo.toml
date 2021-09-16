@@ -1,11 +1,12 @@
 [package]
-authors = ["Dan Fritchman <dan@fritch.mn>"]
 description = "Layout21 Internal Utility Crate"
+name = "layout21utils"
+# Shared layout21 attributes
+authors = ["Dan Fritchman <dan@fritch.mn>"]
 edition = "2018"
 license = "BSD-3-Clause"
-name = "layout21utils"
 repository = "https://github.com/dan-fritchman/Layout21"
-version = "0.1.0"
+version = "0.2.0"
 workspace = "../"
 
 [dependencies]

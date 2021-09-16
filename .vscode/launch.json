@@ -45,16 +45,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in library 'layout21'",
+            "name": "Debug unit tests in library 'layout21tetris'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
                     "--lib",
-                    "--package=layout21"
+                    "--package=layout21tetris"
                 ],
                 "filter": {
-                    "name": "layout21",
+                    "name": "layout21tetris",
                     "kind": "lib"
                 }
             },
@@ -79,25 +79,6 @@
             },
             "args": [],
             "cwd": "${workspaceFolder}/layout21raw"
-        },
-        {
-            "type": "lldb",
-            "request": "launch",
-            "name": "Debug unit tests in library 'layout21macros'",
-            "cargo": {
-                "args": [
-                    "test",
-                    "--no-run",
-                    "--lib",
-                    "--package=layout21macros"
-                ],
-                "filter": {
-                    "name": "layout21macros",
-                    "kind": "lib"
-                }
-            },
-            "args": [],
-            "cwd": "${workspaceFolder}"
         },
         {
             "type": "lldb",
