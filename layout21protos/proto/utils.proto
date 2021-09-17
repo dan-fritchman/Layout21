@@ -1,0 +1,52 @@
+//! 
+//! # vlsirlol Utility Message Schemas 
+//! 
+//! Widely reused shared message-types. 
+//!
+
+syntax = "proto3";
+package vlsirlol.utils;
+
+
+//! Enumerated SI Prefixes 
+enum SIPrefix {
+  YOCTO = 0;  // E-24
+  ZEPTO = 1;  // E-21
+  ATTO = 2; // E-18
+  FEMTO = 3;  // E-15
+  PICO = 4; // E-12
+  NANO = 5; // E-9
+  MICRO = 6;  // E-6
+  MILLI = 7;  // E-3
+  CENTI = 8;  // E-2
+  DECI = 9; // E-1
+  DECA = 10; // E1
+  HECTO = 11;  // E2
+  KILO = 12; // E3
+  MEGA = 13; // E6
+  GIGA = 14; // E9
+  TERA = 15; // E12
+  PETA = 16; // E15
+  EXA = 17;  // E18
+  ZETTA = 18;  // E21
+  YOTTA = 19;  // E24
+}
+
+// # Domain-Qualified Name
+// Refers to an object outside its own namespace, at the global domain `domain`. 
+message QualifiedName {
+  string domain = 1;
+  string name = 2;
+}
+
+// # Reference 
+// Pointer to another Message, either defined in its own namespace (local) or another (external). 
+message Reference {
+  oneof to {
+    // Local string-valued reference. 
+    // Typically the `name` or similar field of the referent. 
+    string local = 1;
+    // Domain-qualified external reference
+    QualifiedName external = 2;
+  }
+}

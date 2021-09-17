@@ -1,0 +1,76 @@
+
+//! 
+//! # vlsirlol Multi-View Cell Library 
+//! 
+//! Schema for the `Cell` mutli-representation of a piece of hardware. 
+//! View include IO-abstracts (`Interface`), physical abstracts `Abstrakt`, 
+//! and layout implementations (`raw.Cell`). 
+//! 
+
+syntax = "proto3";
+package vlsirlol.abstrakt;
+import "raw.proto";
+import "circuit.proto";
+
+// # Library 
+// A collection of `Cells` and asssociated metadata. 
+message Library {
+  // Library Name / Domain 
+  string domain = 1;
+  // Distance Units
+  vlsirlol.raw.Units units = 2;
+  // Cell Definitions
+  repeated Cell cells = 3; 
+}
+
+// # Cell 
+// A multi-view representation of a piece of hardware.
+message Cell {
+  // Cell Name
+  string name = 1;
+  // IO Interface
+  Interface interface = 10;
+  // Physical Abstract
+  Abstract abstract = 11;
+  // Physical Layout Implementation
+  vlsirlol.raw.Cell layout = 12;
+}
+
+// # Interface
+// Defines the logical IO of a `Cell`, using `circuit` port-types.
+message Interface {
+  // Cell Name
+  string name = 1;
+  // Port List 
+  repeated vlsirlol.circuit.Port ports = 10;
+}
+
+// # Abstract Layout 
+// 
+// Defines the physical interface to a [Cell], including ports and internal blockages, 
+// omitting internal implementation details.
+message Abstract {
+  // Cell Name
+  string name = 1;
+  // Outline
+  vlsirlol.raw.Polygon outline = 2;
+  // Ports 
+  repeated AbstractPort ports = 4;
+  // Blockages
+  vlsirlol.raw.LayerShapes blockages = 5;
+  
+  // Author
+  string author = 100;
+  // Copyright (something)
+  string copyright = 101;
+}
+
+// # Abstract Port
+// Combination of a net and set of shapes
+message AbstractPort {
+  // Port Name
+  string net = 1;
+  // Shapes, grouped by layer 
+  repeated vlsirlol.raw.LayerShapes shapes = 2; 
+}
+
