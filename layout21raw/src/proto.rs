@@ -59,6 +59,7 @@ impl<'lib> ProtoExporter<'lib> {
             Units::Micro => proto::Units::Micro,
             Units::Nano => proto::Units::Nano,
             Units::Angstrom => proto::Units::Angstrom,
+            Units::Pico => panic!("FIXME NEW UNITS!!!!")
         })
     }
     /// Convert a [Cell] to a [proto::Cell] cell-definition

@@ -62,6 +62,7 @@ impl<'lib> GdsExporter<'lib> {
             Units::Micro => gds21::GdsUnits::new(1.0, 1e-6),
             Units::Nano => gds21::GdsUnits::new(1e-3, 1e-9),
             Units::Angstrom => gds21::GdsUnits::new(1e-4, 1e-10),
+            Units::Pico => panic!("FIXME NEW UNITS!!!!")
         };
         // And convert each of our `cells` into its `structs`
         for cell in self.lib.cells.iter() {

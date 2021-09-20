@@ -4,9 +4,6 @@
 //! Converts potentially relatively-placed attributes to absolute positions.
 //!
 
-// Std-lib
-use std::collections::HashSet;
-
 // Local imports
 use crate::bbox::HasBoundBox;
 use crate::cell::{CellBag, Instance, LayoutImpl};

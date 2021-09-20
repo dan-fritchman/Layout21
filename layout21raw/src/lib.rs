@@ -109,6 +109,8 @@ pub enum Units {
     Nano,
     /// Angstroms
     Angstrom,
+    /// Picometers
+    Pico,
 }
 impl Default for Units {
     /// Default units are nanometers

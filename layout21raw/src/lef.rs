@@ -56,6 +56,7 @@ impl<'lib> LefExporter<'lib> {
             Units::Micro => 1,
             Units::Nano => 1000,
             Units::Angstrom => 10_000,
+            Units::Pico => panic!("FIXME NEW UNITS!!!!")
         };
         let dbu = match lef21::LefDbuPerMicron::try_new(lef21::LefDecimal::new(scale, 0)) {
             Ok(dbu) => Ok(dbu),
@@ -177,6 +178,8 @@ pub struct LefImporter {
     layers: Ptr<Layers>,
     ctx: Vec<ErrorContext>,
     lib: Library,
+    /// Distance scaling factor
+    dist_scale: u32,
 }
 impl LefImporter {
     pub fn import(plib: &lef21::LefLibrary, layers: Option<Ptr<Layers>>) -> LayoutResult<Library> {
@@ -205,9 +208,10 @@ impl LefImporter {
         let name = "".to_string(); // FIXME: naming? from file maybe?
         self.ctx.push(ErrorContext::Library(name.clone()));
         self.lib.name = name;
+
         // Check for unsupported features
         if leflib.sites.len() > 0 {
-            self.fail("Unsupported LEF feature: sites")?;
+            self.warn("Ignored LEF feature: sites");
         }
         if leflib.vias.is_some() {
             self.fail("Unsupported LEF feature: vias")?;
@@ -215,14 +219,17 @@ impl LefImporter {
         if leflib.extensions.is_some() {
             self.fail("Unsupported LEF feature: extensions")?;
         }
-        if leflib.version.is_some()
-            || leflib.names_case_sensitive.is_some()
-            || leflib.no_wire_extension_at_pin.is_some()
-            || leflib.bus_bit_chars.is_some()
-            || leflib.divider_char.is_some()
-        {
-            self.fail("Unsupported LEF feature")?;
+        if let Some(sens) = &leflib.names_case_sensitive {
+            if *sens == lef21::LefOnOff::Off {
+                self.fail("Unsupported LEF feature: case-insensitive naming")?;
+            }
         }
+        // Fields that are *there*, but not really used for now. 
+        // || leflib.version.is_some()
+        // || leflib.bus_bit_chars.is_some()
+        // || leflib.divider_char.is_some()
+        // || leflib.no_wire_extension_at_pin.is_some()
+
         // Set its distance units
         self.lib.units = self.import_units(&leflib.units)?;
         // And convert each of its `macros`
@@ -232,38 +239,57 @@ impl LefImporter {
         }
         Ok(())
     }
-    /// Import our [Units]. (Yes, proto-code keeps them as an integer. At least it has some helpers.)
+    /// Import our [Units].  
     fn import_units(&mut self, lefunits: &Option<lef21::LefUnits>) -> LayoutResult<Units> {
         self.ctx.push(ErrorContext::Units);
-        if lefunits.is_none() {
-            return Ok(Units::default()); // FIXME! Needs the *LEF default* 10nm
-        }
-        let lefunits = lefunits.as_ref().unwrap();
-        // Check for unsupported units: all types but distance
-        if lefunits.time_ns.is_some()
-            || lefunits.capacitance_pf.is_some()
-            || lefunits.resistance_ohms.is_some()
-            || lefunits.power_mw.is_some()
-            || lefunits.current_ma.is_some()
-            || lefunits.voltage_volts.is_some()
-            || lefunits.frequency_mhz.is_some()
-        {
-            self.fail("Unsupported LEF units")?;
-        }
-        let ours: LayoutResult<Units> = match lefunits.database_microns {
-            None => Ok(Units::default()), // FIXME! Needs the *LEF default* 10nm
-            Some(ref dbu) => match dbu.value() {
-                1000 => Ok(Units::Nano),
-                10_000 => Ok(Units::Angstrom),
-                100 | 200 | 400 | 800 | 2000 | 4000 | 8000 | 20_000 => {
-                    self.fail(format!("Unsupported LEF DBU per Micron {}", dbu.value()))?
-                }
-                _ => self.fail(format!("Invalid LEF DBU Per Micron: {}", dbu.value()))?,
-            },
-        };
-        let ours: Units = ours?;
+        // Despite having a big structure for all kinds of units, LEF distance data is always in microns. 
+        // Distance values are commonly stored to 2-4 decimal places, which we'll move to angstroms. 
+        self.dist_scale = 10_000;
+        // let units = ;
+        // const DEFAULT_DBU_PER_MICRON: u32 = 100;
+        // const DEFAULT_SCALE: u32 = 1000 / DEFAULT_DBU_PER_MICRON; // Long-hand for "10" 
+        // let units = match lefunits {
+        //     None => {
+        //         self.dist_scale = DEFAULT_SCALE;
+        //         Units::Nano
+        //     },
+        //     Some(ref u) => {
+        //         // Check for unsupported units: all types but distance
+        //         if u.time_ns.is_some()
+        //             || u.capacitance_pf.is_some()
+        //             || u.resistance_ohms.is_some()
+        //             || u.power_mw.is_some()
+        //             || u.current_ma.is_some()
+        //             || u.voltage_volts.is_some()
+        //             || u.frequency_mhz.is_some()
+        //         {
+        //             return self.fail("Unsupported LEF units");
+        //         }
+        //         match u.database_microns {
+        //             None => {
+        //                 self.dist_scale = DEFAULT_SCALE;
+        //                 Units::Nano
+        //             }
+        //             Some(ref dbu) => {
+        //                 match dbu.value() {
+        //                     100 | 200 | 1000 => {
+        //                         // Integer nanometers
+        //                         self.dist_scale = 1000 / dbu.value();
+        //                         Units::Nano
+        //                     }
+        //                     400 | 800 | 2000 | 4000 | 8000 | 10_000 | 20_000 => {
+        //                         // Go pico-meter! 
+        //                         self.dist_scale = 1_000_000 / dbu.value();
+        //                         Units::Pico 
+        //                     }
+        //                     _ => return self.fail("Invalid LEF Units"),
+        //                 }
+        //             }
+        //         }
+        //     }
+        // };
         self.ctx.pop();
-        Ok(ours)
+        Ok(Units::Angstrom)
     }
     /// Import a [CellBag]
     fn import_cell(&mut self, lefmacro: &lef21::LefMacro) -> LayoutResult<CellBag> {
@@ -283,13 +309,16 @@ impl LefImporter {
         // FIXME: faking out the `outline` field for now; policy on these TBD.
         // let lefsize = lefmacro.size.as_ref().unwrap();
         let fake_outline = {
-            let layers = self.layers.write()?;
+            let mut layers = self.layers.write()?;
+            let layernum = layers.nextnum()?; // FIXME: support no-number [Layer]s
+            let newlayer = Layer::new(layernum, "boundary");
+            let layer = layers.add(newlayer);
             Element {
                 net: None,
-                layer: layers.keynum(0).unwrap(), // FIXME: gonna fail
+                layer,
                 purpose: LayerPurpose::Outline,
                 inner: Shape::Rect {
-                    p0: Point::new(0, 0),
+                    p0: Point::new(0, 0), // FIXME!
                     p1: Point::new(0, 0),
                 },
             }
@@ -323,17 +352,20 @@ impl LefImporter {
         // The LEF "pin vs port" distinction is not a thing here.
         // Only single-port pins can be imported.
         if lefpin.ports.len() != 1 {
-            self.fail("LEF pin has multiple ports")?;
+            self.warn(format!("Warning multiple `LefPort`s on `LefPin` {} will be merged", lefpin.name));
         }
-        let port = &lefpin.ports[0];
+
         // FIXME: check more unsupported [LefPin] fields
+
         // Import the shapes on each layer
-        for lef_layer_geom in &port.layers {
-            let (layerkey, shapes) = self.import_layer_geometries(lef_layer_geom)?;
-            match abstrakt_port.shapes.entry(layerkey) {
-                Entry::Occupied(mut e) => e.get_mut().extend(shapes),
-                Entry::Vacant(e) => {
-                    e.insert(shapes);
+        for port in &lefpin.ports {
+            for lef_layer_geom in &port.layers {
+                let (layerkey, shapes) = self.import_layer_geometries(lef_layer_geom)?;
+                match abstrakt_port.shapes.entry(layerkey) {
+                    Entry::Occupied(mut e) => e.get_mut().extend(shapes),
+                    Entry::Vacant(e) => {
+                        e.insert(shapes);
+                    }
                 }
             }
         }
@@ -349,11 +381,16 @@ impl LefImporter {
         // Import the layer
         let layerkey = self.import_layer(&geoms.layer_name)?;
         if geoms.except_pg_net.is_some()
-            || geoms.spacing.is_some()
-            || geoms.width.is_some()
-            || geoms.vias.len() > 0
         {
-            self.fail("Unsupported LEF Feature")?;
+            self.fail("Unsupported LEF Feature: except_pg_net")?;
+        }
+        if let Some(spacing) = &geoms.spacing {
+            if *spacing != lef21::LefLayerSpacing::Spacing(lef21::LefDecimal::ZERO) {
+                self.fail("Unsupported LEF Feature: nonzero spacing")?;
+            }
+        }
+        if geoms.vias.len() > 0 {
+            self.warn("Ignored LEF Feature: vias");
         }
         // Import all the shapes
         let mut shapes = Vec::new();
@@ -457,12 +494,11 @@ impl LefImporter {
     }
     /// Import a distance coordinate, converting between units
     fn import_dist(&mut self, lefdec: &lef21::LefDecimal) -> LayoutResult<isize> {
-        if !lefdec.fract().is_zero() {
-            self.fail("LEF Decimal has non-zero fractional part")?;
+        let scaled = lefdec * lef21::LefDecimal::from(self.dist_scale);
+        if !scaled.fract().is_zero() {
+            self.fail(format!("LEF Decimal {} has non-zero fractional part when scaled to internal units as {}", lefdec, scaled))?;
         }
-        // Since only matching units are (thus far) supported,
-        // no math necessary here yet, just type conversion.
-        Ok(lefdec.mantissa().try_into()?)
+        Ok(scaled.mantissa().try_into()?)
     }
     /// Get the ([LayerKey], [LayerPurpose]) pair for layer-name `leflayer`.
     /// Layers are created if they do not already exist, although this may eventually be a per-importer setting.
@@ -480,6 +516,11 @@ impl LefImporter {
             }
         };
         Ok(layerkey)
+    }
+    /// Generate a warning. 
+    /// Thus far, prints to the console. 
+    fn warn(&self, msg: impl Into<String>) {
+        eprintln!("Warning: {}", msg.into());
     }
 }
 impl ErrorHelper for LefImporter {
