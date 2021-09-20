@@ -27,4 +27,4 @@ macros:
       - Y
       - R90
 units:
-  database_microns: "2000"
+  database_microns: 2000

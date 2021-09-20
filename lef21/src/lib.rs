@@ -2,6 +2,9 @@
 //! # Lef21 Library Exchange Format (LEF) Parser & Writer
 //!
 
+// Std-Lib
+use std::convert::TryFrom;
+
 // Crates.io Imports
 #[allow(unused_imports)]
 use rust_decimal::prelude::*;
@@ -42,7 +45,7 @@ pub struct LefLibrary {
     #[builder(default, setter(strip_option))]
     pub names_case_sensitive: Option<LefOnOff>,
     /// Wire-Extension Pin Settings
-    /// FIXME: potentially only some LEF versions
+    /// FIXME: potentially valid for only *some* LEF versions
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub no_wire_extension_at_pin: Option<LefOnOff>,
@@ -96,6 +99,7 @@ pub struct LefMacro {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[builder(default)]
     pub obs: Vec<LefLayerGeometries>,
+
     // Optional
     /// Macro Class
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -128,7 +132,7 @@ pub struct LefMacro {
     #[builder(default, setter(strip_option))]
     pub source: Option<LefDefSource>,
 
-    // Not (Yet) Supported
+    // Unsupported
     /// Fixed Mask Option
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
@@ -196,7 +200,7 @@ pub struct LefPin {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub antenna_attrs: Vec<LefPinAntennaAttr>,
 
-    // Not (Yet) Supported
+    // Unsupported
     /// Taper Rule
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
@@ -316,26 +320,32 @@ pub enum LefShape {
 }
 /// X-Y Point
 #[derive(Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq)]
-pub struct LefPoint(LefDecimal, LefDecimal);
+pub struct LefPoint {
+    pub x: LefDecimal,
+    pub y: LefDecimal,
+}
 impl LefPoint {
     /// Create a new [LefPoint]
     pub fn new(x: impl Into<LefDecimal>, y: impl Into<LefDecimal>) -> Self {
-        Self(x.into(), y.into())
+        Self {
+            x: x.into(),
+            y: y.into(),
+        }
     }
 }
 impl std::fmt::Display for LefPoint {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{} {}", self.0, self.1)
+        write!(f, "{} {}", self.x, self.y)
     }
 }
 /// # Database-Units per Micron  
 ///
-/// A constrained numeric type, wrapping [LefDecimal].
-/// Allowed values of [LefDbuPerMicron] are:
-/// [100, 200, 400, 800, 1000, 2000, 4000, 8000, 10_000, 20_000]
-/// and adherence to this set is checked at construction time.
+/// A constrained numeric type. Allowed values of [LefDbuPerMicron] are:
+/// [100, 200, 400, 800, 1000, 2000, 4000, 8000, 10_000, 20_000].
+/// Adherence to this set is checked at construction time.
+///
 #[derive(Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq)]
-pub struct LefDbuPerMicron(LefDecimal);
+pub struct LefDbuPerMicron(u32);
 impl LefDbuPerMicron {
     /// Create a new [LefDbuPerMicron], checking internally required conditions
     pub fn try_new(x: LefDecimal) -> LefResult<Self> {
@@ -347,12 +357,22 @@ impl LefDbuPerMicron {
         if ![100, 200, 400, 800, 1000, 2000, 4000, 8000, 10_000, 20_000].contains(&x.mantissa()) {
             return Err("Invalid DBU per Micron value".into());
         }
-        Ok(Self(x))
+        // Convert to u32. Note the `unwrap` here is safe,
+        // as we have already verified `mantissa` is in the list above,
+        // all of which fit in a u32.
+        let val = u32::try_from(x.mantissa()).unwrap();
+        Ok(Self(val))
+    }
+    /// Return `self`'s value as an integer.
+    pub fn value(&self) -> u32 {
+        self.0
     }
 }
 /// Measurement Unit Conversion Factors
 #[derive(Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct LefUnits {
+    /// Database Distance Units per Micron
+    /// Defaults to 100, i.e. 1 DBU = 10nm
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub database_microns: Option<LefDbuPerMicron>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -15,11 +15,12 @@ use crate::library::Library;
 use crate::placement::{Place, Placeable, RelativePlace, SepBy, Separation, Side};
 use crate::raw::{Dir, LayoutError, LayoutResult};
 use crate::stack::Stack;
-use crate::utils::{DepOrder, DepOrderer, Ptr};
+use crate::utils::{DepOrder, DepOrderer, ErrorContext, ErrorHelper, Ptr};
 
 pub struct Placer {
     lib: Library,
     stack: Stack,
+    ctx: Vec<ErrorContext>,
 }
 impl Placer {
     ///
@@ -27,23 +28,32 @@ impl Placer {
     /// Modify and return [Library] `lib`, converting all [RelativePlace]s to absolutes.
     ///
     pub fn place(lib: Library, stack: Stack) -> LayoutResult<(Library, Stack)> {
-        let mut this = Self { lib, stack };
+        let mut this = Self {
+            lib,
+            stack,
+            ctx: Vec::new(),
+        };
         this.place_lib()?;
         Ok((this.lib, this.stack))
     }
     /// Primary internal implementation method. Update placements for [Library] `self.lib`.
     fn place_lib(&mut self) -> LayoutResult<()> {
+        self.ctx.push(ErrorContext::Library(self.lib.name.clone()));
         // Iterate over all the library's cells, updating their instance-placements.
         for cellptr in &self.lib.dep_order() {
             let cell = cellptr.write()?;
             if let Some(ref layout) = cell.layout {
+                self.ctx.push(ErrorContext::Cell(cell.name.clone()));
                 self.place_layout(layout)?;
+                self.ctx.pop();
             }
         }
+        self.ctx.pop();
         Ok(())
     }
     /// Update placements for [LayoutImpl] `layout`
     fn place_layout(&mut self, layout: &LayoutImpl) -> LayoutResult<()> {
+        self.ctx.push(ErrorContext::Impl);
         // Iterate over the layout's instances in dependency order,
         // updating any relative-places to absolute.
         for inst_ptr in InstPlaceOrder::order(layout.instances.as_slice())? {
@@ -57,6 +67,7 @@ impl Placer {
                 }
             }
         }
+        self.ctx.pop();
         Ok(())
     }
     /// Resolve a location of [Instance] `inst` relative to its [RelativePlace] `rel`.
@@ -65,6 +76,8 @@ impl Placer {
         inst: &Instance,
         rel: &RelativePlace,
     ) -> LayoutResult<Xy<PrimPitches>> {
+        self.ctx
+            .push(ErrorContext::Instance(inst.inst_name.clone()));
         let to = match rel.to {
             Placeable::Instance(ref ptr) => ptr,
             _ => unimplemented!(), // FIXME: other variants TBC
@@ -97,20 +110,26 @@ impl Placer {
         if offset_side || offset_align {
             let inst_size = inst.boundbox_size()?;
             if offset_side {
-                side_coord = side_coord - inst_size[side_axis];
+                if inst.reflected(side_axis) {
+                    side_coord = side_coord + inst_size[side_axis];
+                } else {
+                    side_coord = side_coord - inst_size[side_axis];
+                }
             }
             if offset_align {
-                align_coord = align_coord - inst_size[align_axis];
+                if inst.reflected(align_axis) {
+                    align_coord = align_coord + inst_size[align_axis];
+                } else {
+                    align_coord = align_coord - inst_size[align_axis];
+                }
             }
         }
         // Add in our separation
         if rel.sep.z.is_some() {
-            // Z-axis separation is invalid for [Instance]s
-            return Err(LayoutError::Tbd);
+            self.fail("Z-axis separation is invalid for Instances")?;
         }
         if rel.sep.dir(align_axis).is_some() {
-            // Separation in the alignment-axis is invalid for [Instance]s
-            return Err(LayoutError::Tbd);
+            self.fail("Separation in the alignment-axis is invalid for Instances")?;
         }
         // Get the side-axis separation
         let sep_side_axis = match &rel.sep.dir(side_axis) {
@@ -121,14 +140,14 @@ impl Placer {
             }
             Some(SepBy::UnitSpeced(ref u)) => {
                 match u {
-                    UnitSpeced::DbUnits(_) => return Err(LayoutError::Tbd),
+                    UnitSpeced::DbUnits(_) => self.fail("Invalid separation units: DbUnits")?,
                     UnitSpeced::LayerPitches(_) => {
                         // Do a buncha coordinate transformations
                         todo!()
                     }
                     UnitSpeced::PrimPitches(ref p) => {
                         if p.dir != side_axis {
-                            return Err(LayoutError::Tbd);
+                            self.fail(format!("Separation {:?} specified in invalid axis", u))?;
                         }
                         p.clone()
                     }
@@ -147,10 +166,21 @@ impl Placer {
             Side::Left | Side::Right => Xy::new(side_coord, align_coord),
             Side::Top | Side::Bottom => Xy::new(align_coord, side_coord),
         };
+        self.ctx.pop();
         Ok(res)
     }
 }
+impl ErrorHelper for Placer {
+    type Error = LayoutError;
+    fn err(&self, msg: impl Into<String>) -> LayoutError {
+        LayoutError::Export {
+            message: msg.into(),
+            stack: self.ctx.clone(),
+        }
+    }
+}
 
+/// Empty struct for implementing the [DepOrder] trait for relative-placed [Instance]s.
 struct InstPlaceOrder;
 impl DepOrder for InstPlaceOrder {
     type Item = Ptr<Instance>;
@@ -173,7 +203,7 @@ impl DepOrder for InstPlaceOrder {
         Ok(())
     }
     fn fail() -> Result<(), Self::Error> {
-        Err(LayoutError::msg("Error "))
+        Err(LayoutError::msg("Instance placement ordering error"))
     }
 }
 

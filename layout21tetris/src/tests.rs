@@ -10,6 +10,7 @@ use super::stack::*;
 use super::{abstrakt, rawconv, validate};
 use crate::coords::{Int, PrimPitches, Xy};
 use crate::placement::Place;
+use crate::placer::Placer;
 use crate::utils::{Ptr, PtrList};
 
 // FIXME: this would preferably live in `place.rs`,
@@ -540,6 +541,107 @@ fn ro(unit: Ptr<cell::CellBag>) -> LayoutResult<cell::CellBag> {
     }
     Ok(hasunits.into())
 }
+/// RO, relative-placement edition
+fn ro_rel(unit: Ptr<cell::CellBag>) -> LayoutResult<cell::CellBag> {
+    use crate::placement::{Placeable, RelativePlace, SepBy, Separation, Side};
+    let unitsize = (18, 1);
+
+    // Create an initially empty layout
+    let mut hasunits = LayoutImpl::new(
+        "HasUnits",                                     // name
+        3,                                              // top_layer
+        Outline::rect(7 * unitsize.0, 7 * unitsize.1)?, // outline
+    );
+    let m2xpitch = 36;
+    let m2botcut = 5;
+    let m2topcut = 7 * m2botcut + 1;
+
+    // Next-location tracker
+    let mut next_loc = (unitsize.0, 2 * unitsize.1).into();
+    let mut insts: Vec<Ptr<Instance>> = Vec::new();
+
+    // For each column
+    for x in 0..3 {
+        let m2track = (m2xpitch * (x + 1) - 4) as usize;
+        let m2entrack = (x * m2xpitch) + m2xpitch / 2;
+
+        // For each row
+        for y in 0..3 {
+            let inst = Instance {
+                inst_name: format!("inst{}{}", x, y),
+                cell: unit.clone(),
+                loc: next_loc,
+                reflect_horiz: false,
+                reflect_vert: true,
+            };
+            let inst = hasunits.instances.add(inst);
+            insts.push(inst.clone());
+            if y == 2 {
+                // Top of a row. Place to the right of its bottom instance.
+                next_loc = RelativePlace {
+                    to: Placeable::Instance(insts[3 * x].clone()),
+                    side: Side::Right,
+                    align: Side::Bottom, // Top or Bottom both work just as well here
+                    sep: Separation::x(SepBy::SizeOf(unit.clone())),
+                }
+                .into();
+            } else {
+                // Place above the most-recent instance.
+                next_loc = RelativePlace {
+                    to: Placeable::Instance(inst.clone()),
+                    side: Side::Top,
+                    align: Side::Left, // Left or Right both work just as well here
+                    sep: Separation::y(SepBy::SizeOf(unit.clone())),
+                }
+                .into();
+            }
+
+            // Assign the input
+            let m1track = (y * 12 + 9) as usize;
+            let m3track = m1track + x as usize;
+            hasunits
+                .net(format!("dly{}", x))
+                .at(1, m2track, m1track, RelZ::Below)
+                .at(2, m3track, m2track, RelZ::Below);
+            if x != 0 {
+                // Cut M3 to the *right* of the input
+                hasunits.cut(2, m3track, m2track + 1, RelZ::Below);
+            } else {
+                // Cut M3 to the *left* of the input
+                hasunits.cut(2, m3track, m2track - 1, RelZ::Below);
+            }
+            // Assign the output
+            let m3track = m1track + ((x + 1) % 3) as usize;
+            let m1track = (y * 12 + 11) as usize;
+            hasunits
+                .net(format!("dly{}", ((x + 1) % 3)))
+                .at(1, m2track + 2, m1track, RelZ::Below)
+                .at(2, m3track, m2track + 2, RelZ::Below);
+            if x != 2 {
+                // Cut M3 to the *left* of the output
+                hasunits.cut(2, m3track, m2track + 1, RelZ::Below);
+            } else {
+                // Cut M3 to the *right* of the output
+                hasunits.cut(2, m3track, m2track + 3, RelZ::Below);
+            }
+
+            // Assign the enable
+            let m1track = (y * 12 + 8) as usize;
+            let m2track = (m2entrack + y) as usize;
+            hasunits
+                .net(format!("en{}{}", x, y))
+                .at(1, m2track, m1track, RelZ::Below);
+            hasunits.cut(1, m2track, m1track + 1, RelZ::Below); // Cut just above
+        }
+
+        // Make top & bottom M2 cuts
+        hasunits.cut(1, m2track, m2botcut, RelZ::Below);
+        hasunits.cut(1, m2track, m2topcut, RelZ::Below);
+        hasunits.cut(1, m2track + 2, m2botcut, RelZ::Below);
+        hasunits.cut(1, m2track + 2, m2topcut, RelZ::Below);
+    }
+    Ok(hasunits.into())
+}
 /// Test importing and wrapping an existing GDSII into a [Library]/[CellBag]
 #[test]
 fn wrap_gds() -> LayoutResult<()> {
@@ -586,13 +688,40 @@ fn _wrap_gds(lib: &mut Library) -> LayoutResult<Ptr<cell::CellBag>> {
     let wrapper = lib.cells.insert(wrapper.into());
     Ok(wrapper)
 }
-/// Create a cell with abstract instances
+
 #[test]
 fn gds_wrapped_ro() -> LayoutResult<()> {
     let mut lib = Library::new("WrappedRo");
     let unit = _wrap_gds(&mut lib)?;
     let ro = ro(unit)?; // Create the RO level
     lib.cells.insert(ro); // And add it to the Library
+    exports(lib, SampleStacks::pdka()?)
+}
+
+#[test]
+fn gds_wrapped_ro_rel() -> LayoutResult<()> {
+    let mut lib = Library::new("WrappedRoRelPlaced");
+    let unit = _wrap_gds(&mut lib)?;
+    let ro = ro_rel(unit)?; // Create the RO level
+    let ro = lib.cells.insert(ro); // And add it to the Library
+    let (lib, stack) = Placer::place(lib, SampleStacks::pdka()?)?;
+    {
+        let ro = ro.read()?;
+        let lay = ro.layout.as_ref().unwrap();
+        for inst in lay.instances.iter() {
+            let inst = inst.read()?;
+            println!("{:?}", &inst.loc);
+        }
+    }
+    exports(lib, stack)
+}
+
+/// Create a library with an "empty" cell
+#[test]
+fn create_empty_cell_lib() -> LayoutResult<()> {
+    let mut lib = Library::new("empty_cell_lib");
+    let cell = LayoutImpl::new("empty_cell", 4, Outline::rect(100, 10)?).into();
+    lib.cells.insert(cell);
     exports(lib, SampleStacks::pdka()?)
 }
 

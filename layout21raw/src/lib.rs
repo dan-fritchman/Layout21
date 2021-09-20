@@ -18,7 +18,7 @@ use slotmap::{new_key_type, SlotMap};
 
 // Internal modules & re-exports
 pub use layout21utils as utils;
-use utils::{ErrorContext};
+use utils::ErrorContext;
 use utils::{Ptr, PtrList};
 
 // Optional-feature modules
@@ -220,13 +220,22 @@ impl Layers {
         }
         key
     }
+    /// Get the next-available (lowest) layer number
+    pub fn nextnum(&self) -> LayoutResult<i16> {
+        for k in 0..i16::MAX {
+            if !self.nums.contains_key(&k) {
+                return Ok(k);
+            }
+        }
+        Err(LayoutError::msg("No more layer numbers available"))
+    }
     /// Get a reference to the [LayerKey] for layer-number `num`
-    pub fn keynum(&self, num: i16) -> Option<&LayerKey> {
-        self.nums.get(&num)
+    pub fn keynum(&self, num: i16) -> Option<LayerKey> {
+        self.nums.get(&num).map(|x| x.clone())
     }
     /// Get a reference to the [LayerKey] layer-name `name`
-    pub fn keyname(&self, name: impl Into<String>) -> Option<&LayerKey> {
-        self.names.get(&name.into())
+    pub fn keyname(&self, name: impl Into<String>) -> Option<LayerKey> {
+        self.names.get(&name.into()).map(|x| x.clone())
     }
     /// Get a reference to [Layer] number `num`
     pub fn num(&self, num: i16) -> Option<&Layer> {
@@ -405,6 +414,16 @@ pub struct AbstractPort {
     pub net: String,
     /// Shapes, with paired [Layer] keys
     pub shapes: HashMap<LayerKey, Vec<Shape>>,
+}
+impl AbstractPort {
+    /// Create a new [AbstractPort] with the given `name`
+    pub fn new(net: impl Into<String>) -> Self {
+        let net = net.into();
+        Self {
+            net,
+            shapes: HashMap::new(),
+        }
+    }
 }
 
 /// # Raw Layout Library  

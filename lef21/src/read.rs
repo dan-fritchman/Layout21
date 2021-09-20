@@ -799,7 +799,7 @@ impl<'src> LefParser<'src> {
     }
     /// Parse a space-separated x,y [LefPoint] comprising two [LefDecimal]
     fn parse_point(&mut self) -> LefResult<LefPoint> {
-        Ok(LefPoint(self.parse_number()?, self.parse_number()?))
+        Ok(LefPoint::new(self.parse_number()?, self.parse_number()?))
     }
     /// Parse [LefUnits] definitions
     fn parse_units(&mut self) -> LefResult<LefUnits> {
