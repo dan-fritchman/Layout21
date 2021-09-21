@@ -608,8 +608,8 @@ impl<'src> LefParser<'src> {
                 "DIRECTION" => pin.direction(self.parse_pin_direction()?),
                 "USE" => {
                     self.advance()?;
-                    self.expect(TokenType::SemiColon)?;
                     let e = self.parse_enum::<LefPinUse>()?;
+                    self.expect(TokenType::SemiColon)?;
                     pin.use_(e)
                 }
                 "SHAPE" => {
