@@ -62,7 +62,7 @@ impl<'lib> GdsExporter<'lib> {
             Units::Micro => gds21::GdsUnits::new(1.0, 1e-6),
             Units::Nano => gds21::GdsUnits::new(1e-3, 1e-9),
             Units::Angstrom => gds21::GdsUnits::new(1e-4, 1e-10),
-            Units::Pico => panic!("FIXME NEW UNITS!!!!")
+            Units::Pico => gds21::GdsUnits::new(1e-6, 1e-12),
         };
         // And convert each of our `cells` into its `structs`
         for cell in self.lib.cells.iter() {
@@ -161,7 +161,8 @@ impl<'lib> GdsExporter<'lib> {
     }
     /// Convert an [Instance] to a GDS instance, AKA [gds21::GdsStructRef]
     fn export_instance(&mut self, inst: &Instance) -> LayoutResult<gds21::GdsStructRef> {
-        self.ctx.push(ErrorContext::Instance(inst.inst_name.clone()));
+        self.ctx
+            .push(ErrorContext::Instance(inst.inst_name.clone()));
         // Convert the orientation to a [gds21::GdsStrans] option
         let mut strans = None;
         if inst.reflect_vert || inst.angle.is_some() {
@@ -222,7 +223,6 @@ impl<'lib> GdsExporter<'lib> {
         }
         Ok(gds_elems)
     }
-
     /// Convert a [Shape] to a [gds21::GdsElement]
     /// Layer and datatype must be previously converted to gds21's [gds21::GdsLayerSpec] format.
     ///
@@ -333,8 +333,12 @@ impl ErrorHelper for GdsExporter<'_> {
 
 /// # Gds Dependency-Order
 ///
-/// Ideally an iterator, but really just a struct that creates an in-order [Vec] at creation time.
+/// Creates a vector of references Gds structs, ordered by their instance dependencies.
+/// Each item in the ordered return value is guaranteed *not* to instantiate any item which comes later.
 /// Intended usage: `for s in GdsDepOrder::order(&gds) { /* do stuff */ }`
+/// Note this *does not* use the `utils` [DepOrder] trait, as it requires tracking of a separete
+/// hash-map of structs by (string) name.
+///
 #[derive(Debug)]
 pub struct GdsDepOrder<'a> {
     strukts: HashMap<String, &'a gds21::GdsStruct>,

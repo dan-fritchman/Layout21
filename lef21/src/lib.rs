@@ -6,6 +6,7 @@
 use std::convert::TryFrom;
 
 // Crates.io Imports
+use derive_more::{Add, AddAssign, Sub, SubAssign};
 #[allow(unused_imports)]
 use rust_decimal::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -15,9 +16,11 @@ extern crate derive_builder;
 // Local modules & re-exports
 use layout21utils as utils;
 mod read;
+mod write;
+
+// Unit tests
 #[cfg(test)]
 mod tests;
-mod write;
 
 /// Internal type alias for all decimal-valued data
 pub type LefDecimal = rust_decimal::Decimal;
@@ -25,7 +28,7 @@ pub type LefDecimal = rust_decimal::Decimal;
 /// Lef Library
 /// Primary store of macro/cell definitions
 #[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[builder(setter(into), private)]
+#[builder(pattern = "owned", setter(into), private)]
 pub struct LefLibrary {
     // Required
     /// Macro Definitions
@@ -63,15 +66,15 @@ pub struct LefLibrary {
     #[builder(default, setter(strip_option))]
     pub units: Option<LefUnits>,
 
-    // Not (Yet) Supported
-    /// Via Definitions
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub vias: Option<Tbd>,
-    /// Syntax Extensions
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub extensions: Option<Tbd>,
+    // Unsupported
+    /// Via Definitions (Unsupported)
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub vias: Unsupported,
+    /// Syntax Extensions (Unsupported)
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub extensions: Unsupported,
 }
 impl LefLibrary {
     /// Open a [LefLibrary] from file `fname`
@@ -86,7 +89,7 @@ impl LefLibrary {
 }
 /// Lef Macro Definition
 #[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[builder(setter(into), private)]
+#[builder(pattern = "owned", setter(into), private)]
 pub struct LefMacro {
     // Required
     /// Macro Name
@@ -133,22 +136,22 @@ pub struct LefMacro {
     pub source: Option<LefDefSource>,
 
     // Unsupported
-    /// Fixed Mask Option
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub fixed_mask: Option<Tbd>,
-    /// Electrically-Equivalent Cell
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub eeq: Option<Tbd>,
-    /// Density Objects
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub density: Option<Tbd>,
-    /// Properties
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub properties: Option<Tbd>,
+    /// Fixed Mask Option (Unsupported)
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub fixed_mask: Unsupported,
+    /// Electrically-Equivalent Cell (Unsupported)
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub eeq: Unsupported,
+    /// Density Objects (Unsupported)
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub density: Unsupported,
+    /// Properties (Unsupported)
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub properties: Unsupported,
 }
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum LefMacroClass {
@@ -159,18 +162,20 @@ pub enum LefMacroClass {
     Core { tp: Option<LefCoreClassType> },
     EndCap { tp: LefEndCapClassType },
 }
-#[derive(Clone, Builder, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[builder(setter(into), private)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct LefForeign {
     /// Foreign Cell Name
     pub cell_name: String,
     /// Location
     pub pt: Option<LefPoint>,
-    /// Orientation
-    pub orient: Option<Tbd>,
+
+    // Unsupported
+    /// Orientation (Unsupported)
+    #[serde(default, skip_serializing)]
+    pub orient: Option<Unsupported>,
 }
 #[derive(Clone, Default, Builder, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[builder(setter(into), private)]
+#[builder(pattern = "owned", setter(into), private)]
 pub struct LefPin {
     // Required Fields
     /// Pin Name
@@ -201,30 +206,30 @@ pub struct LefPin {
     pub antenna_attrs: Vec<LefPinAntennaAttr>,
 
     // Unsupported
-    /// Taper Rule
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub taper_rule: Option<Tbd>,
-    /// Net Expression
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub net_expr: Option<Tbd>,
-    /// Supply Sensitivity
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub supply_sensitivity: Option<Tbd>,
-    /// Ground Sensitivity
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub ground_sensitivity: Option<Tbd>,
-    /// Must-Join
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub must_join: Option<Tbd>,
-    /// Properties
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub properties: Option<Tbd>,
+    /// Taper Rule (Unsupported)
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub taper_rule: Unsupported,
+    /// Net Expression (Unsupported)
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub net_expr: Unsupported,
+    /// Supply Sensitivity (Unsupported)
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub supply_sensitivity: Unsupported,
+    /// Ground Sensitivity (Unsupported)
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub ground_sensitivity: Unsupported,
+    /// Must-Join (Unsupported)
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub must_join: Unsupported,
+    /// Properties (Unsupported)
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub properties: Unsupported,
 }
 /// Enumerated Pin Directions
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -258,6 +263,7 @@ pub struct LefPinAntennaAttr {
     layer: Option<String>,
 }
 #[derive(Clone, Default, Builder, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[builder(pattern = "owned", setter(into), private)]
 pub struct LefPort {
     /// Port-Class
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -267,6 +273,7 @@ pub struct LefPort {
     pub layers: Vec<LefLayerGeometries>,
 }
 #[derive(Clone, Default, Builder, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[builder(pattern = "owned", setter(into), private)]
 pub struct LefLayerGeometries {
     // Required
     /// Layer Name
@@ -307,8 +314,11 @@ pub enum LefLayerSpacing {
 pub enum LefGeometry {
     /// Single Shape
     Shape(LefShape),
-    /// Repeated Iteration/ Array of Shapes
-    Iterate { shape: LefShape, pattern: Tbd },
+    /// Repeated Iteration/ Array of Shapes (Unsupported)
+    Iterate {
+        shape: LefShape,
+        pattern: Unsupported,
+    },
 }
 /// Lef Shapes
 /// Individual Geometric Primitives
@@ -318,8 +328,13 @@ pub enum LefShape {
     Polygon(Vec<LefPoint>),
     Path(Vec<LefPoint>),
 }
-/// X-Y Point
-#[derive(Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq)]
+/// # Lef X-Y Point
+///
+/// Specified in [LefDecimal]-valued coordinates.
+/// Supports common mathematical operations (Add, Sub, increment, etc.).
+#[derive(
+    Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq, Add, AddAssign, Sub, SubAssign,
+)]
 pub struct LefPoint {
     pub x: LefDecimal,
     pub y: LefDecimal,
@@ -375,20 +390,20 @@ pub struct LefUnits {
     /// Defaults to 100, i.e. 1 DBU = 10nm
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub database_microns: Option<LefDbuPerMicron>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub time_ns: Option<LefDecimal>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub capacitance_pf: Option<LefDecimal>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub resistance_ohms: Option<LefDecimal>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub power_mw: Option<LefDecimal>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub current_ma: Option<LefDecimal>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub voltage_volts: Option<LefDecimal>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub frequency_mhz: Option<LefDecimal>,
+    #[serde(default, skip_serializing)]
+    pub time_ns: Unsupported,
+    #[serde(default, skip_serializing)]
+    pub capacitance_pf: Unsupported,
+    #[serde(default, skip_serializing)]
+    pub resistance_ohms: Unsupported,
+    #[serde(default, skip_serializing)]
+    pub power_mw: Unsupported,
+    #[serde(default, skip_serializing)]
+    pub current_ma: Unsupported,
+    #[serde(default, skip_serializing)]
+    pub voltage_volts: Unsupported,
+    #[serde(default, skip_serializing)]
+    pub frequency_mhz: Unsupported,
 }
 /// # Lef SITE Definition
 ///
@@ -396,6 +411,7 @@ pub struct LefUnits {
 /// Dictates the placement grid for a family of macros.
 ///
 #[derive(Clone, Builder, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[builder(pattern = "owned", setter(into), private)]
 pub struct LefSite {
     // Required
     /// Site Name
@@ -411,15 +427,19 @@ pub struct LefSite {
     #[builder(default, setter(strip_option))]
     pub symmetry: Option<Vec<LefSymmetry>>,
 
-    // Not (Yet) Supported
-    /// Row Patterns, re other previously defined sites
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub row_pattern: Option<Tbd>,
+    // Unsupported
+    /// Row Patterns, re other previously defined sites (Unsupported)
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub row_pattern: Unsupported,
 }
-/// Placeholder Struct for Fields to be completed
+/// # Unsupported Feature
+///
+/// Empty placeholder struct for unsupported LEF features.
+/// These fields are largely included for documentation purposes.
+/// They are never parsed, and can only be set to the zero-size [Unsupported] value.
 #[derive(Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq)]
-pub struct Tbd;
+pub struct Unsupported;
 
 /// Lef String-Enumeration Trait
 /// Defines two central methods:
@@ -597,7 +617,7 @@ pub enum LefError {
     /// Parser Errors
     Parse {
         tp: read::LefParseErrorType,
-        ctx: read::LefParseContext,
+        ctx: Vec<read::LefParseContext>,
         token: String,
         line_content: String,
         line_num: usize,

@@ -112,7 +112,7 @@ impl<'lib> RawExporter<'lib> {
             return self.fail("Raw export failed: no [raw::Layers] specified");
         }
         if !self.stack.boundary_layer.is_some() {
-            return self.fail("Raw export failed: no [raw::Layers] specified");
+            return self.fail("Raw export failed: no `boundary_layer` specified");
         }
         Ok(())
     }

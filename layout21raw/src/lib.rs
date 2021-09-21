@@ -118,6 +118,63 @@ impl Default for Units {
         Units::Nano
     }
 }
+/// Enumerated SI Units
+enum SiUnits {
+    Yocto, // E-24
+    Zepto, // E-21
+    Atto,  // E-18
+    Femto, // E-15
+    Pico,  // E-12
+    Nano,  // E-9
+    Micro, // E-6
+    Milli, // E-3
+    Centi, // E-2
+    Deci,  // E-1
+    Deca,  // E1
+    Hecto, // E2
+    Kilo,  // E3
+    Mega,  // E6
+    Giga,  // E9
+    Tera,  // E12
+    Peta,  // E15
+    Exa,   // E18
+    Zetta, // E21
+    Yotta, // E24
+}
+impl Default for SiUnits {
+    /// Default units are nano-scale
+    fn default() -> SiUnits {
+        SiUnits::Nano
+    }
+}
+impl SiUnits {
+    /// Get the exponent of the unit
+    fn exp(&self) -> isize {
+        use SiUnits::*;
+        match self {
+            Yocto => -24,
+            Zepto => -21,
+            Atto => -18,
+            Femto => -15,
+            Pico => -12,
+            Nano => -9,
+            Micro => -6,
+            Milli => -3,
+            Centi => -2,
+            Deci => -1,
+            Deca => 1,
+            Hecto => 2,
+            Kilo => 3,
+            Mega => 6,
+            Giga => 9,
+            Tera => 12,
+            Peta => 15,
+            Exa => 18,
+            Zetta => 21,
+            Yotta => 24,
+        }
+    }
+}
 
 /// # Point in two-dimensional layout-space
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]

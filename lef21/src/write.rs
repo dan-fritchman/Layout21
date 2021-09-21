@@ -50,24 +50,22 @@ impl<'wr> LefWriter<'wr> {
             if let Some(ref db) = v.database_microns {
                 self.write_line(format_args!("DATABASE MICRONS {} ; ", db.0))?;
             }
-            if v.time_ns.is_some()
-                || v.capacitance_pf.is_some()
-                || v.resistance_ohms.is_some()
-                || v.power_mw.is_some()
-                || v.current_ma.is_some()
-                || v.voltage_volts.is_some()
-                || v.frequency_mhz.is_some()
-            {
-                return Err(LefError::Str("Unsupported UNITS field".into()));
-            }
+            // Other UNITS would be written here
+            // if v.time_ns.is_some()
+            //     || v.capacitance_pf.is_some()
+            //     || v.resistance_ohms.is_some()
+            //     || v.power_mw.is_some()
+            //     || v.current_ma.is_some()
+            //     || v.voltage_volts.is_some()
+            //     || v.frequency_mhz.is_some()
+            // { }
             self.indent_level -= 1;
             self.write_line(format_args!("END UNITS "))?;
         }
-        if let Some(ref _v) = lib.vias {
-            return Err(LefError::Str(
-                "Unsupported Attribute: LefLibrary.vias".into(),
-            ));
-        }
+
+        // VIAS would be written here
+        // if let Some(ref v) = lib.vias { }
+
         // Write each site definition
         for site in lib.sites.iter() {
             self.write_site(site)?;
@@ -76,15 +74,15 @@ impl<'wr> LefWriter<'wr> {
         for mac in lib.macros.iter() {
             self.write_macro(mac)?;
         }
-        if let Some(ref _v) = lib.extensions {
-            return Err(LefError::Str(
-                "Unsupported Attribute: LefLibrary.extensions".into(),
-            ));
-        }
+
+        // EXTENSIONS would be written here
+        // if let Some(ref v) = lib.extensions { }
+
         self.write_line(format_args!("END LIBRARY \n"))?;
         self.dest.flush()?;
         Ok(())
     }
+    /// Write a [LefSite] definition
     fn write_site(&mut self, site: &LefSite) -> LefResult<()> {
         self.write_line(format_args!("SITE {} ; ", site.name))?;
         self.indent_level += 1;
@@ -92,16 +90,14 @@ impl<'wr> LefWriter<'wr> {
         if let Some(ref v) = site.symmetry {
             self.write_symmetries(v)?;
         }
-        if site.row_pattern.is_some() {
-            return Err(LefError::Str(
-                "Unsupported Attribute: LefSite.row_pattern".into(),
-            ));
-        }
+        // ROWPATTERN would be written here
+        // if site.row_pattern.is_some() { }
         self.write_line(format_args!("SIZE {} BY {} ;", site.size.0, site.size.1))?;
         self.indent_level -= 1;
         self.write_line(format_args!("END {} ; ", site.name))?;
         Ok(())
     }
+    /// Write a [LefMacro], in recommended order of fields.
     fn write_macro(&mut self, mac: &LefMacro) -> LefResult<()> {
         self.write_line(format_args!("MACRO {} ; ", mac.name))?;
         self.indent_level += 1;
@@ -109,11 +105,8 @@ impl<'wr> LefWriter<'wr> {
         if let Some(ref v) = mac.class {
             self.write_macro_class(v)?;
         }
-        if mac.fixed_mask.is_some() {
-            return Err(LefError::Str(
-                "Unsupported Attribute: LefMacro.fixed_mask".into(),
-            ));
-        }
+        // FIXEDMASK would be written here
+        // if mac.fixed_mask.is_some() { }
         if let Some(ref v) = mac.foreign {
             let pt = match v.pt {
                 Some(ref p) => p.to_string(),
@@ -128,9 +121,8 @@ impl<'wr> LefWriter<'wr> {
             // FIXME: only supported in some LEF versions
             self.write_line(format_args!("SOURCE {} ;", v))?;
         }
-        if mac.eeq.is_some() {
-            return Err(LefError::Str("Unsupported Attribute: LefMacro.eeq".into()));
-        }
+        // EEQ would be written here
+        // if mac.eeq.is_some() { }
         if let Some(ref v) = mac.size {
             self.write_line(format_args!("SIZE {} BY {} ;", v.0, v.1))?;
         }
@@ -152,16 +144,11 @@ impl<'wr> LefWriter<'wr> {
             self.indent_level -= 1;
             self.write_line(format_args!("END "))?;
         }
-        if mac.density.is_some() {
-            return Err(LefError::Str(
-                "Unsupported Attribute: LefMacro.density".into(),
-            ));
-        }
-        if mac.properties.is_some() {
-            return Err(LefError::Str(
-                "Unsupported Attribute: LefMacro.properties".into(),
-            ));
-        }
+
+        // DENSTITY and PROPERTIES would go here
+        // if mac.density.is_some() { }
+        // if mac.properties.is_some() { }
+
         self.indent_level -= 1;
         self.write_line(format_args!("END {} ", mac.name))?;
         Ok(())
@@ -190,15 +177,19 @@ impl<'wr> LefWriter<'wr> {
             };
             self.write_line(format_args!("{} {} {} ;", attr.key, attr.val, layer))?;
         }
-        if pin.taper_rule.is_some()
-            || pin.net_expr.is_some()
-            || pin.supply_sensitivity.is_some()
-            || pin.ground_sensitivity.is_some()
-            || pin.must_join.is_some()
-            || pin.properties.is_some()
-        {
-            return Err(LefError::Str("Unsupported LefPin Attr".into()));
-        }
+
+        // Most unsupported PINS features *would* go here.
+        // if pin.taper_rule.is_some()
+        //     || pin.net_expr.is_some()
+        //     || pin.supply_sensitivity.is_some()
+        //     || pin.ground_sensitivity.is_some()
+        //     || pin.must_join.is_some()
+        //     || pin.properties.is_some()
+        // {
+        //     return Err(LefError::Str("Unsupported LefPin Attr".into()));
+        // }
+
+        // Write each PORT
         for port in pin.ports.iter() {
             self.write_port(port)?;
         }

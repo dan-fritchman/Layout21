@@ -9,12 +9,10 @@ use std::collections::hash_map::Entry;
 use std::convert::{TryFrom, TryInto};
 
 // Local imports
-use crate::utils::Ptr;
-use crate::utils::{ErrorContext, ErrorHelper};
+use crate::utils::{ErrorContext, ErrorHelper, Ptr};
 use crate::{
-    AbstractPort, CellBag, DepOrder, Element, Instance, Layer, LayerKey, LayerPurpose, Layers,
-    LayoutAbstract, LayoutError, LayoutImpl, LayoutResult, Library, Point, Shape, TextElement,
-    Units,
+    AbstractPort, CellBag, Element, Layer, LayerKey, LayerPurpose, Layers, LayoutAbstract,
+    LayoutError, LayoutResult, Library, Point, Shape, Units,
 };
 use lef21;
 
@@ -56,7 +54,7 @@ impl<'lib> LefExporter<'lib> {
             Units::Micro => 1,
             Units::Nano => 1000,
             Units::Angstrom => 10_000,
-            Units::Pico => panic!("FIXME NEW UNITS!!!!")
+            Units::Pico => 1_000_000,
         };
         let dbu = match lef21::LefDbuPerMicron::try_new(lef21::LefDecimal::new(scale, 0)) {
             Ok(dbu) => Ok(dbu),
@@ -81,9 +79,8 @@ impl<'lib> LefExporter<'lib> {
         }
         // Convert blockages
         for (layerkey, blockage) in &abstrakt.blockages {
-            lefmac
-                .obs
-                .push(self.export_layer_shapes(*layerkey, blockage)?);
+            let obs = self.export_layer_shapes(*layerkey, blockage)?;
+            lefmac.obs.push(obs);
         }
         self.ctx.pop();
         Ok(lefmac)
@@ -213,18 +210,12 @@ impl LefImporter {
         if leflib.sites.len() > 0 {
             self.warn("Ignored LEF feature: sites");
         }
-        if leflib.vias.is_some() {
-            self.fail("Unsupported LEF feature: vias")?;
-        }
-        if leflib.extensions.is_some() {
-            self.fail("Unsupported LEF feature: extensions")?;
-        }
         if let Some(sens) = &leflib.names_case_sensitive {
             if *sens == lef21::LefOnOff::Off {
                 self.fail("Unsupported LEF feature: case-insensitive naming")?;
             }
         }
-        // Fields that are *there*, but not really used for now. 
+        // Fields that are *there*, but not really used for now.
         // || leflib.version.is_some()
         // || leflib.bus_bit_chars.is_some()
         // || leflib.divider_char.is_some()
@@ -240,54 +231,11 @@ impl LefImporter {
         Ok(())
     }
     /// Import our [Units].  
-    fn import_units(&mut self, lefunits: &Option<lef21::LefUnits>) -> LayoutResult<Units> {
+    fn import_units(&mut self, _lefunits: &Option<lef21::LefUnits>) -> LayoutResult<Units> {
+        // Despite having a big structure for all kinds of units, LEF distance data is always in microns.
+        // Distance values are commonly stored to 2-4 decimal places, which we'll move to angstroms.
         self.ctx.push(ErrorContext::Units);
-        // Despite having a big structure for all kinds of units, LEF distance data is always in microns. 
-        // Distance values are commonly stored to 2-4 decimal places, which we'll move to angstroms. 
         self.dist_scale = 10_000;
-        // let units = ;
-        // const DEFAULT_DBU_PER_MICRON: u32 = 100;
-        // const DEFAULT_SCALE: u32 = 1000 / DEFAULT_DBU_PER_MICRON; // Long-hand for "10" 
-        // let units = match lefunits {
-        //     None => {
-        //         self.dist_scale = DEFAULT_SCALE;
-        //         Units::Nano
-        //     },
-        //     Some(ref u) => {
-        //         // Check for unsupported units: all types but distance
-        //         if u.time_ns.is_some()
-        //             || u.capacitance_pf.is_some()
-        //             || u.resistance_ohms.is_some()
-        //             || u.power_mw.is_some()
-        //             || u.current_ma.is_some()
-        //             || u.voltage_volts.is_some()
-        //             || u.frequency_mhz.is_some()
-        //         {
-        //             return self.fail("Unsupported LEF units");
-        //         }
-        //         match u.database_microns {
-        //             None => {
-        //                 self.dist_scale = DEFAULT_SCALE;
-        //                 Units::Nano
-        //             }
-        //             Some(ref dbu) => {
-        //                 match dbu.value() {
-        //                     100 | 200 | 1000 => {
-        //                         // Integer nanometers
-        //                         self.dist_scale = 1000 / dbu.value();
-        //                         Units::Nano
-        //                     }
-        //                     400 | 800 | 2000 | 4000 | 8000 | 10_000 | 20_000 => {
-        //                         // Go pico-meter! 
-        //                         self.dist_scale = 1_000_000 / dbu.value();
-        //                         Units::Pico 
-        //                     }
-        //                     _ => return self.fail("Invalid LEF Units"),
-        //                 }
-        //             }
-        //         }
-        //     }
-        // };
         self.ctx.pop();
         Ok(Units::Angstrom)
     }
@@ -302,29 +250,38 @@ impl LefImporter {
     /// Import a [LayoutAbstract]
     fn import_abstract(&mut self, lefmacro: &lef21::LefMacro) -> LayoutResult<LayoutAbstract> {
         self.ctx.push(ErrorContext::Abstract);
-        // Get an [Outline] from the LEF `size` field
-        if lefmacro.size.is_none() {
-            self.fail("Missing LEF size")?;
-        }
-        // FIXME: faking out the `outline` field for now; policy on these TBD.
-        // let lefsize = lefmacro.size.as_ref().unwrap();
-        let fake_outline = {
-            let mut layers = self.layers.write()?;
-            let layernum = layers.nextnum()?; // FIXME: support no-number [Layer]s
-            let newlayer = Layer::new(layernum, "boundary");
-            let layer = layers.add(newlayer);
+        // Create an outline-rectangle.
+        let outline = {
+            // Grab a [Point] from the `size` field
+            let lefsize = self.unwrap(lefmacro.size.as_ref(), "Missing LEF size")?;
+            let lefsize = lef21::LefPoint::new(lefsize.0, lefsize.1);
+            let lefsize = self.import_point(&lefsize)?;
+
+            // FIXME: what layer this goes on.
+            // Grab one named `boundary`.
+            let layer = {
+                let mut layers = self.layers.write()?;
+                match layers.names.get("boundary") {
+                    Some(key) => key.clone(),
+                    None => {
+                        let layernum = layers.nextnum()?; // FIXME: support no-number [Layer]s
+                        let newlayer = Layer::new(layernum, "boundary");
+                        layers.add(newlayer)
+                    }
+                }
+            };
             Element {
                 net: None,
                 layer,
                 purpose: LayerPurpose::Outline,
                 inner: Shape::Rect {
-                    p0: Point::new(0, 0), // FIXME!
-                    p1: Point::new(0, 0),
+                    p0: Point::new(0, 0),
+                    p1: lefsize,
                 },
             }
         };
         // Create the [LayoutAbstract] to be returned
-        let mut abstrakt = LayoutAbstract::new(&lefmacro.name, fake_outline);
+        let mut abstrakt = LayoutAbstract::new(&lefmacro.name, outline);
         // Import all pins
         for lefpin in &lefmacro.pins {
             let abstrakt_port = self.import_pin(lefpin)?;
@@ -352,7 +309,10 @@ impl LefImporter {
         // The LEF "pin vs port" distinction is not a thing here.
         // Only single-port pins can be imported.
         if lefpin.ports.len() != 1 {
-            self.warn(format!("Warning multiple `LefPort`s on `LefPin` {} will be merged", lefpin.name));
+            self.warn(format!(
+                "Warning multiple `LefPort`s on `LefPin` {} will be merged",
+                lefpin.name
+            ));
         }
 
         // FIXME: check more unsupported [LefPin] fields
@@ -380,8 +340,7 @@ impl LefImporter {
         self.ctx.push(ErrorContext::Geometry);
         // Import the layer
         let layerkey = self.import_layer(&geoms.layer_name)?;
-        if geoms.except_pg_net.is_some()
-        {
+        if geoms.except_pg_net.is_some() {
             self.fail("Unsupported LEF Feature: except_pg_net")?;
         }
         if let Some(spacing) = &geoms.spacing {
@@ -447,37 +406,13 @@ impl LefImporter {
     ) -> LayoutResult<Shape> {
         // Paths require that `layer` have a `width` attribute.
         // And *our* paths are integer-width'ed, so they better have a zero-valued fractional part.
-        // FIXME: real width conversion into `self.units`
         let width = self.unwrap(layer.width, "Invalid LEF Path with no Width")?;
-        if !width.fract().is_zero() {
-            self.fail("LEF Path has non-zero fractional width")?;
-        }
-        let width = usize::try_from(width.mantissa())?;
+        let width = self.import_dist(&width)?;
+        let width = usize::try_from(width)?;
         // Convert each of the Points
         let pts = self.import_point_vec(pts)?;
         // And return the path
         Ok(Shape::Path { width, pts })
-    }
-    /// Add the finishing touches to convert a [Shape] to an [Element]
-    fn convert_shape(
-        &mut self,
-        inner: Shape,
-        layer: LayerKey,
-        purpose: LayerPurpose,
-        net: &str,
-    ) -> LayoutResult<Element> {
-        let net = if net.is_empty() {
-            None
-        } else {
-            Some(net.to_string())
-        };
-        // Create the Element. Note the layer fields are thus far left default.
-        Ok(Element {
-            net,
-            inner,
-            layer,
-            purpose,
-        })
     }
     /// Import a vector of [Point]s
     fn import_point_vec(&mut self, pts: &Vec<lef21::LefPoint>) -> LayoutResult<Vec<Point>> {
@@ -496,7 +431,10 @@ impl LefImporter {
     fn import_dist(&mut self, lefdec: &lef21::LefDecimal) -> LayoutResult<isize> {
         let scaled = lefdec * lef21::LefDecimal::from(self.dist_scale);
         if !scaled.fract().is_zero() {
-            self.fail(format!("LEF Decimal {} has non-zero fractional part when scaled to internal units as {}", lefdec, scaled))?;
+            self.fail(format!(
+                "LEF Decimal {} has non-zero fractional part when scaled to internal units as {}",
+                lefdec, scaled
+            ))?;
         }
         Ok(scaled.mantissa().try_into()?)
     }
@@ -517,8 +455,8 @@ impl LefImporter {
         };
         Ok(layerkey)
     }
-    /// Generate a warning. 
-    /// Thus far, prints to the console. 
+    /// Generate a warning.
+    /// Thus far, prints to the console.
     fn warn(&self, msg: impl Into<String>) {
         eprintln!("Warning: {}", msg.into());
     }
