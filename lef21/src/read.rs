@@ -71,7 +71,7 @@ impl<'src> LefLexer<'src> {
             at_bol: true,
         };
         // Read the first token into our `next_tok` field
-        lex.next_tok = lex.advance()?;
+        lex.next_tok = lex._next_token()?;
         Ok(lex)
     }
     /// Get and return our next character, updating our position along the way
@@ -89,29 +89,32 @@ impl<'src> LefLexer<'src> {
     fn peek_char(&self) -> &Option<char> {
         &self.next_char
     }
-    /// Get and return our next token, updating internal state along the way
-    fn next_token(&mut self) -> LefResult<Option<Token>> {
-        if self.next_tok.is_none() {
-            return Ok(None);
-        }
-        let mut tok = self.advance()?;
-        std::mem::swap(&mut tok, &mut self.next_tok);
-        Ok(tok)
-    }
     /// Get an immutable reference to our next [Token], without advancing
     #[inline(always)]
     fn peek_token(&self) -> &Option<Token> {
         &self.next_tok
     }
+    /// Get and return our next token, updating internal state along the way
+    fn next_token(&mut self) -> LefResult<Option<Token>> {
+        if self.next_tok.is_none() {
+            return Ok(None);
+        }
+        let mut tok = self._next_token()?;
+        std::mem::swap(&mut tok, &mut self.next_tok);
+        Ok(tok)
+    }
+    /// Internal implementation of `next_token`.
     /// Pull our next [Token], removing ignored items such as commentary and whitespace.
-    /// FIXME: better name here!
-    fn advance(&mut self) -> LefResult<Option<Token>> {
+    ///
+    /// While the primary API method is `next_token`, this "underscore version"
+    /// is also called during startup to evade its usual end-of-stream check.
+    fn _next_token(&mut self) -> LefResult<Option<Token>> {
         use TokenType::{Comment, NewLine, WhiteSpace};
         loop {
             match self.lex_one()? {
                 None => return Ok(None),
                 Some(t) => match t.ttype {
-                    WhiteSpace | Comment | NewLine => continue, // White-space and comments are not emitted
+                    WhiteSpace | Comment | NewLine => continue, // White-space, newlines, and comments are not emitted
                     _ => {
                         // All other Tokens. Note we have seen content on the line, and return them.
                         self.at_bol = false;
@@ -173,7 +176,7 @@ impl<'src> LefLexer<'src> {
         if self.accept(char::is_alphabetic) {
             return self.lex_name();
         }
-        return self.fail(); // Some other, invalid character. Fail.
+        self.fail() // Some other, invalid character. Fail.
     }
     /// Lex newlines, incrementing our line-number
     fn lex_newline(&mut self) -> LefResult<Option<Token>> {
@@ -181,7 +184,7 @@ impl<'src> LefLexer<'src> {
         self.line += 1;
         self.linestart = self.pos;
         self.at_bol = true;
-        return Ok(Some(tok));
+        Ok(Some(tok))
     }
     /// Lex whitespace
     fn lex_whitespace(&mut self) -> LefResult<Option<Token>> {
@@ -312,7 +315,19 @@ pub enum LefParseErrorType {
     /// All other errors
     Other,
 }
-
+/// Lef Parsing Session
+/// State held over the course of a parser run.
+#[derive(Debug)]
+struct LefParseSession {
+    lef_version: LefDecimal,
+}
+impl Default for LefParseSession {
+    fn default() -> Self {
+        Self {
+            lef_version: LefDecimal::new(5, 8), // Version defaults to 5.8
+        }
+    }
+}
 /// Lef Parser
 /// Transforms input string of lifetime 'src into a [LefLibrary]
 pub struct LefParser<'src> {
@@ -320,6 +335,8 @@ pub struct LefParser<'src> {
     src: &'src str,
     /// Lexer
     lex: LefLexer<'src>,
+    /// Session State
+    session: LefParseSession,
     /// Context Stack
     ctx: Vec<LefParseContext>,
 }
@@ -331,6 +348,7 @@ impl<'src> LefParser<'src> {
             src,
             lex,
             ctx: Vec::new(),
+            session: LefParseSession::default(),
         })
     }
     #[inline(always)]
@@ -436,15 +454,14 @@ impl<'src> LefParser<'src> {
                     macros.push(self.parse_macro()?);
                     lib
                 }
-                "VERSION" => {
-                    self.advance()?; // Eat the "VERSION" key
-                    let num = self.parse_number()?;
-                    self.expect(TokenType::SemiColon)?;
-                    lib.version(num)
-                }
+                "VERSION" => lib.version(self.parse_version()?),
                 "BUSBITCHARS" => lib.bus_bit_chars(self.parse_bus_bit_chars()?),
                 "DIVIDERCHAR" => lib.divider_char(self.parse_divider_char()?),
                 "NAMESCASESENSITIVE" => {
+                    // Valid for versions <= 5.4
+                    if self.session.lef_version > LefDecimal::new(5, 4) {
+                        self.fail(LefParseErrorType::InvalidKey)?;
+                    }
                     self.advance()?; // Eat the "NAMESCASESENSITIVE" key
                     let e = self.parse_enum::<LefOnOff>()?;
                     self.expect(TokenType::SemiColon)?;
@@ -475,6 +492,25 @@ impl<'src> LefParser<'src> {
         self.ctx.pop();
         Ok(lib.build()?)
     }
+    /// Parse the Lef VERSION declaration
+    fn parse_version(&mut self) -> LefResult<LefDecimal> {
+        // Parse the content, in format `VERSION MAJOR.MINOR ;`
+        self.advance()?; // Eat the "VERSION" key
+        let num = self.parse_number()?;
+        self.expect(TokenType::SemiColon)?;
+
+        // Check the values
+        let frac = num.fract() * Decimal::from(10);
+        if num.floor() != LefDecimal::from(5) // Only major version 5 is supported 
+        || !frac.fract().is_zero() // Only "whole number decimal" sub-versions
+        || frac.floor() > LefDecimal::from(8)
+        {
+            self.fail(LefParseErrorType::InvalidValue)?;
+        }
+        // Checks out - return it. Keep a copy in our session, for future feature-checks.
+        self.session.lef_version = num.clone();
+        Ok(num)
+    }
     /// Parse a Lef MACRO definition
     fn parse_macro(&mut self) -> LefResult<LefMacro> {
         self.expect_keyword("MACRO")?;
@@ -501,7 +537,10 @@ impl<'src> LefParser<'src> {
                     if !self.matches(TokenType::SemiColon) {
                         pt = Some(self.parse_point()?);
                     }
-                    // FIXME: the optional `orient` field is not supported
+                    // The optional `ORIENT` field is not supported
+                    if self.matches(TokenType::Name) {
+                        self.fail(LefParseErrorType::Unsupported)?;
+                    }
                     self.expect(TokenType::SemiColon)?;
                     mac.foreign(LefForeign {
                         cell_name,
@@ -523,7 +562,10 @@ impl<'src> LefParser<'src> {
                 "OBS" => mac.obs(self.parse_obstructions()?),
                 "SYMMETRY" => mac.symmetry(self.parse_symmetries()?),
                 "SOURCE" => {
-                    // FIXME: only supported in some LEF versions, sort out how to handle this fact
+                    // Valid for versions <= 5.4
+                    if self.session.lef_version > LefDecimal::new(5, 4) {
+                        self.fail(LefParseErrorType::InvalidKey)?;
+                    }
                     self.advance()?; // Eat the "SOURCE" key
                     let e = self.parse_enum::<LefDefSource>()?;
                     self.expect(TokenType::SemiColon)?;
@@ -730,7 +772,7 @@ impl<'src> LefParser<'src> {
                 "VIA" => {
                     self.advance()?; // Eat the VIA Token
                     if self.matches(TokenType::Name) {
-                        // FIXME: the VIA ITERATE construction is not supported.
+                        // The ITERATE construction is not supported.
                         return self.fail(LefParseErrorType::Unsupported);
                     }
                     let pt = self.parse_point()?;
@@ -757,7 +799,7 @@ impl<'src> LefParser<'src> {
         match self.get_name()?.to_ascii_uppercase().as_str() {
             "RECT" => {
                 if self.matches(TokenType::Name) {
-                    // FIXME: the VIA ITERATE construction is not supported.
+                    // The ITERATE construction is not supported.
                     self.fail(LefParseErrorType::Unsupported)?;
                 }
                 // Parse the two points

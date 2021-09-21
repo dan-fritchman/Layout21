@@ -12,7 +12,19 @@ use super::*;
 /// Fields are written in the LEF-recommended order
 pub fn save(lib: &LefLibrary, fname: &str) -> LefResult<()> {
     let f = std::fs::File::create(fname)?;
-    write::LefWriter::new(f).write_lib(lib)
+    LefWriter::new(f).write_lib(lib)
+}
+
+/// State kept over the course of a write
+struct LefWriterSession {
+    lef_version: LefDecimal,
+}
+impl Default for LefWriterSession {
+    fn default() -> Self {
+        Self {
+            lef_version: LefDecimal::new(5, 8),
+        }
+    }
 }
 
 /// # Lef Writing Helper
@@ -23,20 +35,47 @@ pub struct LefWriter<'wr> {
     indent_level: usize,
     /// Indentation String. Usually a series of spaces or tabs.
     indent_str: String,
+    /// Session State
+    session: LefWriterSession,
 }
 impl<'wr> LefWriter<'wr> {
+    /// Create a new [LefWriter] to destination `dest`.
+    /// Destination is boxed internally.
     fn new(dest: impl Write + 'wr) -> Self {
         Self {
             dest: Box::new(dest),
             indent_level: 0,
             indent_str: "    ".into(),
+            session: LefWriterSession::default(),
         }
     }
     /// Write a [LefLibrary] to the destination
     /// Fields are written in the LEF-recommended order
     fn write_lib(&mut self, lib: &LefLibrary) -> LefResult<()> {
         if let Some(ref v) = lib.version {
+            // Save a copy in our session-state
+            self.session.lef_version = v.clone();
             self.write_line(format_args!("VERSION {} ; ", v))?;
+        }
+        if let Some(ref v) = lib.names_case_sensitive {
+            // Valid for versions <= 5.4
+            if self.session.lef_version > LefDecimal::new(5, 4) {
+                return Err(LefError::Str(format!(
+                    "Invalid: NAMESCASESENSITIVE in Version: {}",
+                    self.session.lef_version
+                )));
+            }
+            self.write_line(format_args!("NAMESCASESENSITIVE {} ; ", v))?;
+        }
+        if let Some(ref v) = lib.no_wire_extension_at_pin {
+            // Valid for versions <= 5.4
+            if self.session.lef_version > LefDecimal::new(5, 4) {
+                return Err(LefError::Str(format!(
+                    "Invalid: NOWIREEXTENSIONATPIN in Version: {}",
+                    self.session.lef_version
+                )));
+            }
+            self.write_line(format_args!("NOWIREEXTENSIONATPIN {} ; ", v))?;
         }
         if let Some(ref v) = lib.bus_bit_chars {
             self.write_line(format_args!("BUSBITCHARS \"{}{}\" ; ", v.0, v.1))?;
@@ -118,7 +157,13 @@ impl<'wr> LefWriter<'wr> {
             self.write_line(format_args!("ORIGIN {} ;", v))?;
         }
         if let Some(ref v) = mac.source {
-            // FIXME: only supported in some LEF versions
+            // Valid for versions <= 5.4
+            if self.session.lef_version > LefDecimal::new(5, 4) {
+                return Err(LefError::Str(format!(
+                    "Invalid VERSION for MACRO SOURCE: {}",
+                    self.session.lef_version
+                )));
+            }
             self.write_line(format_args!("SOURCE {} ;", v))?;
         }
         // EEQ would be written here
