@@ -334,7 +334,7 @@ pub struct LefParser<'src> {
     /// Source string
     src: &'src str,
     /// Lexer
-    lex: LefLexer<'src>,Î
+    lex: LefLexer<'src>,
     /// Session State
     session: LefParseSession,
     /// Context Stack
