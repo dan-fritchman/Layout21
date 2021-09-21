@@ -324,7 +324,7 @@ struct LefParseSession {
 impl Default for LefParseSession {
     fn default() -> Self {
         Self {
-            lef_version: LefDecimal::new(5, 8), // Version defaults to 5.8
+            lef_version: LefDecimal::from_str("5.8").unwrap(), // Version defaults to 5.8
         }
     }
 }
@@ -334,7 +334,7 @@ pub struct LefParser<'src> {
     /// Source string
     src: &'src str,
     /// Lexer
-    lex: LefLexer<'src>,
+    lex: LefLexer<'src>,Î
     /// Session State
     session: LefParseSession,
     /// Context Stack
@@ -459,7 +459,7 @@ impl<'src> LefParser<'src> {
                 "DIVIDERCHAR" => lib.divider_char(self.parse_divider_char()?),
                 "NAMESCASESENSITIVE" => {
                     // Valid for versions <= 5.4
-                    if self.session.lef_version > LefDecimal::new(5, 4) {
+                    if self.session.lef_version > LefDecimal::from_str("5.4")? {
                         self.fail(LefParseErrorType::InvalidKey)?;
                     }
                     self.advance()?; // Eat the "NAMESCASESENSITIVE" key
@@ -563,7 +563,7 @@ impl<'src> LefParser<'src> {
                 "SYMMETRY" => mac.symmetry(self.parse_symmetries()?),
                 "SOURCE" => {
                     // Valid for versions <= 5.4
-                    if self.session.lef_version > LefDecimal::new(5, 4) {
+                    if self.session.lef_version > LefDecimal::from_str("5.4")? {
                         self.fail(LefParseErrorType::InvalidKey)?;
                     }
                     self.advance()?; // Eat the "SOURCE" key

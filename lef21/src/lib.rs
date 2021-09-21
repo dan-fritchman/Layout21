@@ -22,30 +22,11 @@ mod write;
 #[cfg(test)]
 mod tests;
 
-/// Internal type alias for all decimal-valued data
+/// # LefDecimal
+/// Internal type alias for all decimal-valued data.
+/// Uses [rust_decimal](https://crates.io/crates/rust_decimal) internally.
 pub type LefDecimal = rust_decimal::Decimal;
 
-// /// # Lef Version
-// #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-// pub struct LefVersion(LefDecimal);
-// impl LefVersion {
-//     /// Create a new [LefVersion]
-//     fn new(d: impl Into<LefDecimal>) -> Self {
-//         let d = d.into();
-//         Self(d)
-//     }
-// }
-// impl Default for LefVersion {
-//     /// Default LEF Version is 5.8
-//     fn default() -> Self {
-//         Self::new(LefDecimal::new(5, 8))
-//     }
-// }
-// impl std::fmt::Display for LefVersion {
-//     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-//         self.0.fmt(f)
-//     }
-// }
 /// Lef Library
 /// Primary store of macro/cell definitions
 #[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -82,7 +63,7 @@ pub struct LefLibrary {
     #[builder(default, setter(strip_option))]
     pub divider_char: Option<char>,
     /// Dimensional Units
-    /// Recommended to be specified in a tech-lef. But turns up in libraries as well. 
+    /// Recommended to be specified in a tech-lef. But turns up in libraries as well.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub units: Option<LefUnits>,
