@@ -262,7 +262,7 @@ pub struct Instance {
     /// Location of the Instance origin
     /// This origin-position holds regardless of either `reflect` field.
     /// If specified in absolute coordinates, location-units are [PrimPitches].
-    pub loc: Place<PrimPitches>,
+    pub loc: Place<Xy<PrimPitches>>,
     /// Horizontal Reflection
     pub reflect_horiz: bool,
     /// Vertical Reflection

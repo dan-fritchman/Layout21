@@ -9,10 +9,13 @@ use crate::bbox::HasBoundBox;
 use crate::cell::{CellBag, Instance, LayoutImpl};
 use crate::coords::{PrimPitches, UnitSpeced, Xy};
 use crate::library::Library;
-use crate::placement::{Place, Placeable, RelativePlace, SepBy, Separation, Side};
+use crate::placement::{
+    Array, ArrayInstance, Arrayable, Group, GroupInstance, Place, Placeable, RelativePlace, SepBy,
+    Separation, Side,
+};
 use crate::raw::{Dir, LayoutError, LayoutResult};
 use crate::stack::Stack;
-use crate::utils::{DepOrder, DepOrderer, ErrorContext, ErrorHelper, Ptr};
+use crate::utils::{DepOrder, DepOrderer, ErrorContext, ErrorHelper, Ptr, PtrList};
 
 pub struct Placer {
     lib: Library,
@@ -38,12 +41,13 @@ impl Placer {
         self.ctx.push(ErrorContext::Library(self.lib.name.clone()));
         // Iterate over all the library's cells, updating their instance-placements.
         for cellptr in &self.lib.dep_order() {
-            let cell = cellptr.write()?;
-            if let Some(ref layout) = cell.layout {
-                self.ctx.push(ErrorContext::Cell(cell.name.clone()));
+            let mut cell = cellptr.write()?;
+            self.ctx.push(ErrorContext::Cell(cell.name.clone()));
+            if let Some(ref mut layout) = cell.layout {
                 self.place_layout(layout)?;
-                self.ctx.pop();
+                self.flatten_arrays(layout)?;
             }
+            self.ctx.pop();
         }
         self.ctx.pop();
         Ok(())
@@ -51,21 +55,164 @@ impl Placer {
     /// Update placements for [LayoutImpl] `layout`
     fn place_layout(&mut self, layout: &LayoutImpl) -> LayoutResult<()> {
         self.ctx.push(ErrorContext::Impl);
+
+        // Move the `instances` and `places` into one vector of [Placeable] pointers
+        let mut places: Vec<Ptr<Placeable>> = layout
+            .instances
+            .iter()
+            .map(|i| Ptr::new(Placeable::Instance(i.clone())))
+            .collect();
+        places.extend(layout.places.iter().map(|p| p.clone()));
+
         // Iterate over the layout's instances in dependency order,
         // updating any relative-places to absolute.
-        for inst_ptr in InstPlaceOrder::order(layout.instances.as_slice())? {
-            let mut inst = inst_ptr.write()?;
-            inst.loc = match &inst.loc {
-                Place::Abs(a) => Place::Abs(*a), // Already done
-                Place::Rel(ref rel) => {
-                    // Convert to an absolute location
-                    let abs = self.resolve_instance_place(&*inst, rel)?;
-                    Place::Abs(abs)
+        for place_ptr in PlaceOrder::order(places.as_slice())? {
+            let mut place = place_ptr.write()?;
+            match *place {
+                Placeable::Instance(ref inst_ptr) => {
+                    let mut inst = inst_ptr.write()?;
+                    if let Place::Rel(ref rel) = inst.loc {
+                        // Convert to an absolute location
+                        let abs = self.resolve_instance_place(&*inst, rel)?;
+                        inst.loc = Place::Abs(abs);
+                    }
                 }
+                Placeable::Array(ref ptr) => {
+                    let mut targ = ptr.write()?;
+                    if let Place::Rel(ref rel) = targ.loc {
+                        // Convert to an absolute location
+                        let abs = self.resolve_array_place(&*targ, rel)?;
+                        targ.loc = Place::Abs(abs);
+                    }
+                }
+                _ => (),
             }
         }
         self.ctx.pop();
         Ok(())
+    }
+    /// Flatten [ArrayInstance]s to Cell Instances.
+    fn flatten_arrays(&mut self, layout: &mut LayoutImpl) -> LayoutResult<()> {
+        self.ctx.push(ErrorContext::Impl);
+        for ptr in layout.places.drain(..) {
+            let mut place = ptr.write()?;
+            match &*place {
+                Placeable::Instance(inst_ptr) => {
+                    layout.instances.push(inst_ptr.clone());
+                }
+                Placeable::Array(array_inst_ptr) => {
+                    let array_inst = array_inst_ptr.read()?;
+                    let children = self.flatten_array_inst(&*array_inst)?;
+                    let children = children.into_iter().map(|i| Ptr::new(i));
+                    layout.instances.extend(children);
+                }
+                Placeable::Group(_) => unimplemented!(),
+            }
+        }
+        self.ctx.pop();
+        Ok(())
+    }
+    /// Flatten an [ArrayInstance] to a vector of Cell Instances.
+    /// Instance location must be absolute by call-time.
+    fn flatten_array_inst(&mut self, array_inst: &ArrayInstance) -> LayoutResult<Vec<Instance>> {
+        // Read the child-Instances from the underlying [Array] definition
+        let mut children = {
+            let array = array_inst.array.read()?;
+            self.flatten_array(&*array, &array_inst.name)?
+        };
+        // Get its initial location
+        let mut loc = array_inst.loc.abs()?;
+        // Translate each child to our location and reflection
+        for child in children.iter_mut() {
+            let mut childloc = child.loc.abs_mut()?;
+            if array_inst.reflect_horiz {
+                // Reflect horizontally
+                childloc.x *= -1_isize;
+                child.reflect_horiz = !child.reflect_horiz;
+            }
+            if array_inst.reflect_vert {
+                // Reflect vertically
+                childloc.y *= -1_isize;
+                child.reflect_vert = !child.reflect_vert;
+            }
+            // Translate its location
+            *childloc += *loc;
+        }
+        Ok(children)
+    }
+    /// Flatten an [Array] to a vector of Cell Instances.
+    fn flatten_array(&mut self, array: &Array, prefix: &str) -> LayoutResult<Vec<Instance>> {
+        let mut insts = Vec::with_capacity(array.count);
+
+        // Get the separations in each dimension
+        let xsep = match array.sep.x {
+            None => PrimPitches::x(0),
+            Some(SepBy::UnitSpeced(u)) => {
+                match u {
+                    UnitSpeced::PrimPitches(p) => p.clone(),
+                    _ => unimplemented!(), // TODO: other units
+                }
+            }
+            Some(SepBy::SizeOf(_)) => unimplemented!(),
+        };
+        let ysep = match array.sep.y {
+            None => PrimPitches::y(0),
+            Some(SepBy::UnitSpeced(u)) => {
+                match u {
+                    UnitSpeced::PrimPitches(p) => p.clone(),
+                    _ => unimplemented!(), // TODO: other units
+                }
+            }
+            Some(SepBy::SizeOf(_)) => unimplemented!(),
+        };
+        let sep = Xy::new(xsep, ysep);
+
+        // Initialize our location to the array-origin
+        let mut loc = (0, 0).into();
+        for i in 0..array.count {
+            match &array.unit {
+                Arrayable::Instance(cell) => {
+                    let i = Instance {
+                        inst_name: format!("{}[{}]", prefix, i), // `arrayname[i]`
+                        cell: cell.clone(),
+                        loc: Place::Abs(loc),
+                        reflect_horiz: false,
+                        reflect_vert: false,
+                    };
+                    insts.push(i);
+                }
+                Arrayable::Array(arr) => {
+                    // Create a new [ArrayInstance] at the current location,
+                    // largely for sake of reusing `flatten_array_inst`
+                    // to get its located, flattened children.
+                    let i = ArrayInstance {
+                        name: format!("{}[{}]", prefix, i), // `arrayname[i]`
+                        array: arr.clone(),
+                        loc: Place::Abs(loc),
+                        reflect_horiz: false,
+                        reflect_vert: false,
+                    };
+                    // (Potentially recursively) flatten that short-lived [ArrayInstance]
+                    let children = self.flatten_array_inst(&i)?;
+                    // And add its children to ours
+                    insts.extend(children);
+                }
+                Arrayable::Group(arr) => unimplemented!(),
+            };
+            // Increment the location by our (two-dimensional) increment.
+            loc += sep;
+        }
+        Ok(insts)
+    }
+    /// Resolve a location of [ArrayInstance] `inst` relative to its [RelativePlace] `rel`.
+    fn resolve_array_place(
+        &mut self,
+        inst: &ArrayInstance,
+        rel: &RelativePlace,
+    ) -> LayoutResult<Xy<PrimPitches>> {
+        // FIXME: this should just need the same stuff as `resolve_instance_place`,
+        // once we have a consolidated version of [Instance] that covers Arrays.
+        todo!()
     }
     /// Resolve a location of [Instance] `inst` relative to its [RelativePlace] `rel`.
     fn resolve_instance_place(
@@ -75,17 +222,19 @@ impl Placer {
     ) -> LayoutResult<Xy<PrimPitches>> {
         self.ctx
             .push(ErrorContext::Instance(inst.inst_name.clone()));
-        let to = match rel.to {
-            Placeable::Instance(ref ptr) => ptr,
-            _ => unimplemented!(), // FIXME: other variants TBC
+
+        // Get the relative-to instance's bounding box
+        // let to_inst = to.read()?;
+        // let bbox = to_inst.boundbox()?;
+        let bbox = match *rel.to.read()? {
+            Placeable::Instance(ref ptr) => ptr.read()?.boundbox()?,
+            Placeable::Array(ref ptr) => ptr.read()?.boundbox()?,
+            Placeable::Group(ref ptr) => unimplemented!(),
         };
         // The coordinate axes here are referred to as `side`, corresponding to `rel.side`, and `align`, corresponding to `rel.align`.
         // Mapping these back to (x,y) happens at the very end.
         // FIXME: checks that `side` and `align` are orthogonal should come earlier
 
-        // Get the relative-to instance's bounding box
-        let to_inst = to.read()?;
-        let bbox = to_inst.boundbox()?;
         // Get its edge-coordinates in each axis
         let mut side_coord = bbox.side(rel.side);
         let mut align_coord = bbox.side(rel.align);
@@ -178,29 +327,24 @@ impl ErrorHelper for Placer {
 }
 
 /// Empty struct for implementing the [DepOrder] trait for relative-placed [Instance]s.
-struct InstPlaceOrder;
-impl DepOrder for InstPlaceOrder {
-    type Item = Ptr<Instance>;
+struct PlaceOrder;
+impl DepOrder for PlaceOrder {
+    type Item = Ptr<Placeable>;
     type Error = LayoutError;
 
     /// Process [Instance]-pointer `item`
-    fn process(item: &Ptr<Instance>, orderer: &mut DepOrderer<Self>) -> LayoutResult<()> {
-        // Read the instance-pointer
-        let inst = item.read()?;
+    fn process(item: &Ptr<Placeable>, orderer: &mut DepOrderer<Self>) -> LayoutResult<()> {
+        // Read the location
+        let loc = item.read()?.loc()?;
         // If its place is relative, visit its dependencies first
-        match &inst.loc {
-            Place::Rel(rel) => {
-                match rel.to {
-                    Placeable::Instance(ref ptr) => orderer.push(ptr)?,
-                    _ => unimplemented!(), // FIXME: other variants TBC
-                };
-            }
-            Place::Abs(_) => (), // Nothing to traverse
+        match &loc {
+            Place::Rel(rel) => orderer.push(&rel.to)?, // Visit the dependency first
+            Place::Abs(_) => (),                       // Nothing to traverse
         }
         Ok(())
     }
     fn fail() -> Result<(), Self::Error> {
-        Err(LayoutError::msg("Instance placement ordering error"))
+        Err(LayoutError::msg("Placement ordering error"))
     }
 }
 
@@ -208,7 +352,7 @@ impl DepOrder for InstPlaceOrder {
 mod tests {
     use super::*;
     use crate::outline::Outline;
-    use crate::tests::{exports, SampleStacks};
+    use crate::tests::{exports, stacks::SampleStacks};
 
     #[test]
     fn test_place1() -> LayoutResult<()> {
@@ -240,7 +384,7 @@ mod tests {
             inst_name: "i1".into(),
             cell: unit.clone(),
             loc: Place::Rel(RelativePlace {
-                to: Placeable::Instance(i0.clone()),
+                to: Ptr::new(Placeable::Instance(i0.clone())),
                 side: Side::Right,
                 align: Side::Bottom,
                 sep: Separation::default(),
@@ -290,7 +434,7 @@ mod tests {
                 inst_name: inst_name.into(),
                 cell: lil.clone(),
                 loc: Place::Rel(RelativePlace {
-                    to: Placeable::Instance(ibig.clone()),
+                    to: Ptr::new(Placeable::Instance(ibig.clone())),
                     side,
                     align,
                     sep: Separation::default(),
@@ -364,7 +508,7 @@ mod tests {
                 inst_name: inst_name.into(),
                 cell: lil.clone(),
                 loc: Place::Rel(RelativePlace {
-                    to: Placeable::Instance(ibig.clone()),
+                    to: Ptr::new(Placeable::Instance(ibig.clone())),
                     side,
                     align: side.cw_90(), // Leave out `align` as an arg, set one-turn CW of `side`
                     sep,
@@ -425,7 +569,7 @@ mod tests {
                 inst_name: inst_name.into(),
                 cell: lil.clone(),
                 loc: Place::Rel(RelativePlace {
-                    to: Placeable::Instance(ibig.clone()),
+                    to: Ptr::new(Placeable::Instance(ibig.clone())),
                     side,
                     align: side.ccw_90(), // Leave out `align` as an arg, set one-turn CCW of `side`
                     sep,

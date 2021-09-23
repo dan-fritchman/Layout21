@@ -3,10 +3,11 @@
 //!
 
 // Local imports
+use crate::bbox::{BoundBox, HasBoundBox};
 use crate::cell::{CellBag, Instance};
-use crate::coords::{HasUnits, UnitSpeced, Xy};
+use crate::coords::{HasUnits, Int, PrimPitches, UnitSpeced, Xy};
+use crate::outline::Outline;
 use crate::raw::{Dir, LayoutError, LayoutResult};
-use crate::stack::TrackIntersection;
 use crate::utils::Ptr;
 
 /// # Placement Enumeration
@@ -21,27 +22,51 @@ use crate::utils::Ptr;
 /// which can be specified relative to any other placement.
 ///
 #[derive(Debug, Clone)]
-pub enum Place<AbsType: HasUnits> {
+pub enum Place<AbsType> {
     /// Absolute
-    Abs(Xy<AbsType>),
+    Abs(AbsType),
     /// Relative
     Rel(RelativePlace),
 }
-impl<T: HasUnits> Place<T> {
+impl<T> Place<T> {
     /// Assert that self is [Self::Abs], and retrieve a shared reference to the inner [Xy] value.
-    pub fn abs(&self) -> LayoutResult<&Xy<T>> {
+    pub fn abs(&self) -> LayoutResult<&T> {
         match self {
             Place::Abs(ref xy) => Ok(xy),
             Place::Rel(_) => Err(LayoutError::Tbd),
         }
     }
+    /// Assert that self is [Self::Abs], and retrieve a mutable reference to the inner [Xy] value.
+    pub fn abs_mut(&mut self) -> LayoutResult<&mut T> {
+        match self {
+            Place::Abs(ref mut xy) => Ok(xy),
+            Place::Rel(_) => Err(LayoutError::Tbd),
+        }
+    }
 }
-impl<T: HasUnits> From<Xy<T>> for Place<T> {
+// impl<T> From<T> for Place<T> {
+//     fn from(t: T) -> Self {
+//         Self::Abs(t)
+//     }
+// }
+impl<T: HasUnits> From<Xy<T>> for Place<Xy<T>> {
     fn from(xy: Xy<T>) -> Self {
         Self::Abs(xy)
     }
 }
-impl<T: HasUnits> From<RelativePlace> for Place<T> {
+impl<T: HasUnits> From<(T, T)> for Place<Xy<T>> {
+    /// Two-tuples of unit-specified numerics are converted to an [Xy] value.
+    fn from((x, y): (T, T)) -> Self {
+        Self::Abs(Xy::new(x, y))
+    }
+}
+impl From<(Int, Int)> for Place<Xy<PrimPitches>> {
+    /// Two-tuples of integers are converted to an [Xy] value.
+    fn from(tup: (Int, Int)) -> Self {
+        Self::Abs(Xy::from(tup))
+    }
+}
+impl<T> From<RelativePlace> for Place<T> {
     fn from(rel: RelativePlace) -> Self {
         Self::Rel(rel)
     }
@@ -51,7 +76,7 @@ impl<T: HasUnits> From<RelativePlace> for Place<T> {
 #[derive(Debug, Clone)]
 pub struct RelativePlace {
     /// Placement is relative `to` this
-    pub to: Placeable,
+    pub to: Ptr<Placeable>,
     /// Placed on this `side` of `to`
     pub side: Side,
     /// Aligned to this aspect of `to`
@@ -128,6 +153,12 @@ impl Separation {
             ..Default::default()
         }
     }
+    pub fn z(z: isize) -> Self {
+        Self {
+            z: Some(z),
+            ..Default::default()
+        }
+    }
     /// Get the separation in direction `dir`
     pub fn dir(&self, dir: Dir) -> &Option<SepBy> {
         match dir {
@@ -137,35 +168,141 @@ impl Separation {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Placeable {
     /// Instance of another cell
     Instance(Ptr<Instance>),
-    /// Instance port location
-    PortRef(PortRef),
-    /// Intersection between two tracks
-    TrackIntersection(TrackIntersection),
     /// Uniform array of placeable elements
-    Array(Ptr<Array>),
+    Array(Ptr<ArrayInstance>),
     /// Group of other placeable elements
-    Group(Ptr<Group>),
+    Group(Ptr<GroupInstance>),
+    // /// Instance port location
+    // Port{
+    //     inst: Ptr<Instance>,
+    //     port: String,
+    // },
+    // /// Intersection between two tracks
+    // TrackIntersection(TrackIntersection),
+}
+impl Placeable {
+    /// Get the location of the placeable
+    pub fn loc(&self) -> LayoutResult<Place<Xy<PrimPitches>>> {
+        let loc = match self {
+            Placeable::Instance(ref p) => {
+                let p = p.read()?;
+                p.loc.clone()
+            }
+            Placeable::Array(ref p) => {
+                let p = p.read()?;
+                p.loc.clone()
+            }
+            Placeable::Group(ref p) => {
+                let p = p.read()?;
+                p.loc.clone()
+            }
+        };
+        Ok(loc)
+    }
 }
 
 /// Named group of placeable elements
 #[derive(Debug, Clone)]
 pub struct Group {
-    name: Option<String>,
-    things: Vec<Placeable>,
+    name: String,
+    things: Vec<Arrayable>,
+}
+impl Group {
+    /// Size of the Instance's rectangular `boundbox`, i.e. the zero-origin `boundbox` of its `cell`.
+    pub fn boundbox_size(&self) -> LayoutResult<Xy<PrimPitches>> {
+        todo!()
+    }
+}
+/// Placed Instance of a [Group]
+#[derive(Debug, Clone)]
+pub struct GroupInstance {
+    /// Group-Instance Name
+    pub name: String,
+    /// Group Definition
+    pub group: Ptr<Group>,
+    /// Location
+    pub loc: Place<Xy<PrimPitches>>,
 }
 
+/// Enumeration of types that can be Arrayed
+#[derive(Debug, Clone)]
+pub enum Arrayable {
+    /// Instance of a Cell
+    Instance(Ptr<CellBag>),
+    /// Uniform array of placeable elements
+    Array(Ptr<Array>),
+    /// Group of other placeable elements
+    Group(Ptr<Group>),
+}
+impl Arrayable {
+    pub fn boundbox_size(&self) -> LayoutResult<Xy<PrimPitches>> {
+        match self {
+            Arrayable::Instance(ref p) => p.read()?.boundbox_size(),
+            Arrayable::Array(ref p) => p.read()?.boundbox_size(),
+            Arrayable::Group(ref p) => p.read()?.boundbox_size(),
+        }
+    }
+}
 /// Uniform-Spaced Array of Identical [Placeable] Elements
 #[derive(Debug, Clone)]
 pub struct Array {
-    name: Option<String>,
-    unit: Placeable,
-    loc: UnitSpeced,
-    count: usize,
-    sep: Separation,
+    /// Array Name
+    pub name: String,
+    /// Unit to be Arrayed
+    pub unit: Arrayable,
+    /// Number of elements
+    pub count: usize,
+    /// Separation between elements
+    /// FIXME: whether to include the size of the element or not
+    pub sep: Separation,
+}
+impl Array {
+    /// Size of the Instance's rectangular `boundbox`, i.e. the zero-origin `boundbox` of its `cell`.
+    pub fn boundbox_size(&self) -> LayoutResult<Xy<PrimPitches>> {
+        let unit = self.unit.boundbox_size()?;
+        todo!() // do some math on separation, size
+    }
+}
+/// Located Instance of an Array
+#[derive(Debug, Clone)]
+pub struct ArrayInstance {
+    /// Array-Instance Name
+    pub name: String,
+    /// Array Definition
+    pub array: Ptr<Array>,
+    /// Location of first element
+    pub loc: Place<Xy<PrimPitches>>,
+    /// Vertical reflection
+    pub reflect_vert: bool,
+    /// Horizontal reflection
+    pub reflect_horiz: bool,
+}
+
+impl HasBoundBox for ArrayInstance {
+    type Units = PrimPitches;
+    type Error = LayoutError;
+    /// Retrieve this Instance's bounding rectangle, specified in [PrimPitches].
+    /// Instance location must be resolved to absolute coordinates, or this method will fail.
+    fn boundbox(&self) -> LayoutResult<BoundBox<PrimPitches>> {
+        // FIXME: share most or all of this with [Instance]
+
+        let loc = self.loc.abs()?;
+        let array = self.array.read()?;
+        let outline = array.boundbox_size()?;
+        let (x0, x1) = match self.reflect_horiz {
+            false => (loc.x, loc.x + outline.x),
+            true => (loc.x - outline.x, loc.x),
+        };
+        let (y0, y1) = match self.reflect_vert {
+            false => (loc.y, loc.y + outline.y),
+            true => (loc.y - outline.y, loc.y),
+        };
+        Ok(BoundBox::new(Xy::new(x0, y0), Xy::new(x1, y1)))
+    }
 }
 
 /// FIXME!
