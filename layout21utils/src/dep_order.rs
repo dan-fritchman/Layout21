@@ -21,7 +21,7 @@ use std::marker::PhantomData;
 /// and passing each as an argument to `orderer.push`.
 /// The `push` method, implemented on local helper-type [DepOrderer], recursively traverses
 /// dependencies, calling `process` on each.
-/// `push` also monitors for graph-cycles and returns the associated [Error] type if one is detected.
+/// `push` also monitors for graph-cycles and returns the associated `Error` type if one is detected.
 ///
 /// Typical usage:
 ///
@@ -46,7 +46,7 @@ use std::marker::PhantomData;
 /// }
 /// ```
 ///
-/// The default-implemented [DepOrder::order] creates and returns a dependency-ordered vector of [Item]s.
+/// The default-implemented [DepOrder::order] creates and returns a dependency-ordered vector of `Item`s.
 /// This method serves as the primary entrypoint for typical usage:
 ///
 /// ```text
@@ -71,7 +71,7 @@ pub trait DepOrder: Sized {
     // Required Methods
     /// Process a single `item`, typically depth-first
     fn process(item: &Self::Item, orderer: &mut DepOrderer<Self>) -> Result<(), Self::Error>;
-    /// Failure-handler. Return our [Error] type.
+    /// Failure-handler. Return our `Error` type.
     fn fail() -> Result<(), Self::Error>;
 }
 /// # Dependency Order Helper

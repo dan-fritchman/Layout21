@@ -114,13 +114,13 @@ impl<T: Clone> PtrList<T> {
     pub fn from_ptrs(ptrs: Vec<Ptr<T>>) -> Self {
         Self(ptrs)
     }
-    /// Create a [PtrList] from owned [T]s.
+    /// Create a [PtrList] from owned `T`s.
     /// Also available via the [From]/[Into] traits.
     pub fn from_owned(vals: Vec<T>) -> Self {
         let ptrs = vals.into_iter().map(|v| Ptr::new(v)).collect();
         Self(ptrs)
     }
-    /// Add an owned [T], returning a [Ptr] to it
+    /// Add an owned `T`, returning a [Ptr] to it
     pub fn add(&mut self, val: T) -> Ptr<T> {
         let rv = Ptr::new(val);
         self.0.push(rv.clone());
