@@ -43,7 +43,6 @@ pub type LayoutResult<T> = Result<T, LayoutError>;
 ///
 /// # Layout Error Enumeration
 ///
-#[derive(Debug)]
 pub enum LayoutError {
     /// Error Exporting to Foreign Format
     Export {
@@ -53,6 +52,12 @@ pub enum LayoutError {
     /// Error Importing from Foreign Format
     Import {
         message: String,
+        stack: Vec<ErrorContext>,
+    },
+    /// Conversion Errors, with Boxed External Error
+    Conversion {
+        message: String,
+        err: Box<dyn std::error::Error>,
         stack: Vec<ErrorContext>,
     },
     /// Validation of input data
@@ -70,6 +75,48 @@ impl LayoutError {
         Self::Str(s.into())
     }
 }
+impl std::fmt::Debug for LayoutError {
+    /// Display a [LayoutError]
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            LayoutError::Export { message, stack } => {
+                write!(f, "Export Error: \n - {} \n - {:?}", message, stack)
+            }
+            LayoutError::Import { message, stack } => {
+                write!(f, "Import Error: \n - {} \n - {:?}", message, stack)
+            }
+            LayoutError::Conversion {
+                message,
+                err,
+                stack,
+            } => write!(
+                f,
+                "Conversion Error: \n - {} \n - {} \n - {:?}",
+                message, err, stack
+            ),
+            LayoutError::Boxed(err) => err.fmt(f),
+            LayoutError::Str(err) => err.fmt(f),
+            LayoutError::Validation => write!(f, "Error in Validation"),
+            LayoutError::Tbd => write!(f, "Uncategorized LayoutError"),
+        }
+    }
+}
+impl std::fmt::Display for LayoutError {
+    /// Display a [LayoutError]
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        // Delegates to the [Debug] implementation
+        std::fmt::Debug::fmt(self, f)
+    }
+}
+impl std::error::Error for LayoutError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Boxed(e) => Some(&**e),
+            _ => None,
+        }
+    }
+}
+
 impl From<String> for LayoutError {
     fn from(s: String) -> Self {
         Self::Str(s)

@@ -122,6 +122,13 @@ pub struct Stack {
     /// Layer used for cell outlines/ boundaries
     pub boundary_layer: Option<raw::LayerKey>,
 }
+impl Stack {
+    /// Run validation, consuming `self` and creating a `ValidStack`
+    pub fn validate(self) -> LayoutResult<crate::validate::ValidStack> {
+        use crate::validate::StackValidator;
+        StackValidator::validate(self)
+    }
+}
 /// # Layer
 ///
 /// Metal layer in a [Stack]
@@ -149,7 +156,43 @@ pub struct Layer {
     /// [raw::Layer] for exports
     pub raw: Option<raw::LayerKey>,
 }
+#[derive(Debug, Clone, Default)]
+pub struct LayerPeriodData {
+    pub signals: Vec<TrackData>,
+    pub rails: Vec<TrackData>,
+}
 impl Layer {
+    /// Convert this [Layer]'s track-info into a [LayerPeriodData]
+    pub(crate) fn to_layer_period_data(&self) -> LayoutResult<LayerPeriodData> {
+        let mut period = LayerPeriodData::default();
+        let mut cursor = self.offset;
+        for e in &self.entries() {
+            let d = e.width;
+            match e.ttype {
+                TrackType::Gap => (),
+                TrackType::Rail(railkind) => {
+                    period.rails.push(TrackData {
+                        ttype: e.ttype,
+                        index: period.rails.len(),
+                        dir: self.dir,
+                        start: cursor,
+                        width: d,
+                    });
+                }
+                TrackType::Signal => {
+                    period.signals.push(TrackData {
+                        ttype: e.ttype,
+                        index: period.signals.len(),
+                        dir: self.dir,
+                        start: cursor,
+                        width: d,
+                    });
+                }
+            };
+            cursor += d;
+        }
+        Ok(period)
+    }
     /// Convert this [Layer]'s track-info into a [LayerPeriod]
     pub(crate) fn to_layer_period<'me, 'lib>(
         &'me self,
@@ -174,11 +217,13 @@ impl Layer {
                 TrackType::Rail(railkind) => {
                     period.rails.push(
                         Track {
-                            ttype: e.ttype,
-                            index: period.rails.len(),
-                            dir: self.dir,
-                            start: cursor,
-                            width: d,
+                            data: TrackData {
+                                ttype: e.ttype,
+                                index: period.rails.len(),
+                                dir: self.dir,
+                                start: cursor,
+                                width: d,
+                            },
                             segments: vec![TrackSegment {
                                 tp: TrackSegmentType::Rail(railkind),
                                 start: 0.into(),
@@ -191,11 +236,13 @@ impl Layer {
                 TrackType::Signal => {
                     period.signals.push(
                         Track {
-                            ttype: e.ttype,
-                            index: period.signals.len(),
-                            dir: self.dir,
-                            start: cursor,
-                            width: d,
+                            data: TrackData {
+                                ttype: e.ttype,
+                                index: period.signals.len(),
+                                dir: self.dir,
+                                start: cursor,
+                                width: d,
+                            },
                             segments: vec![TrackSegment {
                                 tp: TrackSegmentType::Wire { src: None },
                                 start: 0.into(),
@@ -271,7 +318,7 @@ impl RelZ {
 }
 
 #[derive(Debug, Clone)]
-pub struct Track<'lib> {
+pub struct TrackData {
     /// Track Type (Rail, Signal)
     pub ttype: TrackType,
     /// Track Index
@@ -282,13 +329,23 @@ pub struct Track<'lib> {
     pub start: DbUnits,
     /// Track width
     pub width: DbUnits,
+}
+/// # Track
+///
+/// An "instantiated" track, including:
+/// * Track-long data in a [TrackData], and
+/// * A set of [TrackSegment]s
+#[derive(Debug, Clone)]
+pub struct Track<'lib> {
+    /// Track-long data
+    pub data: TrackData,
     /// Set of wire-segments, in positional order
     pub segments: Vec<TrackSegment<'lib>>,
 }
 impl<'lib> Track<'lib> {
     /// Verify a (generally just-created) [Track] is valid
     pub fn validate(self) -> LayoutResult<Self> {
-        if self.width < DbUnits(0) {
+        if self.data.width < DbUnits(0) {
             return Err(LayoutError::from("Negative Track Width"));
         }
         Ok(self)
@@ -310,54 +367,67 @@ impl<'lib> Track<'lib> {
             None => Err(TrackError::OutOfBounds(at)),
             Some(seg) => match seg.tp {
                 TrackSegmentType::Rail(_) => unreachable!(),
+                TrackSegmentType::Cut { .. } => Err(TrackError::Conflict(
+                    // Error: trying to assign a net onto a Cut.
+                    TrackConflict::Assign(assn.clone()),
+                    TrackConflict::from(seg.tp.clone()),
+                )),
                 TrackSegmentType::Blockage { .. } => {
                     // FIXME: sort out the desired behaviour here.
                     // Vias above ZTop instance-pins generally land in this case.
                     // We could check for their locations? Or just let it go.
                     Ok(())
                 }
-                TrackSegmentType::Cut { src } => Err(TrackError::CutConflict(src.clone())),
                 TrackSegmentType::Wire { ref mut src, .. } => {
+                    // The good case - assignment succeeds.
                     src.replace(assn);
                     Ok(())
                 }
             },
         }
     }
-    /// Insert a blockage from `start` to `stop`.
-    /// Fails if the region is not a contiguous wire segment.
-    pub fn cut_or_block(&mut self, blockage: TrackSegment<'lib>) -> TrackResult<()> {
+    /// Insert a cut or blockage corresponding to `blockage`.
+    pub fn cut_or_block(
+        &mut self,
+        start: DbUnits,
+        stop: DbUnits,
+        tp: TrackSegmentType<'lib>,
+    ) -> TrackResult<()> {
         // Find the segment where the blockage starts
         let segidx = self
             .segments
             .iter_mut()
-            .position(|seg| seg.stop >= blockage.start)
-            .ok_or(TrackError::OutOfBounds(blockage.start))?
+            .position(|seg| seg.stop > start)
+            .ok_or(TrackError::OutOfBounds(start))?
             .clone();
         let seg = &mut self.segments[segidx];
         // Check for conflicts, and get a copy of our segment-type as we will likely insert a similar segment
         let tpcopy = match seg.tp {
             TrackSegmentType::Blockage { ref src } => {
-                Err(TrackError::BlockageConflict(src.clone()))
+                return Err(TrackError::BlockageConflict(
+                    TrackConflict::from(tp),
+                    src.clone(),
+                ));
             }
-            TrackSegmentType::Cut { src } => Err(TrackError::CutConflict(src.clone())),
-            TrackSegmentType::Wire { .. } => Ok(seg.tp.clone()),
-            TrackSegmentType::Rail(_) => Ok(seg.tp.clone()),
-        }?;
+            TrackSegmentType::Cut { src } => {
+                return Err(TrackError::CutConflict(
+                    TrackConflict::from(tp),
+                    src.clone(),
+                ));
+            }
+            TrackSegmentType::Wire { .. } => seg.tp.clone(),
+            TrackSegmentType::Rail(_) => seg.tp.clone(),
+        };
         // Make sure the cut only effects one segment, or fail
-        if seg.stop < blockage.stop {
+        if seg.stop < stop {
             // FIXME this should really be the *next* segment, borrow checking fight
-            return Err(TrackError::Overlap(seg.stop, blockage.stop));
+            return Err(TrackError::Overlap(seg.stop, stop));
         }
 
         // All clear; time to cut it.
-        // In the more-common case in which the cut-end and segment-end *do not* coincide,
-        // create and insert a new segment.
-        // De-structure the dimensional parts of `blockage`
-        let start = blockage.start;
-        let stop = blockage.stop;
+        // In the more-common case in which the cut-end and segment-end *do not* coincide, create and insert a new segment.
         let mut to_be_inserted: Vec<(usize, TrackSegment)> = Vec::new();
-        to_be_inserted.push((segidx + 1, blockage));
+        to_be_inserted.push((segidx + 1, TrackSegment { start, stop, tp }));
         if seg.stop != stop {
             let newseg = TrackSegment {
                 tp: tpcopy,
@@ -376,12 +446,7 @@ impl<'lib> Track<'lib> {
     /// Insert a blockage from `start` to `stop`.
     /// Fails if the region is not a contiguous wire segment.
     pub fn block(&mut self, start: DbUnits, stop: DbUnits, src: &Ptr<Instance>) -> TrackResult<()> {
-        let seg = TrackSegment {
-            start,
-            stop,
-            tp: TrackSegmentType::Blockage { src: src.clone() },
-        };
-        self.cut_or_block(seg)
+        self.cut_or_block(start, stop, TrackSegmentType::Blockage { src: src.clone() })
     }
     /// Cut from `start` to `stop`.
     /// Fails if the region is not a contiguous wire segment.
@@ -391,12 +456,7 @@ impl<'lib> Track<'lib> {
         stop: DbUnits,
         src: &'lib TrackIntersection,
     ) -> TrackResult<()> {
-        let seg = TrackSegment {
-            start,
-            stop,
-            tp: TrackSegmentType::Cut { src },
-        };
-        self.cut_or_block(seg)
+        self.cut_or_block(start, stop, TrackSegmentType::Cut { src })
     }
     /// Set the stop position for our last [TrackSegment] to `stop`
     pub fn stop(&mut self, stop: DbUnits) -> LayoutResult<()> {
@@ -422,10 +482,10 @@ impl<'lib> LayerPeriod<'lib> {
     /// Shift the period by `dist` in its periodic direction
     pub fn offset(&mut self, dist: DbUnits) -> LayoutResult<()> {
         for t in self.rails.iter_mut() {
-            t.start += dist;
+            t.data.start += dist;
         }
         for t in self.signals.iter_mut() {
-            t.start += dist;
+            t.data.start += dist;
         }
         Ok(())
     }
@@ -534,12 +594,73 @@ impl PrimitiveLayer {
         Self { pitches }
     }
 }
-
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+pub enum TrackConflict {
+    Assign(Assign),
+    Cut(TrackIntersection),
+    Blockage(Ptr<Instance>),
+}
+impl std::fmt::Display for TrackConflict {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            // Delegate simpler types to [Debug]
+            TrackConflict::Assign(a) => std::fmt::Debug::fmt(a, f),
+            TrackConflict::Cut(c) => std::fmt::Debug::fmt(c, f),
+            // And for more complicated ones, [Display]
+            TrackConflict::Blockage(i) => std::fmt::Display::fmt(i, f),
+        }
+    }
+}
+impl From<TrackSegmentType<'_>> for TrackConflict {
+    fn from(tp: TrackSegmentType<'_>) -> Self {
+        match tp {
+            TrackSegmentType::Cut { src } => TrackConflict::Cut(src.clone()),
+            TrackSegmentType::Blockage { src } => TrackConflict::Blockage(src.clone()),
+            _ => unreachable!(),
+        }
+    }
+}
 pub enum TrackError {
     OutOfBounds(DbUnits),
     Overlap(DbUnits, DbUnits),
-    CutConflict(TrackIntersection),
-    BlockageConflict(Ptr<Instance>),
+    Conflict(TrackConflict, TrackConflict),
+    CutConflict(TrackConflict, TrackIntersection),
+    BlockageConflict(TrackConflict, Ptr<Instance>),
 }
 pub type TrackResult<T> = Result<T, TrackError>;
+impl std::fmt::Debug for TrackError {
+    /// Display a [TrackError]
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            TrackError::OutOfBounds(stop) => write!(f, "Track Out of Bounds: {:?}", stop),
+            TrackError::Overlap(p0, p1) => {
+                write!(f, "Overlapping Track cuts at: {:?}, {:?}", p0, p1)
+            }
+            TrackError::CutConflict(t0, t1) => {
+                write!(f, "Conflicting Track-Cuts at: {:?}, {:?}", t0, t1)
+            }
+            TrackError::BlockageConflict(t0, t1) => {
+                write!(
+                    f,
+                    "Conflicting Instance Blockages: \n * {}\n * {}\n",
+                    t0, t1
+                )
+            }
+            TrackError::Conflict(t0, t1) => {
+                write!(f, "Conflict Between: \n * {}\n * {}\n", t0, t1)
+            }
+        }
+    }
+}
+impl std::fmt::Display for TrackError {
+    /// Display a [TrackError]
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        std::fmt::Debug::fmt(self, f)
+    }
+}
+impl std::error::Error for TrackError {}
+impl Into<LayoutError> for TrackError {
+    fn into(self) -> LayoutError {
+        LayoutError::Boxed(Box::new(self))
+    }
+}

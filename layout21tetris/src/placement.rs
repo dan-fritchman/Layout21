@@ -6,7 +6,6 @@
 use crate::bbox::{BoundBox, HasBoundBox};
 use crate::cell::{CellBag, Instance};
 use crate::coords::{HasUnits, Int, PrimPitches, UnitSpeced, Xy};
-use crate::outline::Outline;
 use crate::raw::{Dir, LayoutError, LayoutResult};
 use crate::utils::Ptr;
 
@@ -264,7 +263,7 @@ impl Array {
     /// Size of the Instance's rectangular `boundbox`, i.e. the zero-origin `boundbox` of its `cell`.
     pub fn boundbox_size(&self) -> LayoutResult<Xy<PrimPitches>> {
         let unit = self.unit.boundbox_size()?;
-        todo!() // do some math on separation, size
+        todo!() // FIXME: do some math on separation, size
     }
 }
 /// Located Instance of an Array

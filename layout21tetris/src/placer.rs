@@ -5,6 +5,7 @@
 //!
 
 // Local imports
+use crate::abstrakt;
 use crate::bbox::HasBoundBox;
 use crate::cell::{CellBag, Instance, LayoutImpl};
 use crate::coords::{PrimPitches, UnitSpeced, Xy};
@@ -14,20 +15,20 @@ use crate::placement::{
     Separation, Side,
 };
 use crate::raw::{Dir, LayoutError, LayoutResult};
-use crate::stack::Stack;
 use crate::utils::{DepOrder, DepOrderer, ErrorContext, ErrorHelper, Ptr, PtrList};
+use crate::validate::ValidStack;
 
+/// # Placer
+/// Converts all potentially-relatively-placed attributes to absolute positions.
 pub struct Placer {
     lib: Library,
-    stack: Stack,
+    stack: ValidStack,
     ctx: Vec<ErrorContext>,
 }
 impl Placer {
-    ///
     /// [Placer] public API entrypoint.
-    /// Modify and return [Library] `lib`, converting all [RelativePlace]s to absolutes.
-    ///
-    pub fn place(lib: Library, stack: Stack) -> LayoutResult<(Library, Stack)> {
+    /// Modify and return [Library] `lib`, converting all [RelativePlace]s to absolute locations.
+    pub fn place(lib: Library, stack: ValidStack) -> LayoutResult<(Library, ValidStack)> {
         let mut this = Self {
             lib,
             stack,
@@ -458,7 +459,7 @@ mod tests {
         let _parent = lib.cells.add(parent.into());
 
         // The real code under test: run placement
-        let (lib, stack) = Placer::place(lib, SampleStacks::empty()?)?;
+        let (lib, stack) = Placer::place(lib, SampleStacks::pdka()?)?;
 
         // And test the placed results
         let bigbox = ibig.read()?.boundbox()?;
@@ -529,7 +530,7 @@ mod tests {
         let _parent = lib.cells.add(parent.into());
 
         // The real code under test: run placement
-        let (lib, stack) = Placer::place(lib, SampleStacks::empty()?)?;
+        let (lib, stack) = Placer::place(lib, SampleStacks::pdka()?)?;
 
         // And test the placed results
         let lilsize = lil.read()?.boundbox_size()?;
@@ -592,7 +593,7 @@ mod tests {
         let _parent = lib.cells.add(parent.into());
 
         // The real code under test: run placement
-        let (lib, stack) = Placer::place(lib, SampleStacks::empty()?)?;
+        let (lib, stack) = Placer::place(lib, SampleStacks::pdka()?)?;
 
         // And test the placed results
         let lilsize = lil.read()?.boundbox_size()?;
@@ -625,10 +626,10 @@ mod tests {
         pub fn get() -> LayoutResult<SampleLib> {
             let mut lib = Library::new("_rename_me_plz_");
             // Create a big center cell
-            let big = LayoutImpl::new("big", 0, Outline::rect(11, 12)?).into();
+            let big = LayoutImpl::new("big", 1, Outline::rect(11, 12)?).into();
             let big = lib.cells.add(big);
             // Create the parent cell which instantiates it
-            let mut parent = LayoutImpl::new("parent", 0, Outline::rect(40, 35)?);
+            let mut parent = LayoutImpl::new("parent", 1, Outline::rect(40, 35)?);
             // Create an initial instance
             let ibig = Instance {
                 inst_name: "ibig".into(),
@@ -639,7 +640,18 @@ mod tests {
             };
             let ibig = parent.instances.add(ibig);
             // Create a unit cell which we'll instantiate a few times around `ibig`
-            let lil = LayoutImpl::new("lil", 0, Outline::rect(2, 1)?).into();
+            let mut lil = CellBag::new("lil");
+            lil.layout = Some(LayoutImpl::new("lil", 1, Outline::rect(2, 1)?));
+            let mut lil_abstrakt = abstrakt::LayoutAbstract::new("lil", 1, Outline::rect(2, 1)?);
+            lil_abstrakt.ports.push(abstrakt::Port {
+                name: "PPP".into(),
+                kind: abstrakt::PortKind::Edge {
+                    layer: 0,
+                    track: 0,
+                    side: abstrakt::Side::TopOrRight,
+                },
+            });
+            lil.abstrakt = Some(lil_abstrakt);
             let lil = lib.cells.add(lil);
             Ok(SampleLib {
                 lib,

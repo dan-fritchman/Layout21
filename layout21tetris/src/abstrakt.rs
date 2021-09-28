@@ -33,6 +33,27 @@ pub struct LayoutAbstract {
     /// Ports
     pub ports: Vec<Port>,
 }
+impl LayoutAbstract {
+    /// Create a new abstract layout. No ports are initially defined.
+    pub fn new(name: impl Into<String>, top_layer: usize, outline: outline::Outline) -> Self {
+        Self {
+            name: name.into(),
+            outline,
+            top_layer,
+            ports: Vec::new(),
+        }
+    }
+    /// Retrieve a reference to a port by name.
+    /// Returns `None` if no port with that name exists.
+    pub fn port(&self, name: &str) -> Option<&Port> {
+        for port in &self.ports {
+            if port.name == name {
+                return Some(port);
+            }
+        }
+        None
+    }
+}
 /// Abstract-Layout Port
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Port {

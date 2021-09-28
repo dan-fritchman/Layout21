@@ -16,7 +16,7 @@ use crate::coords::{DbUnits, HasUnits, PrimPitches, UnitSpeced, Xy};
 use crate::library::Library;
 use crate::outline::Outline;
 use crate::raw::{self, Dir, LayoutError, LayoutResult, Point};
-use crate::stack::{LayerPeriod, RelZ, Stack, Track, TrackError, TrackSegmentType};
+use crate::stack::{LayerPeriod, RelZ, Track, TrackError, TrackSegmentType};
 use crate::utils::{ErrorContext, ErrorHelper};
 use crate::utils::{Ptr, PtrList};
 use crate::{abstrakt, cell, validate};
@@ -48,7 +48,7 @@ struct TempCell<'lib> {
 #[derive(Debug, Clone)]
 struct TempCellLayer<'lib> {
     /// Reference to the validated metal layer
-    layer: &'lib validate::ValidMetalLayer<'lib>,
+    layer: &'lib validate::ValidMetalLayer,
     /// Reference to the parent cell
     cell: &'lib TempCell<'lib>,
     /// Instances which intersect with this layer and period
@@ -75,23 +75,28 @@ struct TempPeriod<'lib> {
     bot_assns: Vec<AssignKey>,
 }
 /// # Converter from [Library] and constituent elements to [raw::Library]
-pub struct RawExporter<'lib> {
+pub struct RawExporter {
     /// Source [Library]
     lib: Library,
     /// Source (validated) [Stack]
-    stack: validate::ValidStack<'lib>,
+    stack: validate::ValidStack,
     /// HashMap from source [CellBag] to exported [raw::CellBag],
     /// largely for lookup during conversion of [Instance]s
     rawcells: HashMap<Ptr<cell::CellBag>, Ptr<raw::CellBag>>,
     /// Context stack, largely for error reporting
     ctx: Vec<ErrorContext>,
 }
-impl<'lib> RawExporter<'lib> {
+impl<'lib> RawExporter {
     /// Convert the combination of a [Library] `lib` and [Stack] `stack` to a [raw::Library].
     /// Both `lib` and `stack` are consumed in the process.
-    pub fn convert(lib: Library, stack: Stack) -> LayoutResult<Ptr<raw::Library>> {
+    pub fn convert(lib: Library, stack: validate::ValidStack) -> LayoutResult<Ptr<raw::Library>> {
+        // First perform validation of the stack
         // FIXME: validate the library too
-        let stack = validate::StackValidator::validate(stack)?;
+        // let stack = validate::StackValidator::validate(stack)?;
+
+        // Put the combination through absolute-placement
+        use crate::placer::Placer;
+        let (lib, stack) = Placer::place(lib, stack)?;
 
         let mut myself = Self {
             lib,
@@ -395,7 +400,7 @@ impl<'lib> RawExporter<'lib> {
     /// <'f> is the short "function lifetime" of the argument references
     pub fn assign_track<'f>(
         &self,
-        layer: &'f validate::ValidMetalLayer<'lib>,
+        layer: &'f validate::ValidMetalLayer,
         layer_period: &'f mut LayerPeriod<'lib>,
         assn: &'f validate::ValidAssign<'lib>,
         top: bool, // Boolean indication of whether to assign `top` or `bot`. FIXME: not our favorite.
@@ -409,25 +414,8 @@ impl<'lib> RawExporter<'lib> {
         };
         let track = &mut layer_period.signals[track % nsig];
         // And set the net at the assignment's location
-        match track.set_net(assn.loc.xy[layer.spec.dir], &assn.src) {
-            Ok(()) => Ok(()),
-            Err(TrackError::BlockageConflict(x)) => self.fail(format!(
-                "Assignment {:?} conflicts with Instance Blockage for {:?}",
-                assn.src, x
-            )),
-            Err(TrackError::CutConflict(x)) => self.fail(format!(
-                "Assignment {:?} conflicts with Cut at {:?}",
-                assn.src, x
-            )),
-            Err(TrackError::OutOfBounds(dist)) => self.fail(format!(
-                "{:?} out-of-bounds at distance {:?}",
-                assn.src, dist
-            )),
-            Err(TrackError::Overlap(d0, d1)) => self.fail(format!(
-                "{:?} trying to cut across segments at ({:?}, {:?})",
-                assn.src, d0, d1
-            )),
-        }?;
+        let res = track.set_net(assn.loc.xy[layer.spec.dir], &assn.src);
+        self.ok(res, "Error Assigning Track")?; 
         Ok(())
     }
     /// Convert a [LayoutAbstract] into raw form.
@@ -607,14 +595,14 @@ impl<'lib> RawExporter<'lib> {
                 Cut { .. } | Blockage { .. } => continue,
             };
             // Convert the inner shape
-            let inner = match track.dir {
+            let inner = match track.data.dir {
                 Dir::Horiz => raw::Shape::Rect {
-                    p0: self.export_point(seg.start, track.start),
-                    p1: self.export_point(seg.stop, track.start + track.width),
+                    p0: self.export_point(seg.start, track.data.start),
+                    p1: self.export_point(seg.stop, track.data.start + track.data.width),
                 },
                 Dir::Vert => raw::Shape::Rect {
-                    p0: self.export_point(track.start, seg.start),
-                    p1: self.export_point(track.start + track.width, seg.stop),
+                    p0: self.export_point(track.data.start, seg.start),
+                    p1: self.export_point(track.data.start + track.data.width, seg.stop),
                 },
             };
             // And pack it up as a [raw::Element]
@@ -698,7 +686,7 @@ impl<'lib> RawExporter<'lib> {
         }
 
         // Grab indices of the relevant tracks for this period
-        let nsig = temp_layer.layer.period.signals.len();
+        let nsig = temp_layer.layer.period_data.signals.len();
         let relevant_track_nums = (periodnum * nsig, (periodnum + 1) * nsig);
         // Filter cuts down to those in this period
         let cuts: Vec<&validate::ValidCut> = cell.cuts[temp_layer.layer.index]
@@ -801,12 +789,26 @@ impl<'lib> RawExporter<'lib> {
         raw::Point::new(x.0, y.0)
     }
 }
-impl ErrorHelper for RawExporter<'_> {
+impl ErrorHelper for RawExporter {
     type Error = LayoutError;
     fn err(&self, msg: impl Into<String>) -> LayoutError {
         LayoutError::Export {
             message: msg.into(),
             stack: self.ctx.clone(),
+        }
+    }
+    fn ok<T, E: std::error::Error + 'static>(
+        &self,
+        res: Result<T, E>,
+        msg: impl Into<String>,
+    ) -> Result<T, Self::Error> {
+        match res {
+            Ok(t) => Ok(t),
+            Err(e) => Err(LayoutError::Conversion {
+                message: msg.into(),
+                err: Box::new(e),
+                stack: self.ctx.clone(),
+            }),
         }
     }
 }

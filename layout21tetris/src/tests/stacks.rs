@@ -5,6 +5,7 @@
 use crate::raw::{self, Dir, LayoutResult, Units};
 use crate::stack::*;
 use crate::utils::Ptr;
+use crate::validate::ValidStack;
 
 /// # Sample Stacks
 /// Namespace for commonly re-used [Stack]s for testing.
@@ -17,7 +18,7 @@ impl SampleStacks {
     /// * [raw::Layers] containing solely that boundary layer
     /// * No metals or via layers
     /// Generally useful for placement activities, particularly among [Instace]s.
-    pub fn empty() -> LayoutResult<Stack> {
+    pub fn empty() -> LayoutResult<ValidStack> {
         let mut rawlayers = raw::Layers::default();
         let boundary_layer = Some(rawlayers.add(raw::Layer::from_pairs(
             0,
@@ -31,11 +32,11 @@ impl SampleStacks {
             vias: Vec::new(),   // No vias
             rawlayers: Some(Ptr::new(rawlayers)),
         };
-        Ok(stack)
+        Ok(stack.validate()?)
     }
 
     /// Real(istic) PDK [Stack]
-    pub fn pdka() -> LayoutResult<Stack> {
+    pub fn pdka() -> LayoutResult<ValidStack> {
         let mut rawlayers = raw::Layers::default();
         // Shorthands for the common purpose-numbers
         let metal_purps = [
@@ -152,17 +153,6 @@ impl SampleStacks {
             ],
             rawlayers: Some(Ptr::new(rawlayers)),
         };
-        Ok(stack)
+        Ok(stack.validate()?)
     }
-}
-/// Run the test-stacks through validation
-#[test]
-fn validate_stack() -> LayoutResult<()> {
-    use crate::validate;
-
-    let s = SampleStacks::empty()?;
-    validate::StackValidator::validate(s)?;
-    let s = SampleStacks::pdka()?;
-    validate::StackValidator::validate(s)?;
-    Ok(())
 }

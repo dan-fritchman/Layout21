@@ -11,12 +11,12 @@
 //!   * They include a circuit's pin locations and requirements for "obstruction" blockages, among other metadata, typically without including the circuit's internal layout implementation.
 //! * LEF *technology descriptions* ("tech-lef") provide a concise description of rules for assembling such cells, as commonly performed by layout-synthesis software.
 //!
-//! Lef21 includes comprehensive support for parsing and writing LEF *design libraries*, primarily stored as its [LefLibrary] type.
+//! Lef21 includes comprehensive support for parsing and writing LEF *design libraries*, primarily stored as its [`LefLibrary`] and [`LefMacro`] types.
 //! A select subset of tech-lef features are also supported, particularly those which blur the lines between technology and library data.
 //!
 //! ## Usage
 //!
-//! Creating a [`LefLibrary`] from file solely requires a call to the [LefLibrary::open] method:
+//! Creating a [`LefLibrary`] from file solely requires a call to the [`LefLibrary::open`] method:
 //!
 //! ```skip
 //! use lef21::LefLibrary;

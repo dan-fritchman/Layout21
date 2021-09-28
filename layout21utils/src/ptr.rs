@@ -3,6 +3,7 @@
 //!
 
 // Std-lib
+use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, RwLock};
@@ -61,7 +62,7 @@ use by_address::ByAddress;
 /// in operations such as converting hierarchical trees,
 /// in which many of the nodes are shared.
 ///
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Default)]
 pub struct Ptr<T: ?Sized>(ByAddress<Arc<RwLock<T>>>);
 
 impl<T> Ptr<T> {
@@ -79,6 +80,16 @@ impl<T> Deref for Ptr<T> {
 impl<T> DerefMut for Ptr<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
+    }
+}
+impl<T: fmt::Debug> fmt::Debug for Ptr<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Ptr({:?})", self.read().unwrap())
+    }
+}
+impl<T: fmt::Display> fmt::Display for Ptr<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Ptr({})", self.read().unwrap())
     }
 }
 // The `derive`d implementations for `PartialEq`, `Eq`, and `Hash`

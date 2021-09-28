@@ -41,7 +41,7 @@ pub struct LayoutImpl {
 }
 impl LayoutImpl {
     /// Create a new [LayoutImpl]
-    pub fn new(name: impl Into<String>, top_layer: usize, outline: outline::Outline) -> LayoutImpl {
+    pub fn new(name: impl Into<String>, top_layer: usize, outline: outline::Outline) -> Self {
         let name = name.into();
         LayoutImpl {
             name,
@@ -142,8 +142,14 @@ pub struct CellBag {
     pub raw: Option<RawLayoutPtr>,
 }
 impl CellBag {
+    /// Create a new and initially empty [CellBag]
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            ..Default::default()
+        }
+    }
     /// Add [CellView] `view` to our appropriate type-based field.
-    /// Over-writes are
     pub fn add_view(&mut self, view: impl Into<CellView>) {
         let view = view.into();
         match view {
@@ -280,6 +286,19 @@ impl Instance {
     pub fn boundbox_size(&self) -> LayoutResult<Xy<PrimPitches>> {
         let cell = self.cell.read()?;
         cell.boundbox_size()
+    }
+}
+impl std::fmt::Display for Instance {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let cell_name = {
+            let cell = self.cell.read().unwrap();
+            cell.name.clone()
+        };
+        write!(
+            f,
+            "Instance(name={}, cell={}, loc={:?})",
+            self.inst_name, cell_name, self.loc
+        )
     }
 }
 impl HasBoundBox for Instance {

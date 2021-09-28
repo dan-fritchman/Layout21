@@ -9,7 +9,6 @@ use crate::coords::{PrimPitches, Xy};
 use crate::library::Library;
 use crate::outline::Outline;
 use crate::placement::{Array, ArrayInstance, Arrayable, Place};
-use crate::placer::Placer;
 use crate::raw::{self, LayoutResult};
 use crate::stack::RelZ;
 use crate::utils::Ptr;
@@ -338,7 +337,7 @@ fn ro_array(unit: Ptr<cell::CellBag>) -> LayoutResult<cell::CellBag> {
                 reflect_horiz: false,
                 reflect_vert: true,
             });
-            group.add(AssignPlace {
+            let a1 = group.add(AssignPlace {
                 net: format!("dly{}", x),
                 at: RelSomething(
                     inst,
@@ -350,9 +349,8 @@ fn ro_array(unit: Ptr<cell::CellBag>) -> LayoutResult<cell::CellBag> {
             AssignSomething {
                 net: format!("dly{}", x),
                 at: RelSomething(
-                    inst,
-                    "out",            // ?
-                    Separation::z(2), // *Two* layers up
+                    a1, // Relative to the last assignment
+                    Separation::z(2), // Now *two* layers up
                 ),
             };
             */
@@ -413,8 +411,7 @@ fn _ro_test(
     let unit = unitfn(&mut lib)?; // Create the unit cell
     let ro = wrapfn(unit)?; // Create the RO level
     let ro = lib.cells.insert(ro); // And add it to the Library
-    let (lib, stack) = Placer::place(lib, SampleStacks::pdka()?)?;
-    exports(lib, stack)
+    exports(lib, SampleStacks::pdka()?) // And export everything to our handful of formats
 }
 // Execute a bunch of combinations, each as a separate test
 #[test]

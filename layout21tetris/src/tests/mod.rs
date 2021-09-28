@@ -6,19 +6,16 @@
 use super::cell::{self, Instance, LayoutImpl};
 use super::library::Library;
 use super::outline::Outline;
-use super::raw::{self, Dir, LayoutError, LayoutResult, Units};
+use super::raw::LayoutResult;
 use super::stack::*;
-use super::{abstrakt, rawconv, validate};
-use crate::coords::{Int, PrimPitches, Xy};
-use crate::placement::{Array, ArrayInstance, Arrayable, Place};
-use crate::placer::Placer;
-use crate::utils::{Ptr, PtrList};
+use super::{abstrakt, rawconv, validate::ValidStack};
+
+use crate::utils::PtrList;
 
 // Modules
 pub mod ro;
 pub mod stacks;
 use stacks::SampleStacks;
-
 
 /// Create an empy cell
 #[test]
@@ -36,6 +33,14 @@ fn empty_cell() -> LayoutResult<()> {
     let _c2 = lib.cells.insert(cell::CellBag::from(c));
     exports(lib, SampleStacks::pdka()?)?;
     Ok(())
+}
+/// Create a library with an "empty" cell
+#[test]
+fn create_empty_cell_lib() -> LayoutResult<()> {
+    let mut lib = Library::new("empty_cell_lib");
+    let cell = LayoutImpl::new("empty_cell", 4, Outline::rect(100, 10)?).into();
+    lib.cells.insert(cell);
+    exports(lib, SampleStacks::pdka()?)
 }
 /// Create a layout-implementation
 #[test]
@@ -259,24 +264,16 @@ fn create_lib3() -> LayoutResult<()> {
     );
     exports(lib, SampleStacks::pdka()?)
 }
-/// Create a library with an "empty" cell
-#[test]
-fn create_empty_cell_lib() -> LayoutResult<()> {
-    let mut lib = Library::new("empty_cell_lib");
-    let cell = LayoutImpl::new("empty_cell", 4, Outline::rect(100, 10)?).into();
-    lib.cells.insert(cell);
-    exports(lib, SampleStacks::pdka()?)
-}
 /// Helper function. Export [Library] `lib` in several formats.
-pub fn exports(lib: Library, stack: Stack) -> LayoutResult<()> {
+pub fn exports(lib: Library, stack: ValidStack) -> LayoutResult<()> {
     // Serializable formats will generally be written as YAML.
     use crate::utils::SerializationFormat::Yaml;
 
-    let raw = rawconv::RawExporter::convert(lib, stack)?;
-    let raw = raw.read()?;
+    let rawlib = rawconv::RawExporter::convert(lib, stack)?;
+    let rawlib = rawlib.read()?;
 
     // Export to ProtoBuf, save as YAML and binary
-    let protolib = raw.to_proto()?;
+    let protolib = rawlib.to_proto()?;
     Yaml.save(
         &protolib,
         &resource(&format!("{}.proto.yaml", &protolib.domain)),
@@ -289,7 +286,7 @@ pub fn exports(lib: Library, stack: Stack) -> LayoutResult<()> {
     .unwrap();
 
     // Export to GDSII
-    let gds = raw.to_gds()?;
+    let gds = rawlib.to_gds()?;
     Yaml.save(&gds, &resource(&format!("{}.gds.yaml", &gds.name)))
         .unwrap();
     gds.save(&resource(&format!("{}.gds", &gds.name)))?;

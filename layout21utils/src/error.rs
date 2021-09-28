@@ -23,11 +23,12 @@ pub trait ErrorHelper {
         }
     }
     /// Unwrap the [Result] `res`. Return through our failure method if it is [Err].
-    fn ok<T, E>(&self, res: Result<T, E>, msg: impl Into<String>) -> Result<T, Self::Error> {
-        match res {
-            Ok(val) => Ok(val),
-            Err(_) => self.fail(msg),
-        }
+    fn ok<T, E: std::error::Error + 'static>(
+        &self,
+        res: Result<T, E>,
+        msg: impl Into<String>,
+    ) -> Result<T, Self::Error> {
+        unimplemented!()
     }
 }
 /// Enumerated conversion contexts
