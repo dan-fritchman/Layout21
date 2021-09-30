@@ -1,9 +1,11 @@
 //!
 //! # Test Sample [Stack]s
+//!
 
 // Local imports
 use crate::raw::{self, Dir, LayoutResult, Units};
 use crate::stack::*;
+use crate::tracks::*;
 use crate::utils::Ptr;
 use crate::validate::ValidStack;
 
@@ -124,31 +126,58 @@ impl SampleStacks {
                     flip: FlipMode::EveryOther,
                     prim: PrimitiveMode::None,
                 },
+                Layer {
+                    name: "met5".into(),
+                    entries: vec![
+                        TrackSpec::gnd(480),
+                        TrackSpec::pat(vec![TrackEntry::gap(200), TrackEntry::sig(140)], 6),
+                        TrackSpec::gap(200),
+                        TrackSpec::pwr(480),
+                    ],
+                    dir: Dir::Horiz,
+                    offset: (-240).into(),
+                    cutsize: (250).into(),
+                    overlap: (480).into(),
+                    raw: Some(rawlayers.add(raw::Layer::from_pairs(72, &metal_purps)?)),
+                    flip: FlipMode::EveryOther,
+                    prim: PrimitiveMode::None,
+                },
             ],
             vias: vec![
                 ViaLayer {
                     name: "mcon".into(),
-                    between: (0, 1),
                     size: (240, 240).into(),
+                    bot: ViaTarget::Primitive,
+                    top: ViaTarget::Metal(0),
                     raw: Some(rawlayers.add(raw::Layer::from_pairs(67, &via_purps)?)),
                 },
                 ViaLayer {
                     name: "via1".into(),
-                    between: (1, 2),
                     size: (240, 240).into(),
+                    bot: 0.into(),
+                    top: 1.into(),
                     raw: Some(rawlayers.add(raw::Layer::from_pairs(68, &via_purps)?)),
                 },
                 ViaLayer {
                     name: "via2".into(),
-                    between: (2, 3),
                     size: (240, 240).into(),
+                    bot: 1.into(),
+                    top: 2.into(),
                     raw: Some(rawlayers.add(raw::Layer::from_pairs(69, &via_purps)?)),
                 },
                 ViaLayer {
                     name: "via3".into(),
-                    between: (3, 4),
                     size: (240, 240).into(),
+                    bot: 2.into(),
+                    top: 3.into(),
                     raw: Some(rawlayers.add(raw::Layer::from_pairs(70, &via_purps)?)),
+                },
+                ViaLayer {
+                    name: "via4".into(),
+                    size: (240, 240).into(),
+                    bot: 3.into(),
+                    top: 4.into(),
+                    raw: Some(rawlayers.add(raw::Layer::from_pairs(71, &via_purps)?)),
                 },
             ],
             rawlayers: Some(Ptr::new(rawlayers)),

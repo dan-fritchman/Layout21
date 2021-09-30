@@ -8,7 +8,7 @@ use crate::cell::{self, Instance, LayoutImpl};
 use crate::coords::{PrimPitches, Xy};
 use crate::library::Library;
 use crate::outline::Outline;
-use crate::placement::{Array, ArrayInstance, Arrayable, Place};
+use crate::placement::{Align, Array, ArrayInstance, Arrayable, Place};
 use crate::raw::{self, LayoutResult};
 use crate::stack::RelZ;
 use crate::utils::Ptr;
@@ -26,7 +26,7 @@ fn abstract_unit() -> LayoutResult<abstrakt::LayoutAbstract> {
 
     let unit = abstrakt::LayoutAbstract {
         name: "UnitCell".into(),
-        top_layer: 0,
+        metals: 1,
         outline: Outline::rect(unitsize.0, unitsize.1)?,
         ports: vec![
             abstrakt::Port {
@@ -63,9 +63,9 @@ fn ro_abs(unit: Ptr<cell::CellBag>) -> LayoutResult<cell::CellBag> {
 
     // Create an initially empty layout
     let mut hasunits = LayoutImpl::new(
-        "HasUnits",                                     // name
-        3,                                              // top_layer
-        Outline::rect(7 * unitsize.0, 7 * unitsize.1)?, // outline
+        "HasUnits",             // name
+        4,                      // metals
+        Outline::rect(130, 7)?, // outline
     );
     let m2xpitch = 36;
     let m2botcut = 5;
@@ -141,9 +141,9 @@ fn ro_rel(unit: Ptr<cell::CellBag>) -> LayoutResult<cell::CellBag> {
 
     // Create an initially empty layout
     let mut hasunits = LayoutImpl::new(
-        "HasUnits",                                      // name
-        3,                                               // top_layer
-        Outline::rect(37 * unitsize.0, 7 * unitsize.1)?, // outline
+        "HasUnits",             // name
+        4,                      // metals
+        Outline::rect(130, 7)?, // outline
     );
     let m2xpitch = 36;
     let m2botcut = 5;
@@ -172,18 +172,18 @@ fn ro_rel(unit: Ptr<cell::CellBag>) -> LayoutResult<cell::CellBag> {
             if y == 2 {
                 // Top of a row. Place to the right of its bottom instance.
                 next_loc = RelativePlace {
-                    to: Ptr::new(Placeable::Instance(insts[3 * x].clone())),
+                    to: Placeable::Instance(insts[3 * x].clone()),
                     side: Side::Right,
-                    align: Side::Bottom, // Top or Bottom both work just as well here
+                    align: Align::Side(Side::Bottom), // Top or Bottom both work just as well here
                     sep: Separation::x(SepBy::SizeOf(unit.clone())),
                 }
                 .into();
             } else {
                 // Place above the most-recent instance.
                 next_loc = RelativePlace {
-                    to: Ptr::new(Placeable::Instance(inst.clone())),
+                    to: Placeable::Instance(inst.clone()),
                     side: Side::Top,
-                    align: Side::Left, // Left or Right both work just as well here
+                    align: Align::Side(Side::Left), // Left or Right both work just as well here
                     sep: Separation::y(SepBy::SizeOf(unit.clone())),
                 }
                 .into();
@@ -257,17 +257,19 @@ fn _wrap_gds(lib: &mut Library) -> LayoutResult<Ptr<cell::CellBag>> {
     // Take ownership of the [raw::Library]
     let rawlibptr = lib.add_rawlib(rawlib);
     // Create a [CellBag] from the [raw::Library]'s sole cell
+    let unitsize = (18, 1);
     let wrapped = cell::RawLayoutPtr {
+        outline: Outline::rect(unitsize.0, unitsize.1)?, // outline
+        metals: 1,
         lib: rawlibptr,
         cell,
     };
-    let wrapped = lib.cells.insert(wrapped.into());
+    let wrapped = lib.cells.insert(wrapped);
 
     // Create a wrapper cell
-    let unitsize = (18, 1);
     let mut wrapper = LayoutImpl::new(
         "Wrapper",                              // name
-        0,                                      // top_layer
+        1,                                      // metals
         Outline::rect(unitsize.0, unitsize.1)?, // outline
     );
     wrapper.instances.add(Instance {
@@ -277,7 +279,7 @@ fn _wrap_gds(lib: &mut Library) -> LayoutResult<Ptr<cell::CellBag>> {
         reflect_horiz: false,
         reflect_vert: false,
     });
-    let wrapper = lib.cells.insert(wrapper.into());
+    let wrapper = lib.cells.insert(wrapper);
     Ok(wrapper)
 }
 /// RO, array-placement edition
@@ -287,21 +289,18 @@ fn ro_array(unit: Ptr<cell::CellBag>) -> LayoutResult<cell::CellBag> {
 
     // Create an initially empty layout
     let mut hasunits = LayoutImpl::new(
-        "HasUnits",                                      // name
-        3,                                               // top_layer
-        Outline::rect(37 * unitsize.0, 7 * unitsize.1)?, // outline
+        "HasUnits",             // name
+        4,                      // metals
+        Outline::rect(130, 7)?, // outline
     );
     let m2xpitch = 36;
     let m2botcut = 5;
     let m2topcut = 7 * m2botcut + 1;
 
-    // Next-location tracker
-    let mut next_loc: Place<Xy<PrimPitches>> = (unitsize.0, 6 * unitsize.1).into();
-    let mut insts: Vec<Ptr<Instance>> = Vec::new();
-
+    // Create the main array of Instances
     let a = Placeable::Array(Ptr::new(ArrayInstance {
         name: "insts".into(),
-        loc: next_loc.clone(),
+        loc: (unitsize.0, 6 * unitsize.1).into(),
         reflect_vert: true,
         reflect_horiz: false,
         array: Ptr::new(Array {
@@ -311,12 +310,12 @@ fn ro_array(unit: Ptr<cell::CellBag>) -> LayoutResult<cell::CellBag> {
             unit: Arrayable::Array(Ptr::new(Array {
                 name: "row".into(),
                 unit: Arrayable::Instance(unit.clone()),
-                count: 9,
+                count: 3,
                 sep: Separation::x(SepBy::UnitSpeced(PrimPitches::x(36).into())), // FIXME!
             })),
         }),
     }));
-    let a = hasunits.places.add(a);
+    hasunits.places.push(a);
 
     // For each column
     for x in 0..3 {
@@ -410,7 +409,7 @@ fn _ro_test(
     let mut lib = Library::new(libname);
     let unit = unitfn(&mut lib)?; // Create the unit cell
     let ro = wrapfn(unit)?; // Create the RO level
-    let ro = lib.cells.insert(ro); // And add it to the Library
+    lib.cells.insert(ro); // And add it to the Library
     exports(lib, SampleStacks::pdka()?) // And export everything to our handful of formats
 }
 // Execute a bunch of combinations, each as a separate test

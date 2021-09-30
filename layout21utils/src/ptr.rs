@@ -3,7 +3,6 @@
 //!
 
 // Std-lib
-use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, RwLock};
@@ -62,13 +61,18 @@ use by_address::ByAddress;
 /// in operations such as converting hierarchical trees,
 /// in which many of the nodes are shared.
 ///
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 pub struct Ptr<T: ?Sized>(ByAddress<Arc<RwLock<T>>>);
 
 impl<T> Ptr<T> {
     /// Pointer Constructor
     pub fn new(i: T) -> Self {
         Self(ByAddress(Arc::new(RwLock::new(i))))
+    }
+}
+impl<T> From<T> for Ptr<T> {
+    fn from(t: T) -> Self {
+        Self::new(t)
     }
 }
 impl<T> Deref for Ptr<T> {
@@ -80,16 +84,6 @@ impl<T> Deref for Ptr<T> {
 impl<T> DerefMut for Ptr<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
-    }
-}
-impl<T: fmt::Debug> fmt::Debug for Ptr<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Ptr({:?})", self.read().unwrap())
-    }
-}
-impl<T: fmt::Display> fmt::Display for Ptr<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Ptr({})", self.read().unwrap())
     }
 }
 // The `derive`d implementations for `PartialEq`, `Eq`, and `Hash`
@@ -131,15 +125,16 @@ impl<T: Clone> PtrList<T> {
         let ptrs = vals.into_iter().map(|v| Ptr::new(v)).collect();
         Self(ptrs)
     }
-    /// Add an owned `T`, returning a [Ptr] to it
-    pub fn add(&mut self, val: T) -> Ptr<T> {
-        let rv = Ptr::new(val);
-        self.0.push(rv.clone());
-        rv
+    /// Add a `Ptr<T>`-convertible element, commonly an owned `T`.
+    /// Returns a cloned [Ptr] to it, which can be used to access it.
+    pub fn add(&mut self, t: impl Into<T>) -> Ptr<T> {
+        let t = Ptr::new(t.into()); // Convert if necessary
+        self.0.push(t.clone()); // Add a clone to the list
+        t // And return the "original" pointer
     }
     /// Alias for `add`
-    pub fn insert(&mut self, val: T) -> Ptr<T> {
-        self.add(val)
+    pub fn insert(&mut self, t: impl Into<T>) -> Ptr<T> {
+        self.add(t)
     }
 }
 impl<T: Clone> Deref for PtrList<T> {
@@ -161,5 +156,37 @@ impl<T: Clone> From<Vec<Ptr<T>>> for PtrList<T> {
 impl<T: Clone> From<Vec<T>> for PtrList<T> {
     fn from(v: Vec<T>) -> Self {
         Self::from_owned(v)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ptr() {
+        let p1 = Ptr::new(43);
+        let p2 = Ptr::new(43);
+        assert_ne!(p1, p2);
+
+        let p3 = p1.clone();
+        assert_ne!(p3, p2);
+        assert_eq!(p3, p1);
+    }
+    #[test]
+    fn test_ptr_list() {
+        let mut list = PtrList::<bool>::new();
+
+        let p = list.add(true);
+        assert_eq!(list.len(), 1);
+        assert_eq!(*p.read().unwrap(), true);
+
+        let p = list.insert(false);
+        assert_eq!(list.len(), 2);
+        assert_eq!(*p.read().unwrap(), false);
+
+        list.push(Ptr::new(true));
+        assert_eq!(list.len(), 3);
+        assert_eq!(*list[2].read().unwrap(), true);
     }
 }

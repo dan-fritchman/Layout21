@@ -197,7 +197,40 @@ pub struct LayerPitches {
     layer: usize,
     num: Int,
 }
+impl LayerPitches {
+    /// Create a new [LayerPitches] on layer (index) `layer`
+    pub fn new(layer: usize, num: Int) -> Self {
+        Self { layer, num }
+    }
+    /// Consume self, returning the underlying [usize] layer-index and [Int] number.
+    pub fn into_inner(self) -> (usize, Int) {
+        (self.layer, self.num)
+    }
+}
 impl HasUnits for LayerPitches {}
+/// Numeric operations between pitch-values and regular numerics.
+impl std::ops::Mul<Int> for LayerPitches {
+    type Output = Self;
+    fn mul(self, rhs: Int) -> Self::Output {
+        Self::new(self.layer, self.num * rhs)
+    }
+}
+impl std::ops::MulAssign<Int> for LayerPitches {
+    fn mul_assign(&mut self, rhs: Int) {
+        self.num = self.num * rhs;
+    }
+}
+impl std::ops::Mul<usize> for LayerPitches {
+    type Output = Self;
+    fn mul(self, rhs: usize) -> Self::Output {
+        Self::new(self.layer, self.num * Int::try_from(rhs).unwrap())
+    }
+}
+impl std::ops::MulAssign<usize> for LayerPitches {
+    fn mul_assign(&mut self, rhs: usize) {
+        self.num = self.num * Int::try_from(rhs).unwrap();
+    }
+}
 
 /// Paired "type" zero-data enum for [UnitSpeced]
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

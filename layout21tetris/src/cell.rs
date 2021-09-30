@@ -14,9 +14,9 @@ use crate::bbox::{BoundBox, HasBoundBox};
 use crate::coords::{PrimPitches, Xy};
 use crate::placement::{Place, Placeable};
 use crate::raw::{Dir, LayoutError, LayoutResult};
-use crate::stack::{Assign, RelZ, TrackIntersection};
+use crate::stack::{Assign, RelZ};
 use crate::utils::{Ptr, PtrList};
-use crate::{abstrakt, interface, outline, raw};
+use crate::{abstrakt, interface, outline, raw, tracks};
 
 /// # Layout Cell Implementation
 ///
@@ -26,8 +26,8 @@ use crate::{abstrakt, interface, outline, raw};
 pub struct LayoutImpl {
     /// Cell Name
     pub name: String,
-    /// Top-layer index
-    pub top_layer: usize,
+    /// Number of Metal Layers Used
+    pub metals: usize,
     /// Outline shape, counted in x and y pitches of `stack`
     pub outline: outline::Outline,
     /// Layout Instances
@@ -35,22 +35,22 @@ pub struct LayoutImpl {
     /// Net-to-track assignments
     pub assignments: Vec<Assign>,
     /// Track cuts
-    pub cuts: Vec<TrackIntersection>,
+    pub cuts: Vec<tracks::TrackIntersection>,
     /// Placeable objects
-    pub places: PtrList<Placeable>,
+    pub places: Vec<Placeable>,
 }
 impl LayoutImpl {
     /// Create a new [LayoutImpl]
-    pub fn new(name: impl Into<String>, top_layer: usize, outline: outline::Outline) -> Self {
+    pub fn new(name: impl Into<String>, metals: usize, outline: outline::Outline) -> Self {
         let name = name.into();
         LayoutImpl {
             name,
-            top_layer,
+            metals,
             outline,
             instances: PtrList::new(),
             assignments: Vec::new(),
             cuts: Vec::new(),
-            places: PtrList::new(),
+            places: Vec::new(),
         }
     }
     /// Assign a net at the given coordinates.
@@ -65,7 +65,7 @@ impl LayoutImpl {
         let net = net.into();
         self.assignments.push(Assign {
             net,
-            at: TrackIntersection {
+            at: tracks::TrackIntersection {
                 layer,
                 track,
                 at,
@@ -75,7 +75,7 @@ impl LayoutImpl {
     }
     /// Add a cut at the specified coordinates.
     pub fn cut(&mut self, layer: usize, track: usize, at: usize, relz: RelZ) {
-        self.cuts.push(TrackIntersection {
+        self.cuts.push(tracks::TrackIntersection {
             layer,
             track,
             at,
@@ -104,10 +104,17 @@ impl<'h> NetHandle<'h> {
         self
     }
 }
-/// "Pointer" to a raw (lib, cell) combination
+/// "Pointer" to a raw (lib, cell) combination.
+/// Wraps with basic [Outline] and `metals` information to enable bounded placement.
 #[derive(Debug, Clone)]
 pub struct RawLayoutPtr {
+    /// Outline shape, counted in x and y pitches of `stack`
+    pub outline: outline::Outline,
+    /// Number of Metal Layers Used
+    pub metals: usize,
+    /// Pointer to the raw Library
     pub lib: Ptr<raw::Library>,
+    /// Pointer to the raw Cell
     pub cell: Ptr<raw::CellBag>,
 }
 /// # Cell View Enumeration
@@ -186,8 +193,10 @@ impl CellBag {
             Ok(&x.outline)
         } else if let Some(ref x) = self.layout {
             Ok(&x.outline)
+        } else if let Some(ref x) = self.raw {
+            Ok(&x.outline)
         } else {
-            Err(LayoutError::Tbd)
+            Err(LayoutError::Validation)
         }
     }
     /// Size of the [Cell]'s rectangular `boundbox`.
@@ -196,14 +205,26 @@ impl CellBag {
         Ok(Xy::new(outline.xmax(), outline.ymax()))
     }
     /// Return whichever view highest-prioritorily dictates the top-layer
-    pub fn top_layer(&self) -> LayoutResult<usize> {
+    pub fn metals(&self) -> LayoutResult<usize> {
         // FIXME: same commentary as `outline` above
         if let Some(ref x) = self.abstrakt {
-            Ok(x.top_layer)
+            Ok(x.metals)
         } else if let Some(ref x) = self.layout {
-            Ok(x.top_layer)
+            Ok(x.metals)
+        } else if let Some(ref x) = self.raw {
+            Ok(x.metals)
         } else {
-            Err(LayoutError::Tbd)
+            Err(LayoutError::Validation)
+        }
+    }
+    /// Get the cell's top metal layer (numer).
+    /// Returns `None` if no metal layers are used.
+    pub fn top_metal(&self) -> LayoutResult<Option<usize>> {
+        let metals = self.metals()?;
+        if metals == 0 {
+            Ok(None)
+        } else {
+            Ok(Some(metals - 1))
         }
     }
 }

@@ -43,11 +43,6 @@ impl<T> Place<T> {
         }
     }
 }
-// impl<T> From<T> for Place<T> {
-//     fn from(t: T) -> Self {
-//         Self::Abs(t)
-//     }
-// }
 impl<T: HasUnits> From<Xy<T>> for Place<Xy<T>> {
     fn from(xy: Xy<T>) -> Self {
         Self::Abs(xy)
@@ -71,20 +66,27 @@ impl<T> From<RelativePlace> for Place<T> {
     }
 }
 
+/// # Relatively-Placed Assignment
+/// FIXME: merge back in with absoutely-placed [Assign]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RelAssign {
+    pub net: String,
+    pub loc: RelativePlace,
+}
 /// # Relative Placement
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RelativePlace {
     /// Placement is relative `to` this
-    pub to: Ptr<Placeable>,
+    pub to: Placeable,
     /// Placed on this `side` of `to`
     pub side: Side,
     /// Aligned to this aspect of `to`
-    pub align: Side, // FIXME: move to [Align]
+    pub align: Align,
     /// Separation between the placement and the `to`
     pub sep: Separation,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Side {
     Top,
     Bottom,
@@ -111,7 +113,7 @@ impl Side {
         }
     }
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Align {
     /// Side-to-side alignment
     Side(Side),
@@ -175,13 +177,10 @@ pub enum Placeable {
     Array(Ptr<ArrayInstance>),
     /// Group of other placeable elements
     Group(Ptr<GroupInstance>),
-    // /// Instance port location
-    // Port{
-    //     inst: Ptr<Instance>,
-    //     port: String,
-    // },
-    // /// Intersection between two tracks
-    // TrackIntersection(TrackIntersection),
+    /// Instance port location
+    Port { inst: Ptr<Instance>, port: String },
+    /// Assignment
+    Assign(Ptr<RelAssign>),
 }
 impl Placeable {
     /// Get the location of the placeable
@@ -199,6 +198,8 @@ impl Placeable {
                 let p = p.read()?;
                 p.loc.clone()
             }
+            Placeable::Port { .. } => unimplemented!(),
+            Placeable::Assign(_) => unimplemented!(),
         };
         Ok(loc)
     }
@@ -262,7 +263,7 @@ pub struct Array {
 impl Array {
     /// Size of the Instance's rectangular `boundbox`, i.e. the zero-origin `boundbox` of its `cell`.
     pub fn boundbox_size(&self) -> LayoutResult<Xy<PrimPitches>> {
-        let unit = self.unit.boundbox_size()?;
+        let _unit = self.unit.boundbox_size()?;
         todo!() // FIXME: do some math on separation, size
     }
 }

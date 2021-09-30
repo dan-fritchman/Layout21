@@ -166,6 +166,7 @@ impl Default for Units {
     }
 }
 /// Enumerated SI Units
+#[allow(dead_code)] // FIXME!
 enum SiUnits {
     Yocto, // E-24
     Zepto, // E-21
@@ -190,12 +191,14 @@ enum SiUnits {
 }
 impl Default for SiUnits {
     /// Default units are nano-scale
+    #[allow(dead_code)] // FIXME!
     fn default() -> SiUnits {
         SiUnits::Nano
     }
 }
 impl SiUnits {
     /// Get the exponent of the unit
+    #[allow(dead_code)] // FIXME!
     fn exp(&self) -> isize {
         use SiUnits::*;
         match self {

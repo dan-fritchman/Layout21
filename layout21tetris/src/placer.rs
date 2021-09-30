@@ -4,19 +4,24 @@
 //! Converts potentially relatively-placed attributes to absolute positions.
 //!
 
+// Std-Lib Imports
+use std::convert::TryFrom;
+
 // Local imports
-use crate::abstrakt;
 use crate::bbox::HasBoundBox;
-use crate::cell::{CellBag, Instance, LayoutImpl};
-use crate::coords::{PrimPitches, UnitSpeced, Xy};
+use crate::cell::{self, Instance, LayoutImpl};
+use crate::coords::{LayerPitches, PrimPitches, UnitSpeced, Xy};
 use crate::library::Library;
 use crate::placement::{
-    Array, ArrayInstance, Arrayable, Group, GroupInstance, Place, Placeable, RelativePlace, SepBy,
-    Separation, Side,
+    Align, Array, ArrayInstance, Arrayable, Place, Placeable, RelativePlace, SepBy, Side,
 };
 use crate::raw::{Dir, LayoutError, LayoutResult};
-use crate::utils::{DepOrder, DepOrderer, ErrorContext, ErrorHelper, Ptr, PtrList};
+use crate::utils::{DepOrder, DepOrderer, ErrorContext, ErrorHelper, Ptr};
 use crate::validate::ValidStack;
+use crate::{
+    abstrakt, stack,
+    tracks::{TrackIntersection, TrackRef},
+};
 
 /// # Placer
 /// Converts all potentially-relatively-placed attributes to absolute positions.
@@ -46,7 +51,6 @@ impl Placer {
             self.ctx.push(ErrorContext::Cell(cell.name.clone()));
             if let Some(ref mut layout) = cell.layout {
                 self.place_layout(layout)?;
-                self.flatten_arrays(layout)?;
             }
             self.ctx.pop();
         }
@@ -54,22 +58,21 @@ impl Placer {
         Ok(())
     }
     /// Update placements for [LayoutImpl] `layout`
-    fn place_layout(&mut self, layout: &LayoutImpl) -> LayoutResult<()> {
+    fn place_layout(&mut self, layout: &mut LayoutImpl) -> LayoutResult<()> {
         self.ctx.push(ErrorContext::Impl);
 
-        // Move the `instances` and `places` into one vector of [Placeable] pointers
-        let mut places: Vec<Ptr<Placeable>> = layout
+        // Move `instances` and `places` into one vector of [Placeable]s
+        let mut places: Vec<Placeable> = layout
             .instances
-            .iter()
-            .map(|i| Ptr::new(Placeable::Instance(i.clone())))
+            .drain(..)
+            .map(|i| Placeable::Instance(i))
             .collect();
-        places.extend(layout.places.iter().map(|p| p.clone()));
+        places.extend(layout.places.drain(..));
 
-        // Iterate over the layout's instances in dependency order,
-        // updating any relative-places to absolute.
-        for place_ptr in PlaceOrder::order(places.as_slice())? {
-            let mut place = place_ptr.write()?;
-            match *place {
+        // Iterate over `places` in dependency order, updating any relative-places to absolute.
+        let mut ordered = PlaceOrder::order(&places)?;
+        for place in ordered.drain(..) {
+            match place {
                 Placeable::Instance(ref inst_ptr) => {
                     let mut inst = inst_ptr.write()?;
                     if let Place::Rel(ref rel) = inst.loc {
@@ -77,37 +80,32 @@ impl Placer {
                         let abs = self.resolve_instance_place(&*inst, rel)?;
                         inst.loc = Place::Abs(abs);
                     }
-                }
-                Placeable::Array(ref ptr) => {
-                    let mut targ = ptr.write()?;
-                    if let Place::Rel(ref rel) = targ.loc {
-                        // Convert to an absolute location
-                        let abs = self.resolve_array_place(&*targ, rel)?;
-                        targ.loc = Place::Abs(abs);
-                    }
-                }
-                _ => (),
-            }
-        }
-        self.ctx.pop();
-        Ok(())
-    }
-    /// Flatten [ArrayInstance]s to Cell Instances.
-    fn flatten_arrays(&mut self, layout: &mut LayoutImpl) -> LayoutResult<()> {
-        self.ctx.push(ErrorContext::Impl);
-        for ptr in layout.places.drain(..) {
-            let mut place = ptr.write()?;
-            match &*place {
-                Placeable::Instance(inst_ptr) => {
+                    // Add the now-absolute-placed inst to the `instances` list
                     layout.instances.push(inst_ptr.clone());
                 }
-                Placeable::Array(array_inst_ptr) => {
-                    let array_inst = array_inst_ptr.read()?;
+                Placeable::Array(ref ptr) => {
+                    let mut array_inst = ptr.write()?;
+                    if let Place::Rel(ref rel) = array_inst.loc {
+                        // Convert to an absolute location
+                        let abs = self.resolve_array_place(&*array_inst, rel)?;
+                        array_inst.loc = Place::Abs(abs);
+                    }
+                    // And flatten its instances
                     let children = self.flatten_array_inst(&*array_inst)?;
                     let children = children.into_iter().map(|i| Ptr::new(i));
                     layout.instances.extend(children);
                 }
+                Placeable::Assign(ref ptr) => {
+                    let assn = ptr.read()?;
+                    let abs: TrackIntersection = self.resolve_assign_place(&assn.loc)?;
+                    let new_assn = stack::Assign {
+                        net: assn.net.clone(),
+                        at: abs,
+                    };
+                    layout.assignments.push(new_assn);
+                }
                 Placeable::Group(_) => unimplemented!(),
+                Placeable::Port { .. } => (), // Nothing to do, at least until hitting something that *depends* on the Port location
             }
         }
         self.ctx.pop();
@@ -115,17 +113,20 @@ impl Placer {
     }
     /// Flatten an [ArrayInstance] to a vector of Cell Instances.
     /// Instance location must be absolute by call-time.
-    fn flatten_array_inst(&mut self, array_inst: &ArrayInstance) -> LayoutResult<Vec<Instance>> {
+    fn flatten_array_inst(
+        &mut self,
+        array_inst: &ArrayInstance,
+    ) -> LayoutResult<Vec<cell::Instance>> {
         // Read the child-Instances from the underlying [Array] definition
         let mut children = {
             let array = array_inst.array.read()?;
             self.flatten_array(&*array, &array_inst.name)?
         };
         // Get its initial location
-        let mut loc = array_inst.loc.abs()?;
+        let loc = array_inst.loc.abs()?;
         // Translate each child to our location and reflection
         for child in children.iter_mut() {
-            let mut childloc = child.loc.abs_mut()?;
+            let childloc = child.loc.abs_mut()?;
             if array_inst.reflect_horiz {
                 // Reflect horizontally
                 childloc.x *= -1_isize;
@@ -198,7 +199,7 @@ impl Placer {
                     // And add its children to ours
                     insts.extend(children);
                 }
-                Arrayable::Group(arr) => unimplemented!(),
+                Arrayable::Group(_arr) => unimplemented!(),
             };
             // Increment the location by our (two-dimensional) increment.
             loc += sep;
@@ -208,8 +209,8 @@ impl Placer {
     /// Resolve a location of [ArrayInstance] `inst` relative to its [RelativePlace] `rel`.
     fn resolve_array_place(
         &mut self,
-        inst: &ArrayInstance,
-        rel: &RelativePlace,
+        _inst: &ArrayInstance,
+        _rel: &RelativePlace,
     ) -> LayoutResult<Xy<PrimPitches>> {
         // FIXME: this should just need the same stuff as `resolve_instance_place`,
         // once we have a consolidated version of [Instance] that covers Arrays.
@@ -225,12 +226,12 @@ impl Placer {
             .push(ErrorContext::Instance(inst.inst_name.clone()));
 
         // Get the relative-to instance's bounding box
-        // let to_inst = to.read()?;
-        // let bbox = to_inst.boundbox()?;
-        let bbox = match *rel.to.read()? {
+        let bbox = match rel.to {
             Placeable::Instance(ref ptr) => ptr.read()?.boundbox()?,
             Placeable::Array(ref ptr) => ptr.read()?.boundbox()?,
-            Placeable::Group(ref ptr) => unimplemented!(),
+            Placeable::Group(_) => unimplemented!(),
+            Placeable::Assign(_) => unimplemented!(),
+            Placeable::Port { .. } => unimplemented!(),
         };
         // The coordinate axes here are referred to as `side`, corresponding to `rel.side`, and `align`, corresponding to `rel.align`.
         // Mapping these back to (x,y) happens at the very end.
@@ -238,7 +239,11 @@ impl Placer {
 
         // Get its edge-coordinates in each axis
         let mut side_coord = bbox.side(rel.side);
-        let mut align_coord = bbox.side(rel.align);
+        let align_side = match rel.align {
+            Align::Side(s) => s,
+            _ => unimplemented!(),
+        };
+        let mut align_coord = bbox.side(align_side);
         let side_axis = match rel.side {
             Side::Left | Side::Right => Dir::Horiz,
             Side::Top | Side::Bottom => Dir::Vert,
@@ -249,7 +254,7 @@ impl Placer {
             Side::Left | Side::Bottom => !inst.reflected(side_axis),
             Side::Top | Side::Right => inst.reflected(side_axis),
         };
-        let offset_align = match rel.align {
+        let offset_align = match align_side {
             Side::Left | Side::Bottom => inst.reflected(align_axis),
             Side::Top | Side::Right => !inst.reflected(align_axis),
         };
@@ -316,7 +321,225 @@ impl Placer {
         self.ctx.pop();
         Ok(res)
     }
+    /// Resolve the location of a track-crossing at `rel`
+    fn resolve_assign_place(&mut self, rel: &RelativePlace) -> LayoutResult<TrackIntersection> {
+        let port_loc = match &rel.to {
+            Placeable::Port { inst, port } => self.locate_instance_port(&*inst.read()?, port)?,
+            Placeable::Instance(_) => unimplemented!(),
+            Placeable::Array(_) => unimplemented!(),
+            Placeable::Group(_) => unimplemented!(),
+            Placeable::Assign(_) => unimplemented!(),
+        };
+        let ref_cross: (TrackRef, TrackRef) = match port_loc {
+            PortLoc::ZTopEdge { track, range } => {
+                let ortho_track = match rel.align {
+                    Align::Side(s) => {
+                        match s {
+                            Side::Bottom | Side::Left => range.0.track, // FIXME: reflection support
+                            Side::Top | Side::Right => range.1.track,   // FIXME: reflection support
+                        }
+                    }
+                    Align::Center => (range.0.track + range.1.track) / 2,
+                    Align::Ports(_, _) => unreachable!(),
+                };
+                (
+                    track.clone(),
+                    TrackRef {
+                        layer: range.0.layer,
+                        track: ortho_track,
+                    },
+                )
+            }
+            _ => unimplemented!(),
+        };
+
+        // Sort out separation (in tracks) in (x, y)
+        let _sep_x = match &rel.sep.x {
+            Some(_) => unimplemented!(),
+            None => 0_usize,
+        };
+        let _sep_y = match &rel.sep.y {
+            Some(_) => unimplemented!(),
+            None => 0_usize,
+        };
+        // Sort out the layer-based z-separation
+        let sep_z = match &rel.sep.z {
+            Some(i) => *i,
+            None => 0,
+        };
+        let newlayer = isize::try_from(ref_cross.0.layer)? + sep_z;
+        let newlayer = usize::try_from(newlayer)?;
+
+        let new_track: TrackRef = self.convert_track_layer(&ref_cross.0, newlayer)?;
+        let relz = if ref_cross.1.layer == new_track.layer + 1 {
+            Ok(stack::RelZ::Above)
+        } else if ref_cross.1.layer == new_track.layer - 1 {
+            Ok(stack::RelZ::Below)
+        } else {
+            self.fail(format!("Invalid track crossing {:?}", ref_cross))
+        }?;
+        let rv = TrackIntersection {
+            layer: new_track.layer,
+            track: new_track.track,
+            at: ref_cross.1.track,
+            relz,
+        };
+        Ok(rv)
+    }
+    /// Resolve a location of [Instance] `inst` relative to its [RelativePlace] `rel`.
+    fn locate_instance_port(&mut self, inst: &Instance, portname: &str) -> LayoutResult<PortLoc> {
+        // Port locations are only valid for Cells with Abstrakt definitions. Otherwise fail.
+        let cell = inst.cell.read()?; // Note `cell` is alive for the duration of this function
+        let abs = self.unwrap(
+            cell.abstrakt.as_ref(),
+            format!(
+                "Cannot Location Port {} on Cell {} with no Abstrakt View",
+                portname, cell.name
+            ),
+        )?;
+        // Get the Port-object, or fail
+        let port = self.unwrap(
+            abs.port(portname),
+            format!("Cell {} has no Port {}", cell.name, portname),
+        )?;
+
+        let loc = match &port.kind {
+            abstrakt::PortKind::Edge { .. /*layer, track, side*/ } => unimplemented!(),
+            abstrakt::PortKind::ZTopEdge { track, side, into } => {
+                let top_metal = self.unwrap(cell.top_metal()?, "No metal layers")?;
+                let (dir, nsignals) = {
+                    // Get relevant data from our [Layer], and quickly drop a reference to it.
+                    let layer = self.stack.metal(top_metal)?;
+                    (layer.spec.dir, layer.period_data.signals.len())
+                };
+                let layer_pitches =
+                    self.layer_pitches(top_metal, inst.loc.abs()?[dir.other()].into())?;
+                // Get the port's track-index, combining in the instance-location
+                let (_, period_tracks) = (layer_pitches * nsignals).into_inner();
+                let track = track + usize::try_from(period_tracks)?;
+
+                // Sort out the orthogonal-axis range.
+                let other_layer = match into.1 {
+                    stack::RelZ::Above => top_metal + 1,
+                    stack::RelZ::Below => top_metal - 1,
+                };
+                let ortho_track = {
+                    let ortho_layer_pitches =
+                        self.layer_pitches(other_layer, inst.loc.abs()?[dir].into())?;
+                    if *side == abstrakt::Side::TopOrRight {
+                        unimplemented!();
+                        // if inst.reflected(dir) {
+                        //     ortho_layer_pitches -= 5; // FIXME!
+                        // } else {
+                        //     ortho_layer_pitches += 5; // FIXME!
+                        // }
+                    }
+                    let layer = &self.stack.metal(other_layer)?;
+                    let nsignals = layer.period_data.signals.len();
+                    let (_, period_tracks) = (ortho_layer_pitches * nsignals).into_inner();
+                    usize::try_from(period_tracks)?
+                };
+                //
+                PortLoc::ZTopEdge {
+                    track: TrackRef {
+                        layer: cell.top_metal()?.unwrap(),
+                        track,
+                    },
+                    range: (
+                        TrackRef {
+                            layer: other_layer,
+                            track: ortho_track,
+                        },
+                        TrackRef {
+                            layer: other_layer,
+                            track: ortho_track + into.0, // FIXME: orientation
+                        },
+                    ),
+                }
+            }
+            abstrakt::PortKind::ZTopInner { .. } => unimplemented!(),
+        };
+        Ok(loc)
+    }
+    /// Convert a [TrackRef] to the closest track on another same-direction layer `to_layer`.
+    fn convert_track_layer(
+        &mut self,
+        trackref: &TrackRef,
+        to_layer: usize,
+    ) -> LayoutResult<TrackRef> {
+        if trackref.layer == to_layer {
+            // Same layer, no conversion needed
+            return Ok(trackref.clone());
+        }
+        let track_layer_dir = &self.stack.metal(trackref.layer)?.spec.dir;
+        let to_layer_dir = &self.stack.metal(to_layer)?.spec.dir;
+        if track_layer_dir != to_layer_dir {
+            // Orthogonal layers. Fail.
+            self.fail(format!(
+                "Cannot convert between tracks on {:?} layer {} and {:?} layer {}",
+                track_layer_dir, trackref.layer, to_layer_dir, to_layer
+            ))?;
+        }
+        // Normal case -  actually do some work.
+        // First find the starting-track's center in [DbUnits]
+        let track_center = self.stack.metal(trackref.layer)?.center(trackref.track)?;
+        // And get the corresponding track-index on the other layer
+        let to_layer_index = self.stack.metal(to_layer)?.track_index(track_center)?;
+        Ok(TrackRef {
+            layer: to_layer,
+            track: to_layer_index,
+        })
+    }
+    /// Convert a [UnitSpeced] distance `dist` into [LayerPitches] on layer `layer_index`.
+    /// Fails if `dist` is not an integer multiple of the pitch of `layer_index`.
+    fn layer_pitches(
+        &mut self,
+        layer_index: usize,
+        dist: UnitSpeced,
+    ) -> LayoutResult<LayerPitches> {
+        let layer = &self.stack.metal(layer_index)?;
+        let layer_pitch = layer.pitch;
+        let num = match dist {
+            UnitSpeced::DbUnits(_) => unimplemented!(),
+            UnitSpeced::LayerPitches(_) => unimplemented!(),
+            UnitSpeced::PrimPitches(p) => {
+                let dir = layer.spec.dir;
+                let prim_pitch = self.stack.prim.pitches[dir.other()];
+                if layer_pitch % prim_pitch != 0 {
+                    self.fail(format!(
+                        "Invalid Conversion: Primitive (pitch={:?}) to Layer {} (pitch={:?})",
+                        prim_pitch, layer_index, layer_pitch
+                    ))?;
+                }
+                p.num * (layer_pitch / prim_pitch)
+            }
+        };
+        Ok(LayerPitches::new(layer_index, num))
+    }
 }
+
+/// Resolved Locations corresponding to [abstrakt::PortKind]s
+#[derive(Debug, Clone)]
+pub enum PortLoc {
+    Edge {
+        /// Port Track
+        track: TrackRef,
+        /// Crossing Track
+        at: TrackRef,
+    },
+    ZTopEdge {
+        /// Port Track
+        track: TrackRef,
+        /// Extent on an adjacent layer
+        range: (TrackRef, TrackRef),
+    },
+    ZTopInner {
+        /// Locations
+        locs: Vec<Tbd>,
+    },
+}
+#[derive(Debug, Clone)]
+pub struct Tbd;
 impl ErrorHelper for Placer {
     type Error = LayoutError;
     fn err(&self, msg: impl Into<String>) -> LayoutError {
@@ -330,18 +553,39 @@ impl ErrorHelper for Placer {
 /// Empty struct for implementing the [DepOrder] trait for relative-placed [Instance]s.
 struct PlaceOrder;
 impl DepOrder for PlaceOrder {
-    type Item = Ptr<Placeable>;
+    type Item = Placeable;
     type Error = LayoutError;
 
     /// Process [Instance]-pointer `item`
-    fn process(item: &Ptr<Placeable>, orderer: &mut DepOrderer<Self>) -> LayoutResult<()> {
-        // Read the location
-        let loc = item.read()?.loc()?;
-        // If its place is relative, visit its dependencies first
-        match &loc {
-            Place::Rel(rel) => orderer.push(&rel.to)?, // Visit the dependency first
-            Place::Abs(_) => (),                       // Nothing to traverse
-        }
+    fn process(item: &Placeable, orderer: &mut DepOrderer<Self>) -> LayoutResult<()> {
+        match item {
+            Placeable::Instance(ref p) => {
+                let inst = p.read()?;
+                if let Place::Rel(rel) = &inst.loc {
+                    orderer.push(&rel.to)?; // Visit the dependency first
+                }
+            }
+            Placeable::Array(ref p) => {
+                if let Place::Rel(rel) = &p.read()?.loc {
+                    orderer.push(&rel.to)?; // Visit the dependency first
+                }
+            }
+            Placeable::Group(ref p) => {
+                if let Place::Rel(rel) = &p.read()?.loc {
+                    orderer.push(&rel.to)?; // Visit the dependency first
+                }
+            }
+            Placeable::Assign(a) => {
+                // Always relative, push it unconditionally
+                let a = a.read()?;
+                orderer.push(&a.loc.to)?;
+            }
+            Placeable::Port { ref inst, .. } => {
+                if let Place::Rel(rel) = &inst.read()?.loc {
+                    orderer.push(&rel.to)?; // Visit the dependency first
+                }
+            }
+        };
         Ok(())
     }
     fn fail() -> Result<(), Self::Error> {
@@ -353,6 +597,7 @@ impl DepOrder for PlaceOrder {
 mod tests {
     use super::*;
     use crate::outline::Outline;
+    use crate::placement::{Place, Placeable, RelAssign, RelativePlace, SepBy, Separation, Side};
     use crate::tests::{exports, stacks::SampleStacks};
 
     #[test]
@@ -367,7 +612,7 @@ mod tests {
 
         let mut lib = Library::new("test_place2");
         // Create a unit cell which we'll instantiate a few times
-        let unit = LayoutImpl::new("unit", 0, Outline::rect(3, 7)?).into();
+        let unit = LayoutImpl::new("unit", 0, Outline::rect(3, 7)?);
         let unit = lib.cells.add(unit);
         // Create an initial instance
         let i0 = Instance {
@@ -385,16 +630,16 @@ mod tests {
             inst_name: "i1".into(),
             cell: unit.clone(),
             loc: Place::Rel(RelativePlace {
-                to: Ptr::new(Placeable::Instance(i0.clone())),
+                to: Placeable::Instance(i0.clone()),
                 side: Side::Right,
-                align: Side::Bottom,
+                align: Align::Side(Side::Bottom),
                 sep: Separation::default(),
             }),
             reflect_horiz: false,
             reflect_vert: false,
         };
         let i1 = parent.instances.add(i1);
-        let parent = lib.cells.add(parent.into());
+        let parent = lib.cells.add(parent);
 
         // The real code-under-test: run placement
         let (lib, stack) = Placer::place(lib, SampleStacks::empty()?)?;
@@ -422,12 +667,14 @@ mod tests {
         // Get the sample data
         let SampleLib {
             ibig,
-            big,
+            // big,
             lil,
             mut lib,
             mut parent,
+            ..
         } = SampleLib::get()?;
         lib.name = "test_place3".into();
+        let relto = Placeable::Instance(ibig.clone());
 
         // Relative-placement-adder closure
         let mut add_inst = |inst_name: &str, side, align| {
@@ -435,9 +682,9 @@ mod tests {
                 inst_name: inst_name.into(),
                 cell: lil.clone(),
                 loc: Place::Rel(RelativePlace {
-                    to: Ptr::new(Placeable::Instance(ibig.clone())),
+                    to: relto.clone(),
                     side,
-                    align,
+                    align: Align::Side(align),
                     sep: Separation::default(),
                 }),
                 reflect_horiz: false,
@@ -456,7 +703,7 @@ mod tests {
         let i8 = add_inst("i8", Side::Top, Side::Right);
 
         // Add `parent` to the library
-        let _parent = lib.cells.add(parent.into());
+        let _parent = lib.cells.add(parent);
 
         // The real code under test: run placement
         let (lib, stack) = Placer::place(lib, SampleStacks::pdka()?)?;
@@ -496,10 +743,11 @@ mod tests {
         // Get the sample data
         let SampleLib {
             ibig,
-            big,
+            // big,
             lil,
             mut lib,
             mut parent,
+            ..
         } = SampleLib::get()?;
         lib.name = "test_place4".into();
 
@@ -509,9 +757,9 @@ mod tests {
                 inst_name: inst_name.into(),
                 cell: lil.clone(),
                 loc: Place::Rel(RelativePlace {
-                    to: Ptr::new(Placeable::Instance(ibig.clone())),
+                    to: Placeable::Instance(ibig.clone()),
                     side,
-                    align: side.cw_90(), // Leave out `align` as an arg, set one-turn CW of `side`
+                    align: Align::Side(side.cw_90()), // Leave out `align` as an arg, set one-turn CW of `side`
                     sep,
                 }),
                 reflect_horiz: false,
@@ -527,7 +775,7 @@ mod tests {
         let i3 = add_inst("i3", Side::Bottom, sep_y.clone());
         let i4 = add_inst("i4", Side::Top, sep_y.clone());
         // Add `parent` to the library
-        let _parent = lib.cells.add(parent.into());
+        let _parent = lib.cells.add(parent);
 
         // The real code under test: run placement
         let (lib, stack) = Placer::place(lib, SampleStacks::pdka()?)?;
@@ -557,10 +805,11 @@ mod tests {
         // Get the sample data
         let SampleLib {
             ibig,
-            big,
+            // big,
             lil,
             mut lib,
             mut parent,
+            ..
         } = SampleLib::get()?;
         lib.name = "test_place5".into();
 
@@ -570,9 +819,9 @@ mod tests {
                 inst_name: inst_name.into(),
                 cell: lil.clone(),
                 loc: Place::Rel(RelativePlace {
-                    to: Ptr::new(Placeable::Instance(ibig.clone())),
+                    to: Placeable::Instance(ibig.clone()),
                     side,
-                    align: side.ccw_90(), // Leave out `align` as an arg, set one-turn CCW of `side`
+                    align: Align::Side(side.ccw_90()), // Leave out `align` as an arg, set one-turn CCW of `side`
                     sep,
                 }),
                 reflect_horiz: false,
@@ -590,13 +839,12 @@ mod tests {
         let i3 = add_inst("i3", Side::Bottom, sep_y.clone());
         let i4 = add_inst("i4", Side::Top, sep_y.clone());
         // Add `parent` to the library
-        let _parent = lib.cells.add(parent.into());
+        let _parent = lib.cells.add(parent);
 
         // The real code under test: run placement
         let (lib, stack) = Placer::place(lib, SampleStacks::pdka()?)?;
 
         // And test the placed results
-        let lilsize = lil.read()?.boundbox_size()?;
         let bigbox = ibig.read()?.boundbox()?;
         let ibox = i1.read()?.boundbox()?;
         assert_eq!(ibox.side(Side::Bottom), bigbox.side(Side::Bottom));
@@ -613,11 +861,75 @@ mod tests {
 
         exports(lib, stack)
     }
+    #[test]
+    fn test_place6() -> LayoutResult<()> {
+        // Test port-relative placement
+
+        // Get the sample data
+        let SampleLib {
+            // ibig,
+            // big,
+            lil,
+            mut lib,
+            mut parent,
+            ..
+        } = SampleLib::get()?;
+        lib.name = "test_place6".into();
+
+        // Relative-placement-adder closure
+        let mut add_inst = |inst_name: &str| {
+            let i = Instance {
+                inst_name: inst_name.into(),
+                cell: lil.clone(),
+                loc: (0, 0).into(),
+                reflect_horiz: false,
+                reflect_vert: false,
+            };
+            parent.instances.add(i)
+        };
+        // Add a `lil`
+        let i1 = add_inst("i1");
+
+        // The "code under test": add a relative-placed `Assign`.
+        parent.places.push(Placeable::Assign(Ptr::new(RelAssign {
+            net: "NETPPP".into(),
+            loc: RelativePlace {
+                to: Placeable::Port {
+                    inst: i1.clone(),
+                    port: "PPP".into(),
+                },
+                align: Align::Center,
+                side: Side::Left, // FIXME: kinda nonsense
+                sep: Separation::z(2),
+            },
+        })));
+        // Add `parent` to the library
+        let parent = lib.cells.add(parent);
+
+        // The real code under test: run placement
+        let (lib, stack) = Placer::place(lib, SampleStacks::pdka()?)?;
+
+        {
+            let p = parent.read()?;
+            let parent_layout = p.layout.as_ref().unwrap();
+            assert_eq!(parent_layout.places.len(), 0);
+            assert_eq!(parent_layout.instances.len(), 2);
+            assert_eq!(parent_layout.cuts.len(), 0);
+            assert_eq!(parent_layout.assignments.len(), 1);
+            let assn = &parent_layout.assignments[0];
+            assert_eq!(assn.net, "NETPPP");
+            assert_eq!(assn.at.layer, 2);
+            assert_eq!(assn.at.track, 0);
+            assert_eq!(assn.at.at, 1);
+            assert_eq!(assn.at.relz, stack::RelZ::Below);
+        }
+        exports(lib, stack)
+    }
     pub struct SampleLib {
         pub lib: Library,
-        pub big: Ptr<CellBag>,
-        pub ibig: Ptr<Instance>,
-        pub lil: Ptr<CellBag>,
+        pub big: Ptr<cell::CellBag>,
+        pub ibig: Ptr<cell::Instance>,
+        pub lil: Ptr<cell::CellBag>,
         pub parent: LayoutImpl,
     }
     impl SampleLib {
@@ -626,10 +938,10 @@ mod tests {
         pub fn get() -> LayoutResult<SampleLib> {
             let mut lib = Library::new("_rename_me_plz_");
             // Create a big center cell
-            let big = LayoutImpl::new("big", 1, Outline::rect(11, 12)?).into();
+            let big = LayoutImpl::new("big", 1, Outline::rect(11, 12)?);
             let big = lib.cells.add(big);
             // Create the parent cell which instantiates it
-            let mut parent = LayoutImpl::new("parent", 1, Outline::rect(40, 35)?);
+            let mut parent = LayoutImpl::new("parent", 3, Outline::rect(40, 35)?);
             // Create an initial instance
             let ibig = Instance {
                 inst_name: "ibig".into(),
@@ -640,15 +952,15 @@ mod tests {
             };
             let ibig = parent.instances.add(ibig);
             // Create a unit cell which we'll instantiate a few times around `ibig`
-            let mut lil = CellBag::new("lil");
+            let mut lil = cell::CellBag::new("lil");
             lil.layout = Some(LayoutImpl::new("lil", 1, Outline::rect(2, 1)?));
             let mut lil_abstrakt = abstrakt::LayoutAbstract::new("lil", 1, Outline::rect(2, 1)?);
             lil_abstrakt.ports.push(abstrakt::Port {
                 name: "PPP".into(),
-                kind: abstrakt::PortKind::Edge {
-                    layer: 0,
+                kind: abstrakt::PortKind::ZTopEdge {
                     track: 0,
-                    side: abstrakt::Side::TopOrRight,
+                    side: abstrakt::Side::BottomOrLeft,
+                    into: (2, stack::RelZ::Above),
                 },
             });
             lil.abstrakt = Some(lil_abstrakt);

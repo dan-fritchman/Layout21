@@ -404,7 +404,8 @@ impl ProtoImporter {
         Ok(cell)
     }
     /// Import a [LayoutAbstract]
-    fn import_abstract(&mut self, pcell: &proto::Abstract) -> LayoutResult<LayoutAbstract> {
+    #[allow(dead_code)] // FIXME!
+    fn import_abstract(&mut self, _pcell: &proto::Abstract) -> LayoutResult<LayoutAbstract> {
         todo!()
     }
     /// Import a [LayoutImpl]
@@ -606,63 +607,57 @@ fn proto1() -> LayoutResult<()> {
         let mut layers = lib.layers.write()?;
         layers.get_or_insert(0, 0)?
     };
-    let c1 = lib.cells.insert(
-        LayoutImpl {
-            name: "prt_cell".into(),
-            elems: vec![
-                Element {
-                    net: Some("prt_rect_net".to_string()),
-                    layer,
-                    purpose: purpose.clone(),
-                    inner: Shape::Rect {
-                        p0: Point::default(),
-                        p1: Point::default(),
-                    },
+    let c1 = lib.cells.insert(LayoutImpl {
+        name: "prt_cell".into(),
+        elems: vec![
+            Element {
+                net: Some("prt_rect_net".to_string()),
+                layer,
+                purpose: purpose.clone(),
+                inner: Shape::Rect {
+                    p0: Point::default(),
+                    p1: Point::default(),
                 },
-                Element {
-                    net: Some("prt_poly_net".to_string()),
-                    layer,
-                    purpose: purpose.clone(),
-                    inner: Shape::Poly {
-                        pts: vec![Point::default(), Point::default(), Point::default()],
-                    },
+            },
+            Element {
+                net: Some("prt_poly_net".to_string()),
+                layer,
+                purpose: purpose.clone(),
+                inner: Shape::Poly {
+                    pts: vec![Point::default(), Point::default(), Point::default()],
                 },
-                Element {
-                    net: Some("prt_path_net".to_string()),
-                    layer,
-                    purpose: purpose.clone(),
-                    inner: Shape::Path {
-                        width: 5,
-                        pts: vec![Point::default(), Point::default(), Point::default()],
-                    },
+            },
+            Element {
+                net: Some("prt_path_net".to_string()),
+                layer,
+                purpose: purpose.clone(),
+                inner: Shape::Path {
+                    width: 5,
+                    pts: vec![Point::default(), Point::default(), Point::default()],
                 },
-            ],
-            insts: Vec::new(),
-            annotations: vec![TextElement {
-                loc: Point::default(),
-                string: "prt_text".into(),
-            }],
-        }
-        .into(),
-    );
-    lib.cells.insert(
-        LayoutImpl {
-            name: "prt_cell_with_inst".into(),
-            elems: Vec::new(),
-            insts: vec![Instance {
-                inst_name: "prt_inst".into(),
-                loc: Point::new(5, 5),
-                cell: c1,
-                reflect_vert: false,
-                angle: None,
-            }],
-            annotations: vec![TextElement {
-                loc: Point::new(11, 11),
-                string: "prt_more_text".into(),
-            }],
-        }
-        .into(),
-    );
+            },
+        ],
+        insts: Vec::new(),
+        annotations: vec![TextElement {
+            loc: Point::default(),
+            string: "prt_text".into(),
+        }],
+    });
+    lib.cells.insert(LayoutImpl {
+        name: "prt_cell_with_inst".into(),
+        elems: Vec::new(),
+        insts: vec![Instance {
+            inst_name: "prt_inst".into(),
+            loc: Point::new(5, 5),
+            cell: c1,
+            reflect_vert: false,
+            angle: None,
+        }],
+        annotations: vec![TextElement {
+            loc: Point::new(11, 11),
+            string: "prt_more_text".into(),
+        }],
+    });
     let p = lib.to_proto()?;
     let lib2 = ProtoImporter::import(&p, None)?;
     assert_eq!(lib.name, lib2.name);

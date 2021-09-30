@@ -58,7 +58,7 @@ use std::marker::PhantomData;
 pub trait DepOrder: Sized {
     // Associated types
     /// Item Type. Typically pointers or keys to the nodes in the dependency graph.
-    type Item: Clone + Eq + std::hash::Hash;
+    type Item: Clone + std::fmt::Debug + Eq + std::hash::Hash;
     /// Error Type
     type Error;
 
@@ -77,6 +77,7 @@ pub trait DepOrder: Sized {
 /// # Dependency Order Helper
 /// Should not be used directly.  
 /// Public solely for use in the call-signature of [DepOrder::process].  
+#[derive(Debug)]
 pub struct DepOrderer<P: DepOrder> {
     /// Ordered, completed items
     stack: Vec<P::Item>,

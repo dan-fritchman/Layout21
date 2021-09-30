@@ -16,7 +16,8 @@ use crate::coords::{DbUnits, HasUnits, PrimPitches, UnitSpeced, Xy};
 use crate::library::Library;
 use crate::outline::Outline;
 use crate::raw::{self, Dir, LayoutError, LayoutResult, Point};
-use crate::stack::{LayerPeriod, RelZ, Track, TrackError, TrackSegmentType};
+use crate::stack::{LayerPeriod, RelZ};
+use crate::tracks::{Track, TrackSegmentType};
 use crate::utils::{ErrorContext, ErrorHelper};
 use crate::utils::{Ptr, PtrList};
 use crate::{abstrakt, cell, validate};
@@ -75,6 +76,7 @@ struct TempPeriod<'lib> {
     bot_assns: Vec<AssignKey>,
 }
 /// # Converter from [Library] and constituent elements to [raw::Library]
+#[derive(Debug)]
 pub struct RawExporter {
     /// Source [Library]
     lib: Library,
@@ -172,7 +174,7 @@ impl<'lib> RawExporter {
         if let Some(ref x) = cell.raw {
             // Raw definitions store the cell-pointer
             // Just return a copy of it and *don't* add it to `rawcells`
-            // First check for valiidity, i.e. lack of alternate definitions
+            // First check for validity, i.e. lack of alternate definitions
             if cell.abstrakt.is_some() || cell.layout.is_some() {
                 // FIXME: move this to validation stages
                 return self.fail(format!(
@@ -213,9 +215,9 @@ impl<'lib> RawExporter {
         // Re-organize the cell into the format most helpful here
         let temp_cell = self.temp_cell(layout)?;
         // Convert a layer at a time, starting from bottom
-        for layernum in 0..layout.top_layer {
+        for layernum in 0..layout.metals {
             // Organize the cell/layer combo into temporary conversion format
-            let temp_layer = self.temp_cell_layer(&temp_cell, &self.stack.metals[layernum])?;
+            let temp_layer = self.temp_cell_layer(&temp_cell, self.stack.metal(layernum)?)?;
             // Convert each "layer period" one at a time
             for periodnum in 0..temp_layer.nperiods {
                 // Again, re-organize into the relevant objects for this "layer period"
@@ -272,15 +274,20 @@ impl<'lib> RawExporter {
         // Collect references to its instances
         let instances = layout.instances.clone();
         // Validate `cuts`, and arrange them by layer
-        let mut cuts: Vec<Vec<validate::ValidCut>> = vec![vec![]; layout.top_layer];
+        let mut cuts: Vec<Vec<validate::ValidCut>> = vec![vec![]; layout.metals];
         for cut in layout.cuts.iter() {
             let c = validate::ValidCut::validate(cut, &self.stack)?;
             cuts[c.layer].push(c);
             // FIXME: cell validation should also check that this lies within our outline. probably do this earlier
         }
         // Validate all the cell's assignments, and arrange references by layer
-        let mut bot_assns = vec![vec![]; layout.top_layer];
-        let mut top_assns = vec![vec![]; layout.top_layer];
+        //
+        // FIXME!
+        // This is where "assignments outside the cell's top metal layer" errors currently generally land,
+        // and it's ugly. Gotta get some validation on these first.
+        //
+        let mut bot_assns = vec![vec![]; layout.metals];
+        let mut top_assns = vec![vec![]; layout.metals];
         let mut assignments = SlotMap::with_key();
         for assn in layout.assignments.iter() {
             let v = validate::ValidAssign::validate(assn, &self.stack)?;
@@ -347,10 +354,16 @@ impl<'lib> RawExporter {
         }
         // Handle Net Assignments
         // Start with those for which we're the lower of the two layers.
-        // These will also be where we add vias
-        let via_layer = &self.stack.vias[layer.index];
-
+        // These will also be where we add vias.
+        let mut via_opt = None;
         for assn_id in temp_period.bot_assns.iter() {
+            // Note that while `via_layer` is identical over every iteration of this loop, it may not exist if we never enter the loop.
+            // So, retrieve it from the `stack` on our first iteration.
+            if via_opt.is_none() {
+                via_opt = Some(self.stack.via_from(layer.index)?);
+            }
+            let via_layer = via_opt.as_ref().unwrap();
+
             let assn = self.unwrap(
                 temp_period.cell.assignments.get(*assn_id),
                 "Internal error: invalid assignment",
@@ -359,7 +372,7 @@ impl<'lib> RawExporter {
 
             // Create the via element
             let e = raw::Element {
-                net: None, // FIXME: add net labels to these vias
+                net: Some(assn.net.clone()),
                 layer: via_layer.raw.unwrap(),
                 purpose: raw::LayerPurpose::Drawing,
                 inner: raw::Shape::Rect {
@@ -415,7 +428,7 @@ impl<'lib> RawExporter {
         let track = &mut layer_period.signals[track % nsig];
         // And set the net at the assignment's location
         let res = track.set_net(assn.loc.xy[layer.spec.dir], &assn.src);
-        self.ok(res, "Error Assigning Track")?; 
+        self.ok(res, "Error Assigning Track")?;
         Ok(())
     }
     /// Convert a [LayoutAbstract] into raw form.
@@ -432,8 +445,8 @@ impl<'lib> RawExporter {
         let mut rawabs = raw::LayoutAbstract::new(&abs.name, outline);
 
         // Draw a blockage on each layer, equal to the shape of the outline
-        for layerindex in 0..(abs.top_layer + 1) {
-            let layerkey = self.stack.metals[layerindex].raw.unwrap();
+        for layerindex in 0..abs.metals {
+            let layerkey = self.stack.metal(layerindex)?.raw.unwrap();
             rawabs
                 .blockages
                 .insert(layerkey, vec![outline_shape.clone()]);
@@ -462,7 +475,7 @@ impl<'lib> RawExporter {
                 track,
                 side,
             } => {
-                let layer = &self.stack.metals[*layer_index].spec;
+                let layer = &self.stack.metal(*layer_index)?.spec;
                 // First get the "infinite dimension" coordinate from the edge
                 let infdims: (DbUnits, DbUnits) = match side {
                     abstrakt::Side::BottomOrLeft => (DbUnits(0), DbUnits(100)),
@@ -482,7 +495,7 @@ impl<'lib> RawExporter {
                     pts[1] = pts[1].transpose();
                 }
                 (
-                    self.stack.metals[*layer_index].raw.unwrap(),
+                    self.stack.metal(*layer_index)?.raw.unwrap(),
                     raw::Shape::Rect {
                         p0: self.export_xy(&pts[0]),
                         p1: self.export_xy(&pts[1]),
@@ -490,12 +503,17 @@ impl<'lib> RawExporter {
                 )
             }
             ZTopEdge { track, side, into } => {
-                let layer = &self.stack.metals[abs.top_layer].spec;
+                let top_metal = if abs.metals == 0 {
+                    self.fail("Abstrakt Port with no metal layers")
+                } else {
+                    Ok(abs.metals - 1)
+                }?;
+                let layer = &self.stack.metal(top_metal)?.spec;
                 let other_layer_index = match into.1 {
-                    RelZ::Above => abs.top_layer + 1,
-                    RelZ::Below => abs.top_layer - 1,
+                    RelZ::Above => top_metal + 1,
+                    RelZ::Below => top_metal - 1,
                 };
-                let other_layer = &self.stack.metals[other_layer_index];
+                let other_layer = self.stack.metal(other_layer_index)?;
                 let other_layer_center = other_layer.center(into.0)?;
                 // First get the "infinite dimension" coordinate from the edge
                 let infdims: (DbUnits, DbUnits) = match side {
@@ -507,7 +525,7 @@ impl<'lib> RawExporter {
                     }
                 };
                 // Now get the "periodic dimension" from our layer-center
-                let perdims: (DbUnits, DbUnits) = self.track_span(abs.top_layer, *track)?;
+                let perdims: (DbUnits, DbUnits) = self.track_span(top_metal, *track)?;
                 // Presuming we're horizontal, points are here:
                 let mut pts = [Xy::new(infdims.0, perdims.0), Xy::new(infdims.1, perdims.1)];
                 // And if vertical, just transpose them
@@ -516,7 +534,7 @@ impl<'lib> RawExporter {
                     pts[1] = pts[1].transpose();
                 }
                 (
-                    self.stack.metals[abs.top_layer].raw.unwrap(),
+                    self.stack.metal(top_metal)?.raw.unwrap(),
                     raw::Shape::Rect {
                         p0: self.export_xy(&pts[0]),
                         p1: self.export_xy(&pts[1]),
@@ -539,7 +557,7 @@ impl<'lib> RawExporter {
         layer_index: usize,
         track_index: usize,
     ) -> LayoutResult<(DbUnits, DbUnits)> {
-        let layer = &self.stack.metals[layer_index];
+        let layer = self.stack.metal(layer_index)?;
         layer.span(track_index)
     }
     /// Convert an [Outline] to a [raw::Shape]
@@ -608,7 +626,7 @@ impl<'lib> RawExporter {
             // And pack it up as a [raw::Element]
             let e = raw::Element {
                 net,
-                layer: self.stack.metals[layer.index].raw.unwrap(),
+                layer: self.stack.metal(layer.index)?.raw.unwrap(),
                 purpose: raw::LayerPurpose::Drawing,
                 inner,
             };
@@ -627,7 +645,7 @@ impl<'lib> RawExporter {
         for ptr in temp_cell.instances.iter() {
             let inst = ptr.read()?;
             let cell = inst.cell.read()?;
-            if cell.top_layer()? >= layer.index {
+            if cell.metals()? > layer.index {
                 instances.push(ptr.clone());
             }
         }
@@ -647,8 +665,8 @@ impl<'lib> RawExporter {
         // FIXME: move to `validate` stage
         if (breadth % layer.pitch) != 0 {
             return self.fail(format!(
-                "{:?} has invalid pitch {:?}, must be multiple of {:?}",
-                layer, layer.pitch, breadth,
+                "{} has invalid dimension on {}: {:?}, must be multiple of {:?}",
+                cell.name, layer.spec.name, breadth, layer.pitch,
             ));
         }
         let nperiods = usize::try_from(breadth / layer.pitch).unwrap(); // FIXME: errors
