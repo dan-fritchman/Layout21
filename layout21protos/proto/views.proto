@@ -8,14 +8,14 @@
 //! 
 
 syntax = "proto3";
-package vlsirlol.abstrakt;
+package vlsirlol.views;
 import "raw.proto";
 import "circuit.proto";
 
-// # Library 
+// # Package
 // A collection of `Cells` and asssociated metadata. 
-message Library {
-  // Library Name / Domain 
+message Package {
+  // Package Name / Domain 
   string domain = 1;
   // Distance Units
   vlsirlol.raw.Units units = 2;
@@ -30,13 +30,15 @@ message Cell {
   string name = 1;
   // IO Interface
   Interface interface = 10;
+  // Circuit Module 
+  vlsirlol.circuit.Module module = 11;
   // Physical Abstract
-  Abstract abstract = 11;
+  Abstract abstract = 12;
   // Physical Layout Implementation
-  vlsirlol.raw.Cell layout = 12;
+  vlsirlol.raw.Cell layout = 13;
 }
 
-// # Interface
+// # Interface View 
 // Defines the logical IO of a `Cell`, using `circuit` port-types.
 message Interface {
   // Cell Name
@@ -45,10 +47,11 @@ message Interface {
   repeated vlsirlol.circuit.Port ports = 10;
 }
 
-// # Abstract Layout 
+// # Abstract Layout View 
 // 
 // Defines the physical interface to a [Cell], including ports and internal blockages, 
 // omitting internal implementation details.
+//
 message Abstract {
   // Cell Name
   string name = 1;
@@ -57,7 +60,7 @@ message Abstract {
   // Ports 
   repeated AbstractPort ports = 4;
   // Blockages
-  vlsirlol.raw.LayerShapes blockages = 5;
+  repeated vlsirlol.raw.LayerShapes blockages = 5;
   
   // Author
   string author = 100;

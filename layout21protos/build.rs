@@ -25,7 +25,8 @@ fn main() {
         "proto/utils.proto",
         "proto/raw.proto",
         "proto/circuit.proto",
-        "proto/abstrakt.proto",
+        "proto/views.proto",
+        "proto/tetris.proto",
     ];
     config.compile_protos(&src, &["proto/"]).unwrap();
 }

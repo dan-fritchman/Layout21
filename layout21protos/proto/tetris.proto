@@ -2,35 +2,40 @@
 //! 
 //! # vlsirlol "Tetris" Gridded Layout Schema 
 //! 
+//! Remains work-in-progress as of this writing 
+//! 
 
 syntax = "proto3";
 package vlsirlol.tetris;
+
+import "utils.proto";
 import "raw.proto";
-import "circuit.proto";
+import "views.proto";
 
-// # Library 
-// A collection of `Cells` and asssociated metadata. 
-message Library {
-  // Library Name / Domain 
-  string domain = 1;
-  // Distance Units
-  vlsirlol.raw.Units units = 2;
-  // Cell Definitions
-  repeated Cell cells = 10; 
-}
 
-// # Cell 
-// A multi-view representation of a piece of hardware.
-message Cell {
-  // Cell Name
-  string name = 1;
-  // IO Interface
-  vlsirlol.raw.Interface interface = 10;
-  // Physical Abstrakt
-  Abstrakt abstrakt = 11;
-  // Physical Layout Implementation
-  Layout layout = 12;
-}
+// // # Library 
+// // A collection of `Cells` and asssociated metadata. 
+// message Library {
+//   // Library Name / Domain 
+//   string domain = 1;
+//   // Distance Units
+//   vlsirlol.raw.Units units = 2;
+//   // Cell Definitions
+//   repeated Cell cells = 10; 
+// }
+
+// // # Cell 
+// // A multi-view representation of a piece of hardware.
+// message Cell {
+//   // Cell Name
+//   string name = 1;
+//   // IO Interface
+//   vlsirlol.raw.Interface interface = 10;
+//   // Physical Abstrakt
+//   Abstrakt abstrakt = 11;
+//   // Physical Layout Implementation
+//   Layout layout = 12;
+// }
 
 // # Layout 
 // 
