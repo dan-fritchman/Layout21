@@ -1,6 +1,6 @@
 [package]
-desc = "Layout21 Gridded 'Tetris' Integrated Circuit Layout"
 name = "layout21tetris"
+description = "Layout21 Gridded 'Tetris' Integrated Circuit Layout"
 # Shared layout21 attributes
 authors = ["Dan Fritchman <dan@fritch.mn>"]
 edition = "2018"

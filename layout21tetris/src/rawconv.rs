@@ -447,9 +447,8 @@ impl<'lib> RawExporter {
         // Draw a blockage on each layer, equal to the shape of the outline
         for layerindex in 0..abs.metals {
             let layerkey = self.stack.metal(layerindex)?.raw.unwrap();
-            rawabs
-                .blockages
-                .insert(layerkey, vec![outline_shape.clone()]);
+            let blk = vec![outline_shape.clone()];
+            rawabs.blockages.insert(layerkey, blk);
         }
 
         // Create shapes for each port
@@ -562,14 +561,17 @@ impl<'lib> RawExporter {
     }
     /// Convert an [Outline] to a [raw::Shape]
     fn outline_shape(&self, outline: &Outline) -> LayoutResult<raw::Shape> {
-        if outline.x.len() == 1 {
-            // Rectangular
-            let p0 = Point::new(0, 0);
-            let xp = self.db_units(outline.x[0]).raw();
-            let yp = self.db_units(outline.y[0]).raw();
-            let p1 = Point::new(xp, yp);
-            return Ok(raw::Shape::Rect { p0, p1 });
-        }
+        // FIXME: always uses `Poly`, because some proto-schemas insist on it as the most general.
+        // Probably move that conversion down-stack, keep either `Poly` or `Rect` on `layout21::raw::Abstract`.
+
+        // if outline.x.len() == 1 {
+        //     // Rectangular
+        //     let p0 = Point::new(0, 0);
+        //     let xp = self.db_units(outline.x[0]).raw();
+        //     let yp = self.db_units(outline.y[0]).raw();
+        //     let p1 = Point::new(xp, yp);
+        //     return Ok(raw::Shape::Rect { p0, p1 });
+        // }
         // Polygon
         // Create an array of Outline-Points
         let mut pts = vec![Point { x: 0, y: 0 }];

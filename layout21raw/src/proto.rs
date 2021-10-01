@@ -48,7 +48,8 @@ impl<'lib> ProtoExporter<'lib> {
         // And convert each of our cells
         for cell in DepOrder::order(self.lib).iter() {
             let cell = cell.read()?;
-            self.export_cell(&*cell, &mut plib.cells, &mut plib.abstracts)?;
+            let pcell = self.export_cell(&*cell)?;
+            plib.cells.push(pcell);
         }
         self.ctx.pop();
         Ok(plib)
@@ -63,22 +64,20 @@ impl<'lib> ProtoExporter<'lib> {
         })
     }
     /// Convert a [Cell] to a [proto::Cell] cell-definition
-    /// Adds to the running lists `pcells` and `pabs`.
-    fn export_cell(
-        &mut self,
-        cell: &CellBag,
-        pcells: &mut Vec<proto::Cell>,
-        pabs: &mut Vec<proto::Abstract>,
-    ) -> LayoutResult<()> {
+    fn export_cell(&mut self, cell: &CellBag) -> LayoutResult<proto::Cell> {
         self.ctx.push(ErrorContext::Cell(cell.name.clone()));
+
+        let mut pcell = proto::Cell::default();
+        pcell.name = cell.name.clone();
+
         if let Some(ref lay) = cell.layout {
-            pcells.push(self.export_layout(lay)?);
+            pcell.layout = Some(self.export_layout(lay)?);
         }
         if let Some(ref a) = cell.abstrakt {
-            pabs.push(self.export_abstract(a)?);
+            pcell.r#abstract = Some(self.export_abstract(a)?);
         }
         self.ctx.pop();
-        Ok(())
+        Ok(pcell)
     }
     /// Convert a [LayoutAbstract]
     fn export_abstract(&mut self, abs: &LayoutAbstract) -> LayoutResult<proto::Abstract> {
@@ -103,13 +102,13 @@ impl<'lib> ProtoExporter<'lib> {
         Ok(pabs)
     }
     /// Export an abstract's outline to a [proto::Polygon]
-    fn export_abstract_outline(&mut self, outline: &Element) -> LayoutResult<proto::Rectangle> {
+    fn export_abstract_outline(&mut self, outline: &Element) -> LayoutResult<proto::Polygon> {
         // Convert to a [ProtoShape] enum
         let poutline = self.export_element(outline)?;
         // And if it's (the supported) rect-variant, return it
         match poutline {
-            ProtoShape::Rect(rect) => Ok(rect),
-            _ => self.fail("abstract outline is not a rectangle"),
+            ProtoShape::Poly(p) => Ok(p),
+            _ => self.fail("abstract outline is not a polygon"),
         }
     }
     /// Export an abstract's blockages for layer `layer`
@@ -140,10 +139,10 @@ impl<'lib> ProtoExporter<'lib> {
         Ok(pport)
     }
     /// Convert a [LayoutImpl] to a [proto::Cell] cell-definition
-    fn export_layout(&mut self, cell: &LayoutImpl) -> LayoutResult<proto::Cell> {
+    fn export_layout(&mut self, cell: &LayoutImpl) -> LayoutResult<proto::Layout> {
         self.ctx.push(ErrorContext::Impl);
-        // Create the empty/default [proto::Cell]
-        let mut pcell = proto::Cell::default();
+        // Create the empty/default [proto::Layout]
+        let mut pcell = proto::Layout::default();
         // Convert our name
         pcell.name = cell.name.clone();
         // Convert each [Instance]
@@ -399,7 +398,13 @@ impl ProtoImporter {
     /// Import a [CellBag]
     fn import_cell(&mut self, pcell: &proto::Cell) -> LayoutResult<CellBag> {
         self.ctx.push(ErrorContext::Cell(pcell.name.clone()));
-        let cell = self.import_layout(&pcell)?.into();
+        let mut cell = CellBag::new(&pcell.name);
+        if let Some(ref lay) = pcell.layout {
+            cell.layout = Some(self.import_layout(lay)?);
+        }
+        if let Some(ref a) = pcell.r#abstract {
+            cell.abstrakt = Some(self.import_abstract(a)?);
+        }
         self.ctx.pop();
         Ok(cell)
     }
@@ -409,7 +414,7 @@ impl ProtoImporter {
         todo!()
     }
     /// Import a [LayoutImpl]
-    fn import_layout(&mut self, pcell: &proto::Cell) -> LayoutResult<LayoutImpl> {
+    fn import_layout(&mut self, pcell: &proto::Layout) -> LayoutResult<LayoutImpl> {
         let mut cell = LayoutImpl::default();
         let name = pcell.name.clone();
         cell.name = name.clone();

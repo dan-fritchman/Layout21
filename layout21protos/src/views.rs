@@ -14,8 +14,8 @@ use crate::conv::ProtoFile;
 // Include the prost-expanded proto-file content
 include!(concat!(env!("OUT_DIR"), "/vlsirlol.views.rs"));
 
-// Add the file-exchange trait for Packages and Cells
-impl ProtoFile for Package {}
+// Add the file-exchange trait for Libraries and Cells
+impl ProtoFile for Library {}
 impl ProtoFile for Cell {}
 
 /// # Unit Tests

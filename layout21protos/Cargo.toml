@@ -1,6 +1,6 @@
 [package]
 name = "layout21protos"
-desc = "Layout21 ProtoBuf Definitions"
+description = "Layout21 ProtoBuf Definitions"
 # Shared layout21 attributes
 authors = ["Dan Fritchman <dan@fritch.mn>"]
 edition = "2018"

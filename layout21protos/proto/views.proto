@@ -12,10 +12,10 @@ package vlsirlol.views;
 import "raw.proto";
 import "circuit.proto";
 
-// # Package
+// # Library
 // A collection of `Cells` and asssociated metadata. 
-message Package {
-  // Package Name / Domain 
+message Library {
+  // Library Name / Domain 
   string domain = 1;
   // Distance Units
   vlsirlol.raw.Units units = 2;

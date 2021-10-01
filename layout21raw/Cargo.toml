@@ -1,6 +1,6 @@
 [package]
 name = "layout21raw"
-desc = "Layout21 Raw-Format Integrated Circuit Layout"
+description = "Layout21 Raw-Format Integrated Circuit Layout"
 # Shared layout21 attributes
 authors = ["Dan Fritchman <dan@fritch.mn>"]
 edition = "2018"
