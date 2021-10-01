@@ -8,7 +8,7 @@ use crate::cell::{self, Instance, LayoutImpl};
 use crate::coords::{PrimPitches, Xy};
 use crate::library::Library;
 use crate::outline::Outline;
-use crate::placement::{Align, Array, ArrayInstance, Arrayable, Place};
+use crate::placement::{Align, Array, ArrayInstance, Arrayable, Place, RelAssign, Separation};
 use crate::raw::{self, LayoutResult};
 use crate::stack::RelZ;
 use crate::utils::Ptr;
@@ -62,8 +62,8 @@ fn ro_abs(unit: Ptr<cell::CellBag>) -> LayoutResult<cell::CellBag> {
     let unitsize = (18, 1);
 
     // Create an initially empty layout
-    let mut hasunits = LayoutImpl::new(
-        "HasUnits",             // name
+    let mut ro = LayoutImpl::new(
+        "RO",                   // name
         4,                      // metals
         Outline::rect(130, 7)?, // outline
     );
@@ -86,53 +86,50 @@ fn ro_abs(unit: Ptr<cell::CellBag>) -> LayoutResult<cell::CellBag> {
                 reflect_horiz: false,
                 reflect_vert: true,
             };
-            hasunits.instances.add(inst);
+            ro.instances.add(inst);
 
             // Assign the input
             let m1track = (y * 12 + 9) as usize;
             let m3track = m1track + x as usize;
-            hasunits
-                .net(format!("dly{}", x))
+            ro.net(format!("dly{}", x))
                 .at(1, m2track, m1track, RelZ::Below)
                 .at(2, m3track, m2track, RelZ::Below);
             if x != 0 {
                 // Cut M3 to the *right* of the input
-                hasunits.cut(2, m3track, m2track + 1, RelZ::Below);
+                ro.cut(2, m3track, m2track + 1, RelZ::Below);
             } else {
                 // Cut M3 to the *left* of the input
-                hasunits.cut(2, m3track, m2track - 1, RelZ::Below);
+                ro.cut(2, m3track, m2track - 1, RelZ::Below);
             }
             // Assign the output
             let m3track = m1track + ((x + 1) % 3) as usize;
             let m1track = (y * 12 + 11) as usize;
-            hasunits
-                .net(format!("dly{}", ((x + 1) % 3)))
+            ro.net(format!("dly{}", ((x + 1) % 3)))
                 .at(1, m2track + 2, m1track, RelZ::Below)
                 .at(2, m3track, m2track + 2, RelZ::Below);
             if x != 2 {
                 // Cut M3 to the *left* of the output
-                hasunits.cut(2, m3track, m2track + 1, RelZ::Below);
+                ro.cut(2, m3track, m2track + 1, RelZ::Below);
             } else {
                 // Cut M3 to the *right* of the output
-                hasunits.cut(2, m3track, m2track + 3, RelZ::Below);
+                ro.cut(2, m3track, m2track + 3, RelZ::Below);
             }
 
             // Assign the enable
             let m1track = (y * 12 + 8) as usize;
             let m2track = (m2entrack + y) as usize;
-            hasunits
-                .net(format!("en{}{}", x, y))
+            ro.net(format!("en{}{}", x, y))
                 .at(1, m2track, m1track, RelZ::Below);
-            hasunits.cut(1, m2track, m1track + 1, RelZ::Below); // Cut just above
+            ro.cut(1, m2track, m1track + 1, RelZ::Below); // Cut just above
         }
 
         // Make top & bottom M2 cuts
-        hasunits.cut(1, m2track, m2botcut, RelZ::Below);
-        hasunits.cut(1, m2track, m2topcut, RelZ::Below);
-        hasunits.cut(1, m2track + 2, m2botcut, RelZ::Below);
-        hasunits.cut(1, m2track + 2, m2topcut, RelZ::Below);
+        ro.cut(1, m2track, m2botcut, RelZ::Below);
+        ro.cut(1, m2track, m2topcut, RelZ::Below);
+        ro.cut(1, m2track + 2, m2botcut, RelZ::Below);
+        ro.cut(1, m2track + 2, m2topcut, RelZ::Below);
     }
-    Ok(hasunits.into())
+    Ok(ro.into())
 }
 /// RO, relative-placement edition
 fn ro_rel(unit: Ptr<cell::CellBag>) -> LayoutResult<cell::CellBag> {
@@ -140,23 +137,23 @@ fn ro_rel(unit: Ptr<cell::CellBag>) -> LayoutResult<cell::CellBag> {
     let unitsize = (18, 1);
 
     // Create an initially empty layout
-    let mut hasunits = LayoutImpl::new(
-        "HasUnits",             // name
-        4,                      // metals
-        Outline::rect(130, 7)?, // outline
-    );
+    let mut ro = LayoutImpl::builder()
+        .name("RO")
+        .metals(4_usize)
+        .outline(Outline::rect(130, 7)?)
+        .build()?;
     let m2xpitch = 36;
     let m2botcut = 5;
     let m2topcut = 7 * m2botcut + 1;
 
     // Next-location tracker
     let mut next_loc: Place<Xy<PrimPitches>> = (unitsize.0, 2 * unitsize.1).into();
-    let mut insts: Vec<Ptr<Instance>> = Vec::new();
 
     // For each column
     for x in 0..3 {
         let m2track = (m2xpitch * (x + 1) - 4) as usize;
         let m2entrack = (x * m2xpitch) + m2xpitch / 2;
+        let mut bottom_inst: Option<Ptr<Instance>> = None;
 
         // For each row
         for y in 0..3 {
@@ -167,12 +164,45 @@ fn ro_rel(unit: Ptr<cell::CellBag>) -> LayoutResult<cell::CellBag> {
                 reflect_horiz: false,
                 reflect_vert: true,
             };
-            let inst = hasunits.instances.add(inst);
-            insts.push(inst.clone());
+            let inst = ro.instances.add(inst);
+            if y == 0 {
+                bottom_inst = Some(inst.clone());
+            }
+
+            // Assign an input M2, at the center of its pin
+            let assn = Placeable::Assign(Ptr::new(RelAssign {
+                net: format!("dly{}", x),
+                loc: RelativePlace {
+                    to: Placeable::Port {
+                        inst: inst.clone(),
+                        port: "inp".into(),
+                    },
+                    side: Side::Right,
+                    align: Align::Center,
+                    sep: Separation::z(1),
+                },
+            }));
+            ro.places.push(assn);
+
+            // Assign an output M2, at the right-edge of the instance
+            let assn = Placeable::Assign(Ptr::new(RelAssign {
+                net: format!("dly{}", ((x + 1) % 3)),
+                loc: RelativePlace {
+                    to: Placeable::Port {
+                        inst: inst.clone(),
+                        port: "out".into(),
+                    },
+                    side: Side::Right,
+                    align: Align::Side(Side::Right),
+                    sep: Separation::z(1),
+                },
+            }));
+            ro.places.push(assn);
+
             if y == 2 {
                 // Top of a row. Place to the right of its bottom instance.
                 next_loc = RelativePlace {
-                    to: Placeable::Instance(insts[3 * x].clone()),
+                    to: Placeable::Instance(bottom_inst.clone().unwrap()),
                     side: Side::Right,
                     align: Align::Side(Side::Bottom), // Top or Bottom both work just as well here
                     sep: Separation::x(SepBy::SizeOf(unit.clone())),
@@ -188,51 +218,49 @@ fn ro_rel(unit: Ptr<cell::CellBag>) -> LayoutResult<cell::CellBag> {
                 }
                 .into();
             }
+
             // Assign the input
             let m1track = (y * 12 + 9) as usize;
             let m3track = m1track + x as usize;
-            hasunits
-                .net(format!("dly{}", x))
-                .at(1, m2track, m1track, RelZ::Below)
+            ro.net(format!("dly{}", x))
                 .at(2, m3track, m2track, RelZ::Below);
+            // .at(1, m2track, m1track, RelZ::Below)
             if x != 0 {
                 // Cut M3 to the *right* of the input
-                hasunits.cut(2, m3track, m2track + 1, RelZ::Below);
+                ro.cut(2, m3track, m2track + 1, RelZ::Below);
             } else {
                 // Cut M3 to the *left* of the input
-                hasunits.cut(2, m3track, m2track - 1, RelZ::Below);
+                ro.cut(2, m3track, m2track - 1, RelZ::Below);
             }
             // Assign the output
             let m3track = m1track + ((x + 1) % 3) as usize;
             let m1track = (y * 12 + 11) as usize;
-            hasunits
-                .net(format!("dly{}", ((x + 1) % 3)))
-                .at(1, m2track + 2, m1track, RelZ::Below)
+            ro.net(format!("dly{}", ((x + 1) % 3)))
                 .at(2, m3track, m2track + 2, RelZ::Below);
+            //     .at(1, m2track + 2, m1track, RelZ::Below)
             if x != 2 {
                 // Cut M3 to the *left* of the output
-                hasunits.cut(2, m3track, m2track + 1, RelZ::Below);
+                ro.cut(2, m3track, m2track + 1, RelZ::Below);
             } else {
                 // Cut M3 to the *right* of the output
-                hasunits.cut(2, m3track, m2track + 3, RelZ::Below);
+                ro.cut(2, m3track, m2track + 3, RelZ::Below);
             }
 
             // Assign the enable
             let m1track = (y * 12 + 8) as usize;
             let m2track = (m2entrack + y) as usize;
-            hasunits
-                .net(format!("en{}{}", x, y))
+            ro.net(format!("en{}{}", x, y))
                 .at(1, m2track, m1track, RelZ::Below);
-            hasunits.cut(1, m2track, m1track + 1, RelZ::Below); // Cut just above
+            ro.cut(1, m2track, m1track + 1, RelZ::Below); // Cut just above
         }
 
         // Make top & bottom M2 cuts
-        hasunits.cut(1, m2track, m2botcut, RelZ::Below);
-        hasunits.cut(1, m2track, m2topcut, RelZ::Below);
-        hasunits.cut(1, m2track + 2, m2botcut, RelZ::Below);
-        hasunits.cut(1, m2track + 2, m2topcut, RelZ::Below);
+        ro.cut(1, m2track, m2botcut, RelZ::Below);
+        ro.cut(1, m2track, m2topcut, RelZ::Below);
+        ro.cut(1, m2track + 2, m2botcut, RelZ::Below);
+        ro.cut(1, m2track + 2, m2topcut, RelZ::Below);
     }
-    Ok(hasunits.into())
+    Ok(ro.into())
 }
 /// Test importing and wrapping an existing GDSII into a [Library]/[CellBag]
 #[test]
@@ -254,7 +282,7 @@ fn _wrap_gds(lib: &mut Library) -> LayoutResult<Ptr<cell::CellBag>> {
     // Get a [Ptr] to the first (and only) cell
     let cell = rawlib.cells.first().unwrap().clone();
 
-    // Take ownership of the [raw::Library]
+    // Add tracking of our dependence on the [raw::Library]
     let rawlibptr = lib.add_rawlib(rawlib);
     // Create a [CellBag] from the [raw::Library]'s sole cell
     let unitsize = (18, 1);
@@ -279,6 +307,11 @@ fn _wrap_gds(lib: &mut Library) -> LayoutResult<Ptr<cell::CellBag>> {
         reflect_horiz: false,
         reflect_vert: false,
     });
+    // Convert the layout to a [Cell]
+    let mut wrapper: cell::CellBag = wrapper.into();
+    // And add an [Abstract] view
+    wrapper.abstrakt = Some(abstract_unit()?);
+    // Finally add the wrapper [Cell] to our [Library], and return a pointer to it.
     let wrapper = lib.cells.insert(wrapper);
     Ok(wrapper)
 }
@@ -288,8 +321,8 @@ fn ro_array(unit: Ptr<cell::CellBag>) -> LayoutResult<cell::CellBag> {
     let unitsize = (18, 1);
 
     // Create an initially empty layout
-    let mut hasunits = LayoutImpl::new(
-        "HasUnits",             // name
+    let mut ro = LayoutImpl::new(
+        "RO",                   // name
         4,                      // metals
         Outline::rect(130, 7)?, // outline
     );
@@ -315,7 +348,10 @@ fn ro_array(unit: Ptr<cell::CellBag>) -> LayoutResult<cell::CellBag> {
             })),
         }),
     }));
-    hasunits.places.push(a);
+    ro.places.push(a);
+
+    // Now do all of the metal-layer stuff: assignments and cuts
+    // This part remains in absolute coordinates
 
     // For each column
     for x in 0..3 {
@@ -356,48 +392,45 @@ fn ro_array(unit: Ptr<cell::CellBag>) -> LayoutResult<cell::CellBag> {
             // Assign the input
             let m1track = (y * 12 + 9) as usize;
             let m3track = m1track + x as usize;
-            hasunits
-                .net(format!("dly{}", x))
+            ro.net(format!("dly{}", x))
                 .at(1, m2track, m1track, RelZ::Below)
                 .at(2, m3track, m2track, RelZ::Below);
             if x != 0 {
                 // Cut M3 to the *right* of the input
-                hasunits.cut(2, m3track, m2track + 1, RelZ::Below);
+                ro.cut(2, m3track, m2track + 1, RelZ::Below);
             } else {
                 // Cut M3 to the *left* of the input
-                hasunits.cut(2, m3track, m2track - 1, RelZ::Below);
+                ro.cut(2, m3track, m2track - 1, RelZ::Below);
             }
             // Assign the output
             let m3track = m1track + ((x + 1) % 3) as usize;
             let m1track = (y * 12 + 11) as usize;
-            hasunits
-                .net(format!("dly{}", ((x + 1) % 3)))
+            ro.net(format!("dly{}", ((x + 1) % 3)))
                 .at(1, m2track + 2, m1track, RelZ::Below)
                 .at(2, m3track, m2track + 2, RelZ::Below);
             if x != 2 {
                 // Cut M3 to the *left* of the output
-                hasunits.cut(2, m3track, m2track + 1, RelZ::Below);
+                ro.cut(2, m3track, m2track + 1, RelZ::Below);
             } else {
                 // Cut M3 to the *right* of the output
-                hasunits.cut(2, m3track, m2track + 3, RelZ::Below);
+                ro.cut(2, m3track, m2track + 3, RelZ::Below);
             }
 
             // Assign the enable
             let m1track = (y * 12 + 8) as usize;
             let m2track = (m2entrack + y) as usize;
-            hasunits
-                .net(format!("en{}{}", x, y))
+            ro.net(format!("en{}{}", x, y))
                 .at(1, m2track, m1track, RelZ::Below);
-            hasunits.cut(1, m2track, m1track + 1, RelZ::Below); // Cut just above
+            ro.cut(1, m2track, m1track + 1, RelZ::Below); // Cut just above
         }
 
         // Make top & bottom M2 cuts
-        hasunits.cut(1, m2track, m2botcut, RelZ::Below);
-        hasunits.cut(1, m2track, m2topcut, RelZ::Below);
-        hasunits.cut(1, m2track + 2, m2botcut, RelZ::Below);
-        hasunits.cut(1, m2track + 2, m2topcut, RelZ::Below);
+        ro.cut(1, m2track, m2botcut, RelZ::Below);
+        ro.cut(1, m2track, m2topcut, RelZ::Below);
+        ro.cut(1, m2track + 2, m2botcut, RelZ::Below);
+        ro.cut(1, m2track + 2, m2topcut, RelZ::Below);
     }
-    Ok(hasunits.into())
+    Ok(ro.into())
 }
 /// Runner for each of these RO tests.
 /// Accepts function-arguments for the unit-cell and wrapper-cell factories.

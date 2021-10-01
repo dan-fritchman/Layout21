@@ -61,7 +61,7 @@ use by_address::ByAddress;
 /// in operations such as converting hierarchical trees,
 /// in which many of the nodes are shared.
 ///
-#[derive(Clone, Default, Debug)]
+#[derive(Debug, Default)]
 pub struct Ptr<T: ?Sized>(ByAddress<Arc<RwLock<T>>>);
 
 impl<T> Ptr<T> {
@@ -86,9 +86,13 @@ impl<T> DerefMut for Ptr<T> {
         &mut self.0
     }
 }
-// The `derive`d implementations for `PartialEq`, `Eq`, and `Hash`
-// presumably look very much like this, but don't compile
-// for reasons that remain mysterious here.
+// Having a [Deref] implementation seems to screw with the auto-`derive`d implementations
+// of a few key traits. Conveniently, they're all quite short.
+impl<T> Clone for Ptr<T> {
+    fn clone(&self) -> Self {
+        Self(ByAddress::clone(&self.0))
+    }
+}
 impl<T> PartialEq for Ptr<T> {
     fn eq(&self, other: &Self) -> bool {
         self.0.eq(&other.0)
@@ -107,10 +111,11 @@ impl<T> Hash for Ptr<T> {
 /// for ease of getting referable [Ptr]s upon insertion.
 /// Other methods are passed into the underlying [Vec] via [Deref] and [DerefMut].
 ///
-#[derive(Debug, Clone, Default)]
-pub struct PtrList<T: Clone>(Vec<Ptr<T>>);
-impl<T: Clone> PtrList<T> {
-    /// Create a new and empty [PtrList]
+#[derive(Debug, Clone)]
+pub struct PtrList<T: ?Sized>(Vec<Ptr<T>>);
+
+impl<T> PtrList<T> {
+    /// Create a new and empty [PtrList]. Also available via [Default].
     pub fn new() -> Self {
         Self(Vec::new())
     }
@@ -137,23 +142,31 @@ impl<T: Clone> PtrList<T> {
         self.add(t)
     }
 }
-impl<T: Clone> Deref for PtrList<T> {
+impl<T> Default for PtrList<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+// All dereferences, mostly method calls, are forwarded to the underlying [Vec]
+impl<T> Deref for PtrList<T> {
     type Target = Vec<Ptr<T>>;
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
-impl<T: Clone> DerefMut for PtrList<T> {
+impl<T> DerefMut for PtrList<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
-impl<T: Clone> From<Vec<Ptr<T>>> for PtrList<T> {
+/// Create from a vector of `Ptr<T>` elements.
+impl<T> From<Vec<Ptr<T>>> for PtrList<T> {
     fn from(v: Vec<Ptr<T>>) -> Self {
         Self::from_ptrs(v)
     }
 }
-impl<T: Clone> From<Vec<T>> for PtrList<T> {
+/// Create from a vector of `T` elements.
+impl<T> From<Vec<T>> for PtrList<T> {
     fn from(v: Vec<T>) -> Self {
         Self::from_owned(v)
     }

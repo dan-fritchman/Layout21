@@ -370,18 +370,37 @@ impl Placer {
         let newlayer = isize::try_from(ref_cross.0.layer)? + sep_z;
         let newlayer = usize::try_from(newlayer)?;
 
-        let new_track: TrackRef = self.convert_track_layer(&ref_cross.0, newlayer)?;
-        let relz = if ref_cross.1.layer == new_track.layer + 1 {
+        // Of the two layers in `ref_cross`, one will be in parallel with `newlayer`, and one will be orthogonal to it.
+        // Set `par` as the parallel track, and `cross` as the orthogonal track.
+        let (par, cross) = {
+            let newlayer_dir = self.stack.metal(newlayer)?.spec.dir;
+            if newlayer_dir == self.stack.metal(ref_cross.0.layer)?.spec.dir {
+                (ref_cross.0, ref_cross.1)
+            } else if newlayer_dir == self.stack.metal(ref_cross.1.layer)?.spec.dir {
+                (ref_cross.1, ref_cross.0)
+            } else {
+                unreachable!()
+            }
+        };
+
+        // Get the track on `newlayer` closest to `par`
+        let new_track: TrackRef = self.convert_track_layer(&par, newlayer)?;
+
+        // And get the above/below indicator required for `TrackIntersection` 
+        let relz = if cross.layer == new_track.layer + 1 {
             Ok(stack::RelZ::Above)
-        } else if ref_cross.1.layer == new_track.layer - 1 {
+        } else if cross.layer == new_track.layer - 1 {
             Ok(stack::RelZ::Below)
         } else {
-            self.fail(format!("Invalid track crossing {:?}", ref_cross))
+            self.fail(format!(
+                "Invalid track crossing {:?} x {:?}",
+                new_track, cross
+            ))
         }?;
         let rv = TrackIntersection {
             layer: new_track.layer,
             track: new_track.track,
-            at: ref_cross.1.track,
+            at: cross.track,
             relz,
         };
         Ok(rv)
@@ -412,47 +431,65 @@ impl Placer {
                     let layer = self.stack.metal(top_metal)?;
                     (layer.spec.dir, layer.period_data.signals.len())
                 };
-                let layer_pitches =
-                    self.layer_pitches(top_metal, inst.loc.abs()?[dir.other()].into())?;
-                // Get the port's track-index, combining in the instance-location
-                let (_, period_tracks) = (layer_pitches * nsignals).into_inner();
-                let track = track + usize::try_from(period_tracks)?;
+                let port_track = {
+                    let layer_pitches =
+                        self.layer_pitches(top_metal, inst.loc.abs()?[!dir].into())?;
+
+                    // Get the port's track-index, combining in the instance-location
+                    let (_, period_tracks) = (layer_pitches * nsignals).into_inner();
+                    let period_tracks = usize::try_from(period_tracks)?;
+                    if inst.reflected(!dir) {
+                        period_tracks - track - 1
+                    } else {
+                        period_tracks + track 
+                    }
+                };
 
                 // Sort out the orthogonal-axis range.
-                let other_layer = match into.1 {
+                let ortho_layer = match into.1 {
                     stack::RelZ::Above => top_metal + 1,
                     stack::RelZ::Below => top_metal - 1,
                 };
-                let ortho_track = {
-                    let ortho_layer_pitches =
-                        self.layer_pitches(other_layer, inst.loc.abs()?[dir].into())?;
-                    if *side == abstrakt::Side::TopOrRight {
-                        unimplemented!();
-                        // if inst.reflected(dir) {
-                        //     ortho_layer_pitches -= 5; // FIXME!
-                        // } else {
-                        //     ortho_layer_pitches += 5; // FIXME!
-                        // }
-                    }
-                    let layer = &self.stack.metal(other_layer)?;
+                let ortho_range = {
+                    let layer = &self.stack.metal(ortho_layer)?;
                     let nsignals = layer.period_data.signals.len();
-                    let (_, period_tracks) = (ortho_layer_pitches * nsignals).into_inner();
-                    usize::try_from(period_tracks)?
+
+                    // Find the origin and size in `ortho_layer` tracks
+                    // FIXME: probably make this a method, and/or a track-index `HasUnits`
+                    let loc = inst.loc.abs()?[dir];
+                    let loc = self.layer_pitches(ortho_layer, loc.into())?;
+                    let (_, loc) = (loc * nsignals).into_inner();
+                    let loc = usize::try_from(loc)?;
+                    let size = inst.boundbox_size()?[dir];
+                    let size = self.layer_pitches(ortho_layer, size.into())?;
+                    let (_, size) = (size * nsignals).into_inner();
+                    let size = usize::try_from(size)?;
+
+                    // Pull out the number of tracks in the orthogonal-axis
+                    let into = into.0;
+                    // And sort out the orthogonal range, based on location, size, and `into` tracks 
+                    match (side, inst.reflected(dir)) {
+                        (abstrakt::Side::BottomOrLeft, false)=> (loc, loc+into),
+                        (abstrakt::Side::BottomOrLeft, true)=> (loc-into, loc),
+                        (abstrakt::Side::TopOrRight, false)=> (loc+into, loc+size),
+                        (abstrakt::Side::TopOrRight, true)=> (loc-size, loc-into),
+                    }
                 };
-                //
+
+                // From all that, create a [PortLoc]
                 PortLoc::ZTopEdge {
                     track: TrackRef {
-                        layer: cell.top_metal()?.unwrap(),
-                        track,
+                        layer: top_metal,
+                        track: port_track,
                     },
                     range: (
                         TrackRef {
-                            layer: other_layer,
-                            track: ortho_track,
+                            layer: ortho_layer,
+                            track: ortho_range.0,
                         },
                         TrackRef {
-                            layer: other_layer,
-                            track: ortho_track + into.0, // FIXME: orientation
+                            layer: ortho_layer,
+                            track: ortho_range.1
                         },
                     ),
                 }

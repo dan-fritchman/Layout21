@@ -2,6 +2,10 @@
 //! # Layout21 "Tetris" Semi-Custom Layout System
 //!
 
+// External macro usages 
+#[macro_use]
+extern crate derive_builder;
+
 // Modules
 pub mod abstrakt;
 pub mod bbox;

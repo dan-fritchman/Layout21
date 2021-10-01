@@ -22,7 +22,8 @@ use crate::{abstrakt, interface, outline, raw, tracks};
 ///
 /// A combination of lower-level cell instances and net-assignments to tracks.
 ///
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Builder)]
+#[builder(pattern = "owned", setter(into))]
 pub struct LayoutImpl {
     /// Cell Name
     pub name: String,
@@ -30,13 +31,18 @@ pub struct LayoutImpl {
     pub metals: usize,
     /// Outline shape, counted in x and y pitches of `stack`
     pub outline: outline::Outline,
+
     /// Layout Instances
+    #[builder(default)]
     pub instances: PtrList<Instance>,
     /// Net-to-track assignments
+    #[builder(default)]
     pub assignments: Vec<Assign>,
     /// Track cuts
+    #[builder(default)]
     pub cuts: Vec<tracks::TrackIntersection>,
     /// Placeable objects
+    #[builder(default)]
     pub places: Vec<Placeable>,
 }
 impl LayoutImpl {
@@ -52,6 +58,10 @@ impl LayoutImpl {
             cuts: Vec::new(),
             places: Vec::new(),
         }
+    }
+    /// Create a [LayoutImplBuilder], a struct created by the [Builder] macro.
+    pub fn builder() -> LayoutImplBuilder {
+        LayoutImplBuilder::default()
     }
     /// Assign a net at the given coordinates.
     pub fn assign(
