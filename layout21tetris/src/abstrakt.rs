@@ -28,10 +28,31 @@ pub struct LayoutAbstract {
     pub name: String,
     /// Outline in "Tetris-Shapes"
     pub outline: outline::Outline,
-    /// Top Metal Layer
-    pub top_layer: usize,
+    /// Number of Metal Layers Used
+    pub metals: usize,
     /// Ports
     pub ports: Vec<Port>,
+}
+impl LayoutAbstract {
+    /// Create a new abstract layout. No ports are initially defined.
+    pub fn new(name: impl Into<String>, metals: usize, outline: outline::Outline) -> Self {
+        Self {
+            name: name.into(),
+            outline,
+            metals,
+            ports: Vec::new(),
+        }
+    }
+    /// Retrieve a reference to a port by name.
+    /// Returns `None` if no port with that name exists.
+    pub fn port(&self, name: &str) -> Option<&Port> {
+        for port in &self.ports {
+            if port.name == name {
+                return Some(port);
+            }
+        }
+        None
+    }
 }
 /// Abstract-Layout Port
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -56,7 +77,7 @@ pub enum PortKind {
         side: Side,
     },
     /// Ports accessible from bot top *and* top-layer edges
-    /// Note their `layer` field is implicitly defined as the cell's `top_layer`.
+    /// Note their `layer` field is implicitly defined as the cell's `metals`.
     ZTopEdge {
         /// Track Index
         track: usize,
@@ -89,7 +110,7 @@ pub struct TopLoc {
 /// Note there are only two such sides: the "zero-side" [BottomOrLeft] and the "width-side" [TopOrRight].
 /// Each [Layer]'s orientation ([Dir]) dictates between bottom/left and top/right.
 /// Also note the requirements on [Outline] shapes ensure each track has a unique left/right or top/bottom pair of edges.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Side {
     BottomOrLeft,
     TopOrRight,

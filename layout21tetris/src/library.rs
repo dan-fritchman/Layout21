@@ -8,7 +8,7 @@ use std::collections::HashSet;
 // Local imports
 use crate::raw::LayoutResult;
 use crate::utils::{Ptr, PtrList};
-use crate::{cell, raw, rawconv, stack};
+use crate::{cell, raw, rawconv, validate};
 
 /// # Layout Library
 ///
@@ -32,7 +32,7 @@ impl Library {
         }
     }
     /// Export to a [raw::Library]
-    pub fn to_raw(self, stack: stack::Stack) -> LayoutResult<Ptr<raw::Library>> {
+    pub fn to_raw(self, stack: validate::ValidStack) -> LayoutResult<Ptr<raw::Library>> {
         rawconv::RawExporter::convert(self, stack)
     }
     /// Add a [CellBag]
@@ -52,7 +52,7 @@ impl Library {
 /// # Dependency-Orderer
 ///
 /// Creates an ordered list in which dependent cells follow their dependencies.
-/// Ideally an iterator, but really just a struct that creates an in-order [Vec] at creation time.
+/// FIXME: migrate to utils::DepOrder
 ///
 #[derive(Debug)]
 pub struct DepOrder<'lib> {

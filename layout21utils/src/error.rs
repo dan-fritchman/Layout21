@@ -22,12 +22,21 @@ pub trait ErrorHelper {
             None => self.fail(msg),
         }
     }
-    /// Unwrap the [Result] `res`. Return through our failure method if it is [Err].
-    fn ok<T, E>(&self, res: Result<T, E>, msg: impl Into<String>) -> Result<T, Self::Error> {
-        match res {
-            Ok(val) => Ok(val),
-            Err(_) => self.fail(msg),
+    /// Assert boolean condition `b`. Returns through `self.fail` if not.
+    fn assert(&self, b: bool) -> Result<(), Self::Error> {
+        match b {
+            true => Ok(()),
+            false => self.fail("assertion failed"),
         }
+    }
+    /// Unwrap the [Result] `res`. Return through our failure method if it is [Err].
+    /// Optional method, but must be implemented to be (usefully) called.
+    /// The default implementation simply returns an error via `self.fail`.
+    fn ok<T, E>(&self, _res: Result<T, E>, msg: impl Into<String>) -> Result<T, Self::Error>
+    where
+        E: std::error::Error + 'static,
+    {
+        self.fail(msg) // Default version always fails.
     }
 }
 /// Enumerated conversion contexts

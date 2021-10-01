@@ -7,103 +7,10 @@ use serde::{Deserialize, Serialize};
 // Local imports
 use crate::cell::Instance;
 use crate::coords::{DbUnits, Xy};
-use crate::raw::{self, Dir, LayoutError, LayoutResult, Units};
+use crate::raw::{self, Dir, LayoutResult, Units};
 use crate::utils::Ptr;
+use crate::{tracks::*, validate};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct TrackEntry {
-    pub ttype: TrackType,
-    pub width: DbUnits,
-}
-impl TrackEntry {
-    /// Helper method: create of [TrackEntry] of [TrackType] [TrackType::Gap]
-    pub fn gap(width: impl Into<DbUnits>) -> Self {
-        TrackEntry {
-            width: width.into(),
-            ttype: TrackType::Gap,
-        }
-    }
-    /// Helper method: create of [TrackEntry] of [TrackType] [TrackType::Signal]
-    pub fn sig(width: impl Into<DbUnits>) -> Self {
-        TrackEntry {
-            width: width.into(),
-            ttype: TrackType::Signal,
-        }
-    }
-}
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub enum TrackType {
-    Gap,
-    Signal,
-    Rail(RailKind),
-}
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub enum RailKind {
-    Pwr,
-    Gnd,
-}
-impl RailKind {
-    pub fn to_string(&self) -> String {
-        match self {
-            Self::Pwr => "VDD".into(),
-            Self::Gnd => "VSS".into(),
-        }
-    }
-}
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum TrackSpec {
-    Entry(TrackEntry),
-    Pat(Pattern),
-}
-impl TrackSpec {
-    pub fn gap(width: impl Into<DbUnits>) -> Self {
-        Self::Entry(TrackEntry {
-            width: width.into(),
-            ttype: TrackType::Gap,
-        })
-    }
-    pub fn sig(width: impl Into<DbUnits>) -> Self {
-        Self::Entry(TrackEntry {
-            width: width.into(),
-            ttype: TrackType::Signal,
-        })
-    }
-    pub fn rail(width: impl Into<DbUnits>, rk: RailKind) -> Self {
-        Self::Entry(TrackEntry {
-            width: width.into(),
-            ttype: TrackType::Rail(rk),
-        })
-    }
-    pub fn pwr(width: impl Into<DbUnits>) -> Self {
-        Self::Entry(TrackEntry {
-            width: width.into(),
-            ttype: TrackType::Rail(RailKind::Pwr),
-        })
-    }
-    pub fn gnd(width: impl Into<DbUnits>) -> Self {
-        Self::Entry(TrackEntry {
-            width: width.into(),
-            ttype: TrackType::Rail(RailKind::Gnd),
-        })
-    }
-    pub fn pat(e: impl Into<Vec<TrackEntry>>, nrep: usize) -> Self {
-        Self::Pat(Pattern::new(e, nrep))
-    }
-}
-/// An array of layout `Entries`, repeated `nrep` times
-#[derive(Default, Clone, Debug, Deserialize, Serialize, PartialEq)]
-pub struct Pattern {
-    pub entries: Vec<TrackEntry>,
-    pub nrep: usize,
-}
-impl Pattern {
-    pub fn new(e: impl Into<Vec<TrackEntry>>, nrep: usize) -> Self {
-        Self {
-            entries: e.into(),
-            nrep,
-        }
-    }
-}
 /// # Stack
 ///
 /// The z-stack, primarily including metal, via, and primitive layers
@@ -121,6 +28,13 @@ pub struct Stack {
     pub rawlayers: Option<Ptr<raw::Layers>>,
     /// Layer used for cell outlines/ boundaries
     pub boundary_layer: Option<raw::LayerKey>,
+}
+impl Stack {
+    /// Run validation, consuming `self` and creating a `ValidStack`
+    pub fn validate(self) -> LayoutResult<validate::ValidStack> {
+        use validate::StackValidator;
+        StackValidator::validate(self)
+    }
 }
 /// # Layer
 ///
@@ -149,7 +63,43 @@ pub struct Layer {
     /// [raw::Layer] for exports
     pub raw: Option<raw::LayerKey>,
 }
+#[derive(Debug, Clone, Default)]
+pub struct LayerPeriodData {
+    pub signals: Vec<TrackData>,
+    pub rails: Vec<TrackData>,
+}
 impl Layer {
+    /// Convert this [Layer]'s track-info into a [LayerPeriodData]
+    pub(crate) fn to_layer_period_data(&self) -> LayoutResult<LayerPeriodData> {
+        let mut period = LayerPeriodData::default();
+        let mut cursor = self.offset;
+        for e in &self.entries() {
+            let d = e.width;
+            match e.ttype {
+                TrackType::Gap => (),
+                TrackType::Rail(_railkind) => {
+                    period.rails.push(TrackData {
+                        ttype: e.ttype,
+                        index: period.rails.len(),
+                        dir: self.dir,
+                        start: cursor,
+                        width: d,
+                    });
+                }
+                TrackType::Signal => {
+                    period.signals.push(TrackData {
+                        ttype: e.ttype,
+                        index: period.signals.len(),
+                        dir: self.dir,
+                        start: cursor,
+                        width: d,
+                    });
+                }
+            };
+            cursor += d;
+        }
+        Ok(period)
+    }
     /// Convert this [Layer]'s track-info into a [LayerPeriod]
     pub(crate) fn to_layer_period<'me, 'lib>(
         &'me self,
@@ -174,11 +124,13 @@ impl Layer {
                 TrackType::Rail(railkind) => {
                     period.rails.push(
                         Track {
-                            ttype: e.ttype,
-                            index: period.rails.len(),
-                            dir: self.dir,
-                            start: cursor,
-                            width: d,
+                            data: TrackData {
+                                ttype: e.ttype,
+                                index: period.rails.len(),
+                                dir: self.dir,
+                                start: cursor,
+                                width: d,
+                            },
                             segments: vec![TrackSegment {
                                 tp: TrackSegmentType::Rail(railkind),
                                 start: 0.into(),
@@ -191,11 +143,13 @@ impl Layer {
                 TrackType::Signal => {
                     period.signals.push(
                         Track {
-                            ttype: e.ttype,
-                            index: period.signals.len(),
-                            dir: self.dir,
-                            start: cursor,
-                            width: d,
+                            data: TrackData {
+                                ttype: e.ttype,
+                                index: period.signals.len(),
+                                dir: self.dir,
+                                start: cursor,
+                                width: d,
+                            },
                             segments: vec![TrackSegment {
                                 tp: TrackSegmentType::Wire { src: None },
                                 start: 0.into(),
@@ -234,180 +188,7 @@ impl Layer {
         self.entries().iter().map(|e| e.width).sum::<DbUnits>() - self.overlap
     }
 }
-/// # Via / Insulator Layer Between Metals
-///
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ViaLayer {
-    /// Layer name
-    pub name: String,
-    /// Connected metal-layer indices
-    pub between: (usize, usize),
-    /// Via size
-    pub size: Xy<DbUnits>,
-    /// Stream-out layer numbers
-    pub raw: Option<raw::LayerKey>,
-}
-/// Assignment of a net onto a track-intersection
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Assign {
-    /// Net Name
-    pub net: String,
-    /// Track Intersection Location
-    pub at: TrackIntersection,
-}
-/// Relative Z-Axis Reference to one Layer `Above` or `Below` another
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum RelZ {
-    Above,
-    Below,
-}
-impl RelZ {
-    pub fn other(&self) -> Self {
-        match *self {
-            RelZ::Above => RelZ::Below,
-            RelZ::Below => RelZ::Above,
-        }
-    }
-}
 
-#[derive(Debug, Clone)]
-pub struct Track<'lib> {
-    /// Track Type (Rail, Signal)
-    pub ttype: TrackType,
-    /// Track Index
-    pub index: usize,
-    /// Direction
-    pub dir: Dir,
-    /// Starting-point in off-dir axis
-    pub start: DbUnits,
-    /// Track width
-    pub width: DbUnits,
-    /// Set of wire-segments, in positional order
-    pub segments: Vec<TrackSegment<'lib>>,
-}
-impl<'lib> Track<'lib> {
-    /// Verify a (generally just-created) [Track] is valid
-    pub fn validate(self) -> LayoutResult<Self> {
-        if self.width < DbUnits(0) {
-            return Err(LayoutError::from("Negative Track Width"));
-        }
-        Ok(self)
-    }
-    /// Set the net of the track-segment at `at` to `net`
-    pub fn set_net(&mut self, at: DbUnits, assn: &'lib Assign) -> TrackResult<()> {
-        // First find the segment to be modified
-        let mut seg = None;
-        for s in self.segments.iter_mut() {
-            if s.start > at {
-                break;
-            }
-            if s.start <= at && s.stop >= at {
-                seg = Some(s);
-                break;
-            }
-        }
-        match seg {
-            None => Err(TrackError::OutOfBounds(at)),
-            Some(seg) => match seg.tp {
-                TrackSegmentType::Rail(_) => unreachable!(),
-                TrackSegmentType::Blockage { .. } => {
-                    // FIXME: sort out the desired behaviour here.
-                    // Vias above ZTop instance-pins generally land in this case.
-                    // We could check for their locations? Or just let it go.
-                    Ok(())
-                }
-                TrackSegmentType::Cut { src } => Err(TrackError::CutConflict(src.clone())),
-                TrackSegmentType::Wire { ref mut src, .. } => {
-                    src.replace(assn);
-                    Ok(())
-                }
-            },
-        }
-    }
-    /// Insert a blockage from `start` to `stop`.
-    /// Fails if the region is not a contiguous wire segment.
-    pub fn cut_or_block(&mut self, blockage: TrackSegment<'lib>) -> TrackResult<()> {
-        // Find the segment where the blockage starts
-        let segidx = self
-            .segments
-            .iter_mut()
-            .position(|seg| seg.stop >= blockage.start)
-            .ok_or(TrackError::OutOfBounds(blockage.start))?
-            .clone();
-        let seg = &mut self.segments[segidx];
-        // Check for conflicts, and get a copy of our segment-type as we will likely insert a similar segment
-        let tpcopy = match seg.tp {
-            TrackSegmentType::Blockage { ref src } => {
-                Err(TrackError::BlockageConflict(src.clone()))
-            }
-            TrackSegmentType::Cut { src } => Err(TrackError::CutConflict(src.clone())),
-            TrackSegmentType::Wire { .. } => Ok(seg.tp.clone()),
-            TrackSegmentType::Rail(_) => Ok(seg.tp.clone()),
-        }?;
-        // Make sure the cut only effects one segment, or fail
-        if seg.stop < blockage.stop {
-            // FIXME this should really be the *next* segment, borrow checking fight
-            return Err(TrackError::Overlap(seg.stop, blockage.stop));
-        }
-
-        // All clear; time to cut it.
-        // In the more-common case in which the cut-end and segment-end *do not* coincide,
-        // create and insert a new segment.
-        // De-structure the dimensional parts of `blockage`
-        let start = blockage.start;
-        let stop = blockage.stop;
-        let mut to_be_inserted: Vec<(usize, TrackSegment)> = Vec::new();
-        to_be_inserted.push((segidx + 1, blockage));
-        if seg.stop != stop {
-            let newseg = TrackSegment {
-                tp: tpcopy,
-                start: stop,
-                stop: seg.stop,
-            };
-            to_be_inserted.push((segidx + 2, newseg));
-        }
-        // Update the existing segment (and importantly, drop its mutable borrow)
-        seg.stop = start;
-        for (idx, seg) in to_be_inserted {
-            self.segments.insert(idx, seg);
-        }
-        Ok(())
-    }
-    /// Insert a blockage from `start` to `stop`.
-    /// Fails if the region is not a contiguous wire segment.
-    pub fn block(&mut self, start: DbUnits, stop: DbUnits, src: &Ptr<Instance>) -> TrackResult<()> {
-        let seg = TrackSegment {
-            start,
-            stop,
-            tp: TrackSegmentType::Blockage { src: src.clone() },
-        };
-        self.cut_or_block(seg)
-    }
-    /// Cut from `start` to `stop`.
-    /// Fails if the region is not a contiguous wire segment.
-    pub fn cut(
-        &mut self,
-        start: DbUnits,
-        stop: DbUnits,
-        src: &'lib TrackIntersection,
-    ) -> TrackResult<()> {
-        let seg = TrackSegment {
-            start,
-            stop,
-            tp: TrackSegmentType::Cut { src },
-        };
-        self.cut_or_block(seg)
-    }
-    /// Set the stop position for our last [TrackSegment] to `stop`
-    pub fn stop(&mut self, stop: DbUnits) -> LayoutResult<()> {
-        if self.segments.len() == 0 {
-            return Err(LayoutError::msg("Error Stopping Track"));
-        }
-        let idx = self.segments.len() - 1;
-        self.segments[idx].stop = stop;
-        Ok(())
-    }
-}
 /// Transformed single period of [Track]s on a [Layer]
 /// Splits track-info between signals and rails.
 /// Stores each as a [Track] struct, which moves to a (start, width) size-format,
@@ -422,10 +203,10 @@ impl<'lib> LayerPeriod<'lib> {
     /// Shift the period by `dist` in its periodic direction
     pub fn offset(&mut self, dist: DbUnits) -> LayoutResult<()> {
         for t in self.rails.iter_mut() {
-            t.start += dist;
+            t.data.start += dist;
         }
         for t in self.signals.iter_mut() {
-            t.start += dist;
+            t.data.start += dist;
         }
         Ok(())
     }
@@ -465,46 +246,66 @@ impl<'lib> LayerPeriod<'lib> {
         Ok(())
     }
 }
-/// # Segments of un-split, single-net wire on a [Track]
-#[derive(Debug, Clone)]
-pub struct TrackSegment<'lib> {
-    /// Segment-Type
-    pub tp: TrackSegmentType<'lib>,
-    /// Start Location, in [Stack]'s `units`
-    pub start: DbUnits,
-    /// End/Stop Location, in [Stack]'s `units`
-    pub stop: DbUnits,
-}
-#[derive(Debug, Clone)]
-pub enum TrackSegmentType<'lib> {
-    Cut { src: &'lib TrackIntersection },
-    Blockage { src: Ptr<Instance> },
-    Wire { src: Option<&'lib Assign> },
-    Rail(RailKind),
-}
-/// Intersection Between Adjacent Layers in [Track]-Space
+/// # Via / Insulator Layer Between Metals
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TrackIntersection {
-    /// Layer Index
-    pub layer: usize,
-    /// Track Index
-    pub track: usize,
-    /// Intersecting Track Index
-    pub at: usize,
-    /// Whether `at` refers to the track-indices above or below
-    pub relz: RelZ,
+pub struct ViaLayer {
+    /// Layer name
+    pub name: String,
+    /// Top of the two layers connected by this layer
+    pub top: ViaTarget,
+    /// Bottom of the two layers connected by this layer
+    pub bot: ViaTarget,
+    /// Via size
+    pub size: Xy<DbUnits>,
+    /// Stream-out layer numbers
+    pub raw: Option<raw::LayerKey>,
 }
-impl TrackIntersection {
-    pub(crate) fn transpose(&self) -> Self {
-        let layer = match self.relz {
-            RelZ::Above => self.layer + 1,
-            RelZ::Below => self.layer - 1,
-        };
-        Self {
-            layer,
-            track: self.at,
-            at: self.track,
-            relz: self.relz.other(),
+/// # Via Targets
+///
+/// Enumerates the things vias can "go between".
+/// Generally either a numbered metal layer, or the primitive base-layers.
+///
+/// Values stored in the `Metal` variant are treated as indicies into `Stack.metals`,
+/// i.e. `Metal(0)` is the first metal layer defined in the stack.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ViaTarget {
+    /// Connect to the Primitive layer
+    Primitive,
+    /// Connect to an indexed metal layer
+    Metal(usize),
+}
+impl From<usize> for ViaTarget {
+    fn from(i: usize) -> Self {
+        Self::Metal(i)
+    }
+}
+impl From<Option<usize>> for ViaTarget {
+    fn from(i: Option<usize>) -> Self {
+        match i {
+            None => Self::Primitive,
+            Some(i) => Self::Metal(i),
+        }
+    }
+}
+/// Assignment of a net onto a track-intersection
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Assign {
+    /// Net Name
+    pub net: String,
+    /// Track Intersection Location
+    pub at: TrackIntersection,
+}
+/// Relative Z-Axis Reference to one Layer `Above` or `Below` another
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum RelZ {
+    Above,
+    Below,
+}
+impl RelZ {
+    pub fn other(&self) -> Self {
+        match *self {
+            RelZ::Above => RelZ::Below,
+            RelZ::Below => RelZ::Above,
         }
     }
 }
@@ -534,12 +335,3 @@ impl PrimitiveLayer {
         Self { pitches }
     }
 }
-
-#[derive(Debug)]
-pub enum TrackError {
-    OutOfBounds(DbUnits),
-    Overlap(DbUnits, DbUnits),
-    CutConflict(TrackIntersection),
-    BlockageConflict(Ptr<Instance>),
-}
-pub type TrackResult<T> = Result<T, TrackError>;

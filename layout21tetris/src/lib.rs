@@ -14,6 +14,7 @@ pub mod placement;
 pub mod placer;
 pub mod rawconv;
 pub mod stack;
+pub mod tracks;
 pub mod validate;
 
 // Re-exports

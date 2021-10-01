@@ -36,24 +36,25 @@ impl Outline {
     pub fn new(x: &[Int], y: &[Int]) -> LayoutResult<Self> {
         // Check that x and y are of compatible lengths
         if x.len() < 1 || x.len() != y.len() {
-            return Err(LayoutError::Tbd);
+            // FIXME: probably worth creating a specific error type 
+            return Err(LayoutError::Validation);
         }
         // Check for:
         // * x non-increasing-ness,
         // * y for non-decreasing-ness
         // * all non-negative values
         if x[0] < 0 || y[0] < 0 {
-            return Err(LayoutError::Tbd);
+            return Err(LayoutError::Validation);
         }
         for k in 1..x.len() {
             if x[k] > x[k - 1] {
-                return Err(LayoutError::Tbd);
+                return Err(LayoutError::Validation);
             }
             if y[k] < y[k - 1] {
-                return Err(LayoutError::Tbd);
+                return Err(LayoutError::Validation);
             }
             if x[k] < 0 || y[k] < 0 {
-                return Err(LayoutError::Tbd);
+                return Err(LayoutError::Validation);
             }
         }
         // Convert into [PrimPitches] united-objects, and return a new Self.

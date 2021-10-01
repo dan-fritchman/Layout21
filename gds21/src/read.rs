@@ -14,7 +14,7 @@ const READER_BUFSIZE: usize = 65537;
 /// Helper for parsing and scanning GDS coming from files and similar sources.
 pub struct GdsReader {
     /// Read/conversion buffer
-    buf: [u8; READER_BUFSIZE], // FIXME: confirm buffer size
+    buf: [u8; READER_BUFSIZE],
     /// File being read
     file: Cursor<Mmap>,
     // Note: past/alternate versions use an API-compatible [BufReader<File>], like so:

@@ -18,7 +18,7 @@ use slotmap::{new_key_type, SlotMap};
 
 // Internal modules & re-exports
 pub use layout21utils as utils;
-use utils::{ErrorContext};
+use utils::ErrorContext;
 use utils::{Ptr, PtrList};
 
 // Optional-feature modules
@@ -43,7 +43,6 @@ pub type LayoutResult<T> = Result<T, LayoutError>;
 ///
 /// # Layout Error Enumeration
 ///
-#[derive(Debug)]
 pub enum LayoutError {
     /// Error Exporting to Foreign Format
     Export {
@@ -53,6 +52,12 @@ pub enum LayoutError {
     /// Error Importing from Foreign Format
     Import {
         message: String,
+        stack: Vec<ErrorContext>,
+    },
+    /// Conversion Errors, with Boxed External Error
+    Conversion {
+        message: String,
+        err: Box<dyn std::error::Error>,
         stack: Vec<ErrorContext>,
     },
     /// Validation of input data
@@ -70,6 +75,48 @@ impl LayoutError {
         Self::Str(s.into())
     }
 }
+impl std::fmt::Debug for LayoutError {
+    /// Display a [LayoutError]
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            LayoutError::Export { message, stack } => {
+                write!(f, "Export Error: \n - {} \n - {:?}", message, stack)
+            }
+            LayoutError::Import { message, stack } => {
+                write!(f, "Import Error: \n - {} \n - {:?}", message, stack)
+            }
+            LayoutError::Conversion {
+                message,
+                err,
+                stack,
+            } => write!(
+                f,
+                "Conversion Error: \n - {} \n - {} \n - {:?}",
+                message, err, stack
+            ),
+            LayoutError::Boxed(err) => err.fmt(f),
+            LayoutError::Str(err) => err.fmt(f),
+            LayoutError::Validation => write!(f, "Error in Validation"),
+            LayoutError::Tbd => write!(f, "Uncategorized LayoutError"),
+        }
+    }
+}
+impl std::fmt::Display for LayoutError {
+    /// Display a [LayoutError]
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        // Delegates to the [Debug] implementation
+        std::fmt::Debug::fmt(self, f)
+    }
+}
+impl std::error::Error for LayoutError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Boxed(e) => Some(&**e),
+            _ => None,
+        }
+    }
+}
+
 impl From<String> for LayoutError {
     fn from(s: String) -> Self {
         Self::Str(s)
@@ -109,11 +156,73 @@ pub enum Units {
     Nano,
     /// Angstroms
     Angstrom,
+    /// Picometers
+    Pico,
 }
 impl Default for Units {
     /// Default units are nanometers
     fn default() -> Units {
         Units::Nano
+    }
+}
+/// Enumerated SI Units
+#[allow(dead_code)] // FIXME!
+enum SiUnits {
+    Yocto, // E-24
+    Zepto, // E-21
+    Atto,  // E-18
+    Femto, // E-15
+    Pico,  // E-12
+    Nano,  // E-9
+    Micro, // E-6
+    Milli, // E-3
+    Centi, // E-2
+    Deci,  // E-1
+    Deca,  // E1
+    Hecto, // E2
+    Kilo,  // E3
+    Mega,  // E6
+    Giga,  // E9
+    Tera,  // E12
+    Peta,  // E15
+    Exa,   // E18
+    Zetta, // E21
+    Yotta, // E24
+}
+impl Default for SiUnits {
+    /// Default units are nano-scale
+    #[allow(dead_code)] // FIXME!
+    fn default() -> SiUnits {
+        SiUnits::Nano
+    }
+}
+impl SiUnits {
+    /// Get the exponent of the unit
+    #[allow(dead_code)] // FIXME!
+    fn exp(&self) -> isize {
+        use SiUnits::*;
+        match self {
+            Yocto => -24,
+            Zepto => -21,
+            Atto => -18,
+            Femto => -15,
+            Pico => -12,
+            Nano => -9,
+            Micro => -6,
+            Milli => -3,
+            Centi => -2,
+            Deci => -1,
+            Deca => 1,
+            Hecto => 2,
+            Kilo => 3,
+            Mega => 6,
+            Giga => 9,
+            Tera => 12,
+            Peta => 15,
+            Exa => 18,
+            Zetta => 21,
+            Yotta => 24,
+        }
     }
 }
 
@@ -220,13 +329,22 @@ impl Layers {
         }
         key
     }
+    /// Get the next-available (lowest) layer number
+    pub fn nextnum(&self) -> LayoutResult<i16> {
+        for k in 0..i16::MAX {
+            if !self.nums.contains_key(&k) {
+                return Ok(k);
+            }
+        }
+        Err(LayoutError::msg("No more layer numbers available"))
+    }
     /// Get a reference to the [LayerKey] for layer-number `num`
-    pub fn keynum(&self, num: i16) -> Option<&LayerKey> {
-        self.nums.get(&num)
+    pub fn keynum(&self, num: i16) -> Option<LayerKey> {
+        self.nums.get(&num).map(|x| x.clone())
     }
     /// Get a reference to the [LayerKey] layer-name `name`
-    pub fn keyname(&self, name: impl Into<String>) -> Option<&LayerKey> {
-        self.names.get(&name.into())
+    pub fn keyname(&self, name: impl Into<String>) -> Option<LayerKey> {
+        self.names.get(&name.into()).map(|x| x.clone())
     }
     /// Get a reference to [Layer] number `num`
     pub fn num(&self, num: i16) -> Option<&Layer> {
@@ -405,6 +523,16 @@ pub struct AbstractPort {
     pub net: String,
     /// Shapes, with paired [Layer] keys
     pub shapes: HashMap<LayerKey, Vec<Shape>>,
+}
+impl AbstractPort {
+    /// Create a new [AbstractPort] with the given `name`
+    pub fn new(net: impl Into<String>) -> Self {
+        let net = net.into();
+        Self {
+            net,
+            shapes: HashMap::new(),
+        }
+    }
 }
 
 /// # Raw Layout Library  

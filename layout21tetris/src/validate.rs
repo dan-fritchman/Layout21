@@ -2,11 +2,15 @@
 //! Integrity checks for [Stack]s, [Layer]s, and the like.
 //!
 
+// Std-Lib Imports
+use std::convert::TryFrom;
+
 // Local imports
 use crate::coords::{DbUnits, Xy};
 use crate::raw::{self, Dir, LayoutError, LayoutResult, Units};
-use crate::stack::{Assign, Layer, LayerPeriod, PrimitiveLayer, RelZ, Stack, TrackIntersection};
-use crate::stack::{PrimitiveMode, ViaLayer};
+use crate::stack::{Assign, Layer, LayerPeriodData, PrimitiveLayer, RelZ, Stack};
+use crate::stack::{PrimitiveMode, ViaLayer, ViaTarget};
+use crate::tracks::TrackIntersection;
 use crate::utils::Ptr;
 
 /// Helper-function for asserting all sorts of boolean conditions, returning [LayoutResult] and enabling the question-mark operator.
@@ -20,7 +24,7 @@ pub fn assert(b: bool) -> LayoutResult<()> {
 #[derive(Debug)]
 pub struct StackValidator;
 impl StackValidator {
-    pub fn validate<'lib>(stack: Stack) -> LayoutResult<ValidStack<'lib>> {
+    pub fn validate(stack: Stack) -> LayoutResult<ValidStack> {
         let Stack {
             units,
             boundary_layer,
@@ -65,7 +69,7 @@ impl StackValidator {
 }
 /// Derived data for a [Stack], after it has gone through some validation steps.
 #[derive(Debug)]
-pub struct ValidStack<'lib> {
+pub struct ValidStack {
     /// Measurement units
     pub units: Units,
     /// Primitive layer
@@ -73,7 +77,7 @@ pub struct ValidStack<'lib> {
     /// Set of via layers
     pub vias: Vec<ViaLayer>,
     /// Metal Layers
-    pub metals: Vec<ValidMetalLayer<'lib>>,
+    metals: Vec<ValidMetalLayer>,
     /// Pitches per metal layer, one each for those in `stack`
     pub pitches: Vec<DbUnits>,
 
@@ -82,8 +86,37 @@ pub struct ValidStack<'lib> {
     /// Layer used for cell outlines/ boundaries
     pub boundary_layer: Option<raw::LayerKey>,
 }
+impl ValidStack {
+    /// Get Metal-Layer number `idx`. Returns `None` if `idx` is out of bounds.
+    pub fn metal(&self, idx: usize) -> LayoutResult<&ValidMetalLayer> {
+        if idx >= self.metals.len() {
+            Err(LayoutError::Validation)
+        } else {
+            Ok(&self.metals[idx])
+        }
+    }
+    /// Get the via-layer whose bottom "target" is metal-layer `idx`.
+    pub fn via_from(&self, idx: usize) -> LayoutResult<&ViaLayer> {
+        for via_layer in self.vias.iter() {
+            if let ViaTarget::Metal(k) = via_layer.bot {
+                if k == idx {
+                    return Ok(via_layer);
+                }
+            }
+        }
+        Err(LayoutError::Validation)
+    }
+    /// Get Via-Layer number `idx`. Returns an error if `idx` is out of bounds.
+    pub fn via(&self, idx: usize) -> LayoutResult<&ViaLayer> {
+        if idx >= self.vias.len() {
+            Err(LayoutError::Validation)
+        } else {
+            Ok(&self.vias[idx])
+        }
+    }
+}
 #[derive(Debug)]
-pub struct ValidMetalLayer<'lib> {
+pub struct ValidMetalLayer {
     /// Original Layer Spec
     pub spec: Layer,
 
@@ -91,19 +124,19 @@ pub struct ValidMetalLayer<'lib> {
     /// Index in layers array
     pub index: usize,
     /// Derived single-period template
-    pub period: LayerPeriod<'lib>,
+    pub period_data: LayerPeriodData,
     /// Pitch in db-units
     pub pitch: DbUnits,
     /// Raw layer-key
     pub raw: Option<raw::LayerKey>,
 }
-impl<'lib> ValidMetalLayer<'lib> {
+impl ValidMetalLayer {
     /// Perform validation on a [Layer], return a corresponding [ValidMetalLayer]
     pub fn validate<'prim>(
         layer: Layer,
         index: usize,
         prim: &'prim PrimitiveLayer,
-    ) -> LayoutResult<ValidMetalLayer<'lib>> {
+    ) -> LayoutResult<ValidMetalLayer> {
         // Check for non-zero widths of all entries
         for entry in layer.entries().iter() {
             assert(entry.width.raw() > 0)?;
@@ -120,27 +153,45 @@ impl<'lib> ValidMetalLayer<'lib> {
         }
         // Convert to a prototype [LayerPeriod]
         // This is frequently used for calculating track locations
-        let period = layer.to_layer_period(0, 0)?;
+        let period_data = layer.to_layer_period_data()?;
         Ok(ValidMetalLayer {
             raw: layer.raw.clone(),
             spec: layer,
             index,
-            period,
+            period_data,
             pitch,
         })
     }
+    /// Get the track-index at [DbUnits] `dist`
+    pub fn track_index(&self, dist: DbUnits) -> LayoutResult<usize> {
+        // FIXME: this, particularly the `position` call, grabs the first track that ends *after* `dist`.
+        // It could end up more helpful to do "closest" if `dist` is in-between two,
+        // or have some alignment options.
+        let npitches = dist / self.pitch;
+        let remainder = DbUnits(dist % self.pitch);
+        let mut index = usize::try_from(npitches)? * self.period_data.signals.len();
+
+        index += self
+            .period_data
+            .signals
+            .iter()
+            .position(|sig| sig.start + sig.width > remainder)
+            .unwrap();
+        Ok(index)
+    }
     /// Get the center-coordinate of signal-track `idx`, in our periodic dimension
     pub fn center(&self, idx: usize) -> LayoutResult<DbUnits> {
-        let len = self.period.signals.len();
-        let track = &self.period.signals[idx % len];
+        // FIXME: incorrect for asymmetric tracks via `FlipMode` turned on!
+        let len = self.period_data.signals.len();
+        let track = &self.period_data.signals[idx % len];
         let mut cursor = self.pitch * (idx / len);
         cursor += track.start + track.width / 2;
         Ok(cursor)
     }
     /// Get the spanning-coordinates of signal-track `idx`, in our periodic dimension
     pub fn span(&self, idx: usize) -> LayoutResult<(DbUnits, DbUnits)> {
-        let len = self.period.signals.len();
-        let track = &self.period.signals[idx % len];
+        let len = self.period_data.signals.len();
+        let track = &self.period_data.signals[idx % len];
         let cursor = self.pitch * (idx / len) + track.start;
         Ok((cursor, cursor + track.width))
     }

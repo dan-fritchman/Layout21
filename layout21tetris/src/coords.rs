@@ -111,6 +111,14 @@ impl PrimPitches {
     pub fn new(dir: Dir, num: Int) -> Self {
         Self { dir, num }
     }
+    /// Create a [PrimPitches] in the `x` direction
+    pub fn x(num: Int) -> Self {
+        Self::new(Dir::Horiz, num)
+    }
+    /// Create a [PrimPitches] in the `y` direction
+    pub fn y(num: Int) -> Self {
+        Self::new(Dir::Vert, num)
+    }
     /// Create a new [PrimPitches] with opposite sign of `self.num`
     pub fn negate(&self) -> Self {
         Self::new(self.dir, -self.num)
@@ -134,6 +142,11 @@ impl std::ops::Add<PrimPitches> for PrimPitches {
         }
     }
 }
+impl std::ops::AddAssign<PrimPitches> for PrimPitches {
+    fn add_assign(&mut self, rhs: Self) {
+        *self = *self + rhs;
+    }
+}
 impl std::ops::Sub<PrimPitches> for PrimPitches {
     type Output = PrimPitches;
     fn sub(self, rhs: Self) -> Self::Output {
@@ -149,6 +162,11 @@ impl std::ops::Sub<PrimPitches> for PrimPitches {
         }
     }
 }
+impl std::ops::SubAssign<PrimPitches> for PrimPitches {
+    fn sub_assign(&mut self, rhs: Self) {
+        *self = *self - rhs;
+    }
+}
 /// Numeric operations between primitive-pitch values and regular numerics.
 impl std::ops::Mul<Int> for PrimPitches {
     type Output = Self;
@@ -156,10 +174,20 @@ impl std::ops::Mul<Int> for PrimPitches {
         Self::new(self.dir, self.num * rhs)
     }
 }
+impl std::ops::MulAssign<Int> for PrimPitches {
+    fn mul_assign(&mut self, rhs: Int) {
+        self.num = self.num * rhs;
+    }
+}
 impl std::ops::Mul<usize> for PrimPitches {
     type Output = Self;
     fn mul(self, rhs: usize) -> Self::Output {
         Self::new(self.dir, self.num * Int::try_from(rhs).unwrap())
+    }
+}
+impl std::ops::MulAssign<usize> for PrimPitches {
+    fn mul_assign(&mut self, rhs: usize) {
+        self.num = self.num * Int::try_from(rhs).unwrap();
     }
 }
 
@@ -169,7 +197,40 @@ pub struct LayerPitches {
     layer: usize,
     num: Int,
 }
+impl LayerPitches {
+    /// Create a new [LayerPitches] on layer (index) `layer`
+    pub fn new(layer: usize, num: Int) -> Self {
+        Self { layer, num }
+    }
+    /// Consume self, returning the underlying [usize] layer-index and [Int] number.
+    pub fn into_inner(self) -> (usize, Int) {
+        (self.layer, self.num)
+    }
+}
 impl HasUnits for LayerPitches {}
+/// Numeric operations between pitch-values and regular numerics.
+impl std::ops::Mul<Int> for LayerPitches {
+    type Output = Self;
+    fn mul(self, rhs: Int) -> Self::Output {
+        Self::new(self.layer, self.num * rhs)
+    }
+}
+impl std::ops::MulAssign<Int> for LayerPitches {
+    fn mul_assign(&mut self, rhs: Int) {
+        self.num = self.num * rhs;
+    }
+}
+impl std::ops::Mul<usize> for LayerPitches {
+    type Output = Self;
+    fn mul(self, rhs: usize) -> Self::Output {
+        Self::new(self.layer, self.num * Int::try_from(rhs).unwrap())
+    }
+}
+impl std::ops::MulAssign<usize> for LayerPitches {
+    fn mul_assign(&mut self, rhs: usize) {
+        self.num = self.num * Int::try_from(rhs).unwrap();
+    }
+}
 
 /// Paired "type" zero-data enum for [UnitSpeced]
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -182,7 +243,23 @@ pub enum UnitType {
 /// Common geometric pairing of (x,y) coordinates
 /// Represents points, sizes, rectangles, and anything else that pairs `x` and `y` fields.
 /// *Only* instantiable with [HasUnits] data.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    From,
+    Add,
+    AddAssign,
+    Sub,
+    SubAssign,
+    MulAssign,
+    DivAssign,
+    Sum,
+)]
 pub struct Xy<T: HasUnits> {
     pub x: T,
     pub y: T,

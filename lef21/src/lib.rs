@@ -1,8 +1,89 @@
 //!
 //! # Lef21 Library Exchange Format (LEF) Parser & Writer
 //!
+//! [Library Exchange Format (LEF)](https://en.wikipedia.org/wiki/Library_Exchange_Format)
+//! is an ASCII text based format for integrated circuit (IC) layout and technology.
+//!
+//! LEF is near-ubiquitously used IC-industry-wide for two related purposes:
+//!
+//! * *Libraries* of LEF *Macros* commonly provide the *physical abstract* view of a circuit design.
+//!   * Such abstract-views are commonly the target for layout-synthesis programs ("place and route").
+//!   * They include a circuit's pin locations and requirements for "obstruction" blockages, among other metadata, typically without including the circuit's internal layout implementation.
+//! * LEF *technology descriptions* ("tech-lef") provide a concise description of rules for assembling such cells, as commonly performed by layout-synthesis software.
+//!
+//! Lef21 includes comprehensive support for parsing and writing LEF *design libraries*, primarily stored as its [`LefLibrary`] and [`LefMacro`] types.
+//! A select subset of tech-lef features are also supported, particularly those which blur the lines between technology and library data.
+//!
+//! ## Usage
+//!
+//! Creating a [`LefLibrary`] from file solely requires a call to the [`LefLibrary::open`] method:
+//!
+//! ```skip
+//! use lef21::LefLibrary;
+//! let lib = LefLibrary::open("mylib.lef")?;
+//! ```
+//!
+//! Each [`LefLibrary`] is a short tree of macro-definitions, which are in turn primarily comprised of pin-definitions and obstructions.
+//! The shape of this tree is of the form:
+//!
+//! * [`LefLibrary`]
+//!   * Library Metadata
+//!   * Vec<[`LefMacro`]>
+//!     * Macro Metadata
+//!     * Vec<[`LefPin`]>
+//!       * Pin Metadata
+//!       * Vec<[`LefPort`]>
+//!     * Obstructions ([`LefLayerGeometries`])
+//!
+//! All fields of all layers in the [`LefLibrary`] tree are publicly accessible and modifiable.
+//!
+//! ## Serialization
+//!
+//! [`LefLibrary`], all underlying data structures, and all Lef21's other primary data stores are [`serde`](https://crates.io/crates/serde) serializable,
+//! and can be straightforwardly converted to and from any serde-compatible format. Examples:
+//!
+//! ```skip
+//! let lib = lef21::LefLibrary::new();
+//! let json = serde_json::to_string(&lib);
+//! let yaml = serde_yaml::to_string(&lib);
+//! let toml = toml::to_string(&lib);
+//! ```
+//!
+//! Lef21 includes built-in support for a subset of serde-formats via its [`SerializationFormat`] enumeration,
+//! and support for directly reading and writing files in each format via its accompanying [`SerdeFile`] trait.
+//! Example using [`SerializationFormat::Yaml`]:
+//!
+//! ```skip
+//! use lef21::SerializationFormat::Yaml;
+//! let lib = lef21::LefLibrary::new();
+//!
+//! // Write to YAML-format file
+//! Yaml.save(&lib, "mylib.lef.yaml")?;
+//! // And read back from file
+//! let lib2: lef21::LefLibrary = Yaml.open("mylib.lef.yaml")?;  
+//! ```
+//!
+//! ## Background
+//!
+//! Lef21 is a subset of the larger [Layout21](https://github.com/dan-fritchman/Layout21) library, and is primarily used as an import and export layer.
+//! Lef21 correspondingly uses the LEF format's concepts, idioms, and terminology (e.g. "macro" vs. "cell") throughout.
+//! Its LEF data structures are nonetheless designed for direct manipulation, for example in programmatically modifying existing LEF content.
+//!
+//! LEF is frequently paired with the DEF format for specifying circuit's internal physical implementations.
+//! Like LEF, DEF is a text-based format. More common industry usage pairs LEF with [GDSII](https://crates.io/crates/gds21)'s binary implementation format,
+//! which dramatically reduces data-sizes for large circuits.
+//! DEF is not supported by Lef21. GDSII is supported by the related [gds21](https://crates.io/crates/gds21) crate.
+//!
+//! LEF was originally designed by Tangent Systems, later acquired by Cadence Design Systems.
+//! Lef21 holds no relationship to either entity, nor any authority or ownership over the format.
+//! Countless LEF-format design descriptions are freely available as open-source software;
+//! their examples serve as the basis for Lef21.
+
+// Std-Lib
+use std::convert::TryFrom;
 
 // Crates.io Imports
+use derive_more::{Add, AddAssign, Sub, SubAssign};
 #[allow(unused_imports)]
 use rust_decimal::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -10,24 +91,31 @@ use serde::{Deserialize, Serialize};
 extern crate derive_builder;
 
 // Local modules & re-exports
-use layout21utils as utils;
 mod read;
+mod write;
+use layout21utils as utils;
+pub use utils::{SerdeFile, SerializationFormat};
+
+// Unit tests
 #[cfg(test)]
 mod tests;
-mod write;
 
-/// Internal type alias for all decimal-valued data
+/// # LefDecimal
+/// Internal type alias for all decimal-valued data.
+/// Uses [rust_decimal](https://crates.io/crates/rust_decimal) internally.
 pub type LefDecimal = rust_decimal::Decimal;
 
-/// Lef Library
-/// Primary store of macro/cell definitions
+/// # Lef Library  
+///
+/// LEF's primary design-content container, including a set of macro/cell definitions and assocaited metadata.
 #[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[builder(setter(into), private)]
+#[builder(pattern = "owned", setter(into), private)]
 pub struct LefLibrary {
     // Required
     /// Macro Definitions
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub macros: Vec<LefMacro>,
+    /// Site Definitions
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sites: Vec<LefSite>,
 
@@ -37,12 +125,12 @@ pub struct LefLibrary {
     #[builder(default, setter(strip_option))]
     pub version: Option<LefDecimal>,
     /// Case-Sensitive Name Setting
-    /// FIXME: potentially only some LEF versions
+    /// Valid for LEF versions 5.4 and earlier
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub names_case_sensitive: Option<LefOnOff>,
     /// Wire-Extension Pin Settings
-    /// FIXME: potentially only some LEF versions
+    /// Valid for LEF versions 5.4 and earlier
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub no_wire_extension_at_pin: Option<LefOnOff>,
@@ -55,22 +143,27 @@ pub struct LefLibrary {
     #[builder(default, setter(strip_option))]
     pub divider_char: Option<char>,
     /// Dimensional Units
-    /// FIXME: recommended for tech-lef, but turns up in libraries as well
+    /// Recommended to be specified in a tech-lef. But turns up in libraries as well.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub units: Option<LefUnits>,
 
-    // Not (Yet) Supported
-    /// Via Definitions
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub vias: Option<Tbd>,
-    /// Syntax Extensions
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub extensions: Option<Tbd>,
+    // Unsupported
+    /// Via Definitions (Unsupported)
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub vias: Unsupported,
+    /// Syntax Extensions (Unsupported)
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub extensions: Unsupported,
 }
 impl LefLibrary {
+    /// Create a new and initially empty [LefLibrary]
+    /// Also available via [Default]
+    pub fn new() -> LefLibrary {
+        LefLibrary::default()
+    }
     /// Open a [LefLibrary] from file `fname`
     pub fn open(fname: &str) -> LefResult<LefLibrary> {
         read::parse_file(fname)
@@ -83,7 +176,7 @@ impl LefLibrary {
 }
 /// Lef Macro Definition
 #[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[builder(setter(into), private)]
+#[builder(pattern = "owned", setter(into), private)]
 pub struct LefMacro {
     // Required
     /// Macro Name
@@ -96,6 +189,7 @@ pub struct LefMacro {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[builder(default)]
     pub obs: Vec<LefLayerGeometries>,
+
     // Optional
     /// Macro Class
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -123,29 +217,40 @@ pub struct LefMacro {
     #[builder(default, setter(strip_option))]
     pub site: Option<String>,
     /// Source
-    /// FIXME: supported in earlier versions of LEF only
+    /// Valid for LEF versions 5.4 and earlier
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub source: Option<LefDefSource>,
 
-    // Not (Yet) Supported
-    /// Fixed Mask Option
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub fixed_mask: Option<Tbd>,
-    /// Electrically-Equivalent Cell
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub eeq: Option<Tbd>,
-    /// Density Objects
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub density: Option<Tbd>,
-    /// Properties
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub properties: Option<Tbd>,
+    // Unsupported
+    /// Fixed Mask Option (Unsupported)
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub fixed_mask: Unsupported,
+    /// Electrically-Equivalent Cell (Unsupported)
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub eeq: Unsupported,
+    /// Density Objects (Unsupported)
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub density: Unsupported,
+    /// Properties (Unsupported)
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub properties: Unsupported,
 }
+impl LefMacro {
+    /// Create a new and initially empty [LefMacro] with name `name`
+    pub fn new(name: impl Into<String>) -> LefMacro {
+        let name = name.into();
+        LefMacro {
+            name,
+            ..Default::default()
+        }
+    }
+}
+/// # [LefMacro] Classes
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum LefMacroClass {
     Cover { bump: bool },
@@ -155,18 +260,28 @@ pub enum LefMacroClass {
     Core { tp: Option<LefCoreClassType> },
     EndCap { tp: LefEndCapClassType },
 }
-#[derive(Clone, Builder, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[builder(setter(into), private)]
+/// # Lef Foreign Cell Declaration
+///
+/// Declares the linkage to another cell, commonly in DEF or GDSII format.
+/// Foreign-cell references are stored exacty as in the LEF format: as a string cell-name.
+/// The optional `ORIENT` feature is not supported.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct LefForeign {
     /// Foreign Cell Name
     pub cell_name: String,
     /// Location
     pub pt: Option<LefPoint>,
-    /// Orientation
-    pub orient: Option<Tbd>,
+
+    // Unsupported
+    /// Orientation (Unsupported)
+    #[serde(default, skip_serializing)]
+    pub orient: Option<Unsupported>,
 }
+/// # Lef Pin Definition
+///
+/// A named, directed pin, including one or more "weakly connected" physical [LefPort]s.
 #[derive(Clone, Default, Builder, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[builder(setter(into), private)]
+#[builder(pattern = "owned", setter(into), private)]
 pub struct LefPin {
     // Required Fields
     /// Pin Name
@@ -196,31 +311,31 @@ pub struct LefPin {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub antenna_attrs: Vec<LefPinAntennaAttr>,
 
-    // Not (Yet) Supported
-    /// Taper Rule
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub taper_rule: Option<Tbd>,
-    /// Net Expression
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub net_expr: Option<Tbd>,
-    /// Supply Sensitivity
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub supply_sensitivity: Option<Tbd>,
-    /// Ground Sensitivity
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub ground_sensitivity: Option<Tbd>,
-    /// Must-Join
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub must_join: Option<Tbd>,
-    /// Properties
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub properties: Option<Tbd>,
+    // Unsupported
+    /// Taper Rule (Unsupported)
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub taper_rule: Unsupported,
+    /// Net Expression (Unsupported)
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub net_expr: Unsupported,
+    /// Supply Sensitivity (Unsupported)
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub supply_sensitivity: Unsupported,
+    /// Ground Sensitivity (Unsupported)
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub ground_sensitivity: Unsupported,
+    /// Must-Join (Unsupported)
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub must_join: Unsupported,
+    /// Properties (Unsupported)
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub properties: Unsupported,
 }
 /// Enumerated Pin Directions
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -242,7 +357,7 @@ impl std::fmt::Display for LefPinDirection {
         write!(f, "{}", s)
     }
 }
-/// Antenna Attributes
+/// # Lef Antenna Attributes
 ///
 /// Stored as key-value pairs from string-keys name "ANTENNA*" to [LefDecimal] values.
 /// Note each pair may have an optional `layer` specifier,
@@ -253,7 +368,14 @@ pub struct LefPinAntennaAttr {
     val: LefDecimal,
     layer: Option<String>,
 }
+/// # Lef Port
+///
+/// Defines the physical locations and optional metadata of a port on a pin.
+/// LEF includes the notion of multiple "weakly connected" ports per pin;
+/// each [LefPort] is one such weakly-connected point.
+/// See the [LefPin] documentation for more information.
 #[derive(Clone, Default, Builder, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[builder(pattern = "owned", setter(into), private)]
 pub struct LefPort {
     /// Port-Class
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -262,7 +384,15 @@ pub struct LefPort {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub layers: Vec<LefLayerGeometries>,
 }
+/// # Lef Single-Layer Geometry Store
+///
+/// Most LEF spatial data (e.g. ports, blockages) is organized by layer.
+/// [LefLayerGeometries] stores the combination of a layer (name)
+/// and suire of geometric primitives (e.g. rectangles, polygons) and vias on that layer.
+/// [LefLayerGeometries] are the primary building block of [LefPort]s and macro obstructions.
+///
 #[derive(Clone, Default, Builder, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[builder(pattern = "owned", setter(into), private)]
 pub struct LefLayerGeometries {
     // Required
     /// Layer Name
@@ -285,6 +415,11 @@ pub struct LefLayerGeometries {
     #[builder(default, setter(strip_option))]
     pub width: Option<LefDecimal>,
 }
+/// # Lef Via Instance
+///
+/// A located instance of via-type `via_name`, typically used as part of a [LefLayerGeometries] definition.
+/// The via-type is generally interpreted as a string-valued reference into tech-lef data.
+/// It is stored in each [LefVia] exactly as in LEF: as a string (name).
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct LefVia {
     /// Via-Type Name
@@ -292,50 +427,67 @@ pub struct LefVia {
     /// Location
     pub pt: LefPoint,
 }
+/// # Enumerated Layer-Spacing Options
+/// Includes absolute spacing and design-rule-width modifiers.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum LefLayerSpacing {
     Spacing(LefDecimal),
     DesignRuleWidth(LefDecimal),
 }
-/// Lef Geometric Objects -
-/// Rectangles, Polygons, Paths, and Iterators thereof
+/// # Lef Geometric Object Enumeration
+/// Includes [LefShape]s and Iterators thereof
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum LefGeometry {
     /// Single Shape
     Shape(LefShape),
-    /// Repeated Iteration/ Array of Shapes
-    Iterate { shape: LefShape, pattern: Tbd },
+    /// Repeated Iteration/ Array of Shapes (Unsupported)
+    Iterate {
+        shape: LefShape,
+        pattern: Unsupported,
+    },
 }
-/// Lef Shapes
-/// Individual Geometric Primitives
+/// # Lef Shape Enumeration
+/// Includes each of LEF's individual geometric primitives:
+/// rectangles, polygons, and paths.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum LefShape {
     Rect(LefPoint, LefPoint),
     Polygon(Vec<LefPoint>),
     Path(Vec<LefPoint>),
 }
-/// X-Y Point
-#[derive(Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq)]
-pub struct LefPoint(LefDecimal, LefDecimal);
+/// # Lef X-Y Spatial Point
+///
+/// Specified in [LefDecimal]-valued coordinates.
+/// Supports common mathematical operations (Add, Sub, increment, etc.).
+#[derive(
+    Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq, Add, AddAssign, Sub, SubAssign,
+)]
+pub struct LefPoint {
+    pub x: LefDecimal,
+    pub y: LefDecimal,
+}
 impl LefPoint {
     /// Create a new [LefPoint]
     pub fn new(x: impl Into<LefDecimal>, y: impl Into<LefDecimal>) -> Self {
-        Self(x.into(), y.into())
+        Self {
+            x: x.into(),
+            y: y.into(),
+        }
     }
 }
 impl std::fmt::Display for LefPoint {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{} {}", self.0, self.1)
+        write!(f, "{} {}", self.x, self.y)
     }
 }
-/// # Database-Units per Micron  
+/// # Lef Distance Units per Micron  
 ///
-/// A constrained numeric type, wrapping [LefDecimal].
-/// Allowed values of [LefDbuPerMicron] are:
-/// [100, 200, 400, 800, 1000, 2000, 4000, 8000, 10_000, 20_000]
-/// and adherence to this set is checked at construction time.
+/// A constrained numeric type. Allowed values of [LefDbuPerMicron] are:
+/// [100, 200, 400, 800, 1000, 2000, 4000, 8000, 10_000, 20_000].
+/// Adherence to this set is checked at construction time.
+///
 #[derive(Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq)]
-pub struct LefDbuPerMicron(LefDecimal);
+pub struct LefDbuPerMicron(u32);
 impl LefDbuPerMicron {
     /// Create a new [LefDbuPerMicron], checking internally required conditions
     pub fn try_new(x: LefDecimal) -> LefResult<Self> {
@@ -347,35 +499,46 @@ impl LefDbuPerMicron {
         if ![100, 200, 400, 800, 1000, 2000, 4000, 8000, 10_000, 20_000].contains(&x.mantissa()) {
             return Err("Invalid DBU per Micron value".into());
         }
-        Ok(Self(x))
+        // Convert to u32. Note the `unwrap` here is safe,
+        // as we have already verified `mantissa` is in the list above,
+        // all of which fit in a u32.
+        let val = u32::try_from(x.mantissa()).unwrap();
+        Ok(Self(val))
+    }
+    /// Return `self`'s value as an integer.
+    pub fn value(&self) -> u32 {
+        self.0
     }
 }
 /// Measurement Unit Conversion Factors
 #[derive(Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct LefUnits {
+    /// Database Distance Units per Micron
+    /// Defaults to 100, i.e. 1 DBU = 10nm
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub database_microns: Option<LefDbuPerMicron>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub time_ns: Option<LefDecimal>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub capacitance_pf: Option<LefDecimal>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub resistance_ohms: Option<LefDecimal>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub power_mw: Option<LefDecimal>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub current_ma: Option<LefDecimal>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub voltage_volts: Option<LefDecimal>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub frequency_mhz: Option<LefDecimal>,
+    #[serde(default, skip_serializing)]
+    pub time_ns: Unsupported,
+    #[serde(default, skip_serializing)]
+    pub capacitance_pf: Unsupported,
+    #[serde(default, skip_serializing)]
+    pub resistance_ohms: Unsupported,
+    #[serde(default, skip_serializing)]
+    pub power_mw: Unsupported,
+    #[serde(default, skip_serializing)]
+    pub current_ma: Unsupported,
+    #[serde(default, skip_serializing)]
+    pub voltage_volts: Unsupported,
+    #[serde(default, skip_serializing)]
+    pub frequency_mhz: Unsupported,
 }
-/// # Lef SITE Definition
+/// # Lef Site Definition
 ///
 /// Defines a placement-site in designs.
 /// Dictates the placement grid for a family of macros.
 ///
 #[derive(Clone, Builder, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[builder(pattern = "owned", setter(into), private)]
 pub struct LefSite {
     // Required
     /// Site Name
@@ -391,15 +554,19 @@ pub struct LefSite {
     #[builder(default, setter(strip_option))]
     pub symmetry: Option<Vec<LefSymmetry>>,
 
-    // Not (Yet) Supported
-    /// Row Patterns, re other previously defined sites
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub row_pattern: Option<Tbd>,
+    // Unsupported
+    /// Row Patterns, re other previously defined sites (Unsupported)
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub row_pattern: Unsupported,
 }
-/// Placeholder Struct for Fields to be completed
+/// # Unsupported Feature
+///
+/// Empty placeholder struct for unsupported LEF features.
+/// These fields are largely included for documentation purposes.
+/// They are never parsed, and can only be set to the zero-size [Unsupported] value.
 #[derive(Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq)]
-pub struct Tbd;
+pub struct Unsupported;
 
 /// Lef String-Enumeration Trait
 /// Defines two central methods:
@@ -415,9 +582,9 @@ trait LefEnum: std::marker::Sized {
 /// * (c) Automatically implement [std::fmt::Display] writing the string-values
 /// All variants are fieldless, and include derived implementations of common traits notably including `serde::{Serialize,Deserialize}`.
 macro_rules! enumstr {
-    (   $(#[$meta:meta])*
-        $enum_name:ident {
-        $( $variant:ident : $strval:literal ),* $(,)?
+    (   $(#[$meta: meta])*
+        $enum_name: ident {
+        $( $variant: ident : $strval: literal ),* $(,)?
     }) => {
         $(#[$meta])*
         #[allow(dead_code)]
@@ -454,13 +621,15 @@ macro_rules! enumstr {
     }
 }
 enumstr!(
-    /// Binary On/Off Settings, Denoted by ON and OFF
+    /// Binary On/Off Settings, Denoted by `ON` and `OFF`
     LefOnOff {
         On: "ON",
         Off: "OFF",
     }
 );
 enumstr!(
+    /// # Lef/ Def `SOURCE`
+    ///
     /// Specifies the source of a component
     /// In all versions since at least 5.7 (2009), SOURCE is a DEF-only field on COMPONENT definitions.
     /// Prior versions also include this as a field for LEF MACRO definitions.
@@ -480,6 +649,7 @@ enumstr!(
     }
 );
 enumstr!(
+    /// # Lef Pin-Usage (`USE`)  
     /// Specifies the usage-intent for a pin.
     /// Note this is the noun form of "use", pronounced with the hard "s".
     /// Not the verb form pronounced like the New Jersey second-person plural "yous".
@@ -512,7 +682,7 @@ enumstr!(
 );
 
 enumstr!(
-    /// Sub-Types for Macros of Class [LefMacroClass:EndCap]
+    /// Sub-Types for Macros of Class [LefMacroClass::EndCap]
     LefEndCapClassType {
         Pre: "PRE",
         Post: "POST",
@@ -523,14 +693,14 @@ enumstr!(
     }
 );
 enumstr!(
-    /// Sub-Types for Macros of Class [LefMacroClass:Block]
+    /// Sub-Types for Macros of Class [LefMacroClass::Block]
     LefBlockClassType {
         BlackBox: "BLACKBOX",
         Soft: "SOFT"
     }
 );
 enumstr!(
-    /// Sub-Types for Macros of Class [LefMacroClass:Core]
+    /// Sub-Types for Macros of Class [LefMacroClass::Core]
     LefCoreClassType {
         FeedThru: "FEEDTHRU",
         TieHigh: "TIEHIGH",
@@ -541,7 +711,7 @@ enumstr!(
     }
 );
 enumstr!(
-    /// Sub-Types for Macros of Class [LefMacroClass:Core]
+    /// Sub-Types for Macros of Class [LefMacroClass::Core]
     LefPortClass {
         None: "NONE",
         Core: "CORE",
@@ -577,7 +747,7 @@ pub enum LefError {
     /// Parser Errors
     Parse {
         tp: read::LefParseErrorType,
-        ctx: read::LefParseContext,
+        ctx: Vec<read::LefParseContext>,
         token: String,
         line_content: String,
         line_num: usize,
