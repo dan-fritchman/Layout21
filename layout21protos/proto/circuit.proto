@@ -1,9 +1,9 @@
 //! 
-//! # vlsirlol Circuit Schema 
+//! # vlsir Circuit Schema 
 //! 
 
 syntax = "proto3";
-package vlsirlol.circuit;
+package vlsir.circuit;
 import "utils.proto";
 
 
@@ -82,8 +82,8 @@ message Connection {
 message Instance {
   // Instance Name 
   string name = 1;
-  // vlsirlol.utils.Reference to Module instantiated
-  vlsirlol.utils.Reference module = 2;
+  // vlsir.utils.Reference to Module instantiated
+  vlsir.utils.Reference module = 2;
   // Parameter Values 
   map<string, Parameter> parameters = 3;
   // Map internal to external signals by name.
@@ -108,7 +108,7 @@ message Module {
 // Primarily for sake of port-ordering, for translation with connect-by-position formats. 
 message ExternalModule {
   // Qualified External Module Name 
-  vlsirlol.utils.QualifiedName name = 1;
+  vlsir.utils.QualifiedName name = 1;
   // Port Definitions 
   repeated Port ports = 2;
   // Description

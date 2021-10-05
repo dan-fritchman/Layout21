@@ -15,7 +15,7 @@ use prost::Message;
 use serde::{Deserialize, Serialize};
 
 // Include the prost-expanded proto-file content
-include!(concat!(env!("OUT_DIR"), "/vlsirlol.raw.rs"));
+include!(concat!(env!("OUT_DIR"), "/vlsir.raw.rs"));
 
 // Define a few additional helper functions
 impl Point {

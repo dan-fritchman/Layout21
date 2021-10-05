@@ -1,11 +1,11 @@
 //! 
-//! # vlsirlol Utility Message Schemas 
+//! # vlsir Utility Message Schemas 
 //! 
 //! Widely reused shared message-types. 
 //!
 
 syntax = "proto3";
-package vlsirlol.utils;
+package vlsir.utils;
 
 
 //! Enumerated SI Prefixes 

@@ -9,4 +9,4 @@ use prost::Message;
 use serde::{Deserialize, Serialize};
 
 // Include the prost-expanded proto-file content
-include!(concat!(env!("OUT_DIR"), "/vlsirlol.circuit.rs"));
+include!(concat!(env!("OUT_DIR"), "/vlsir.circuit.rs"));

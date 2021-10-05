@@ -1,6 +1,6 @@
 
 //! 
-//! # vlsirlol Multi-View Cell Library 
+//! # vlsir Multi-View Cell Library 
 //! 
 //! Schema for the `Cell` mutli-representation of a piece of hardware. 
 //! View include IO-abstracts (`Interface`), physical abstracts `Abstrakt`, 
@@ -8,7 +8,7 @@
 //! 
 
 syntax = "proto3";
-package vlsirlol.views;
+package vlsir.views;
 import "raw.proto";
 import "circuit.proto";
 
@@ -18,7 +18,7 @@ message Library {
   // Library Name / Domain 
   string domain = 1;
   // Distance Units
-  vlsirlol.raw.Units units = 2;
+  vlsir.raw.Units units = 2;
   // Cell Definitions
   repeated Cell cells = 3; 
 }
@@ -31,11 +31,11 @@ message Cell {
   // IO Interface
   Interface interface = 10;
   // Circuit Module 
-  vlsirlol.circuit.Module module = 11;
+  vlsir.circuit.Module module = 11;
   // Physical Abstract
   Abstract abstract = 12;
   // Physical Layout Implementation
-  vlsirlol.raw.Cell layout = 13;
+  vlsir.raw.Cell layout = 13;
 }
 
 // # Interface View 
@@ -44,7 +44,7 @@ message Interface {
   // Cell Name
   string name = 1;
   // Port List 
-  repeated vlsirlol.circuit.Port ports = 10;
+  repeated vlsir.circuit.Port ports = 10;
 }
 
 // # Abstract Layout View 
@@ -56,11 +56,11 @@ message Abstract {
   // Cell Name
   string name = 1;
   // Outline
-  vlsirlol.raw.Polygon outline = 2;
+  vlsir.raw.Polygon outline = 2;
   // Ports 
   repeated AbstractPort ports = 4;
   // Blockages
-  repeated vlsirlol.raw.LayerShapes blockages = 5;
+  repeated vlsir.raw.LayerShapes blockages = 5;
   
   // Author
   string author = 100;
@@ -74,6 +74,6 @@ message AbstractPort {
   // Port Name
   string net = 1;
   // Shapes, grouped by layer 
-  repeated vlsirlol.raw.LayerShapes shapes = 2; 
+  repeated vlsir.raw.LayerShapes shapes = 2; 
 }
 

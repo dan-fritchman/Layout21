@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::conv::ProtoFile;
 
 // Include the prost-expanded proto-file content
-include!(concat!(env!("OUT_DIR"), "/vlsirlol.views.rs"));
+include!(concat!(env!("OUT_DIR"), "/vlsir.views.rs"));
 
 // Add the file-exchange trait for Libraries and Cells
 impl ProtoFile for Library {}

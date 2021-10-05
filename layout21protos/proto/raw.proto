@@ -1,12 +1,12 @@
 
 //! 
-//! # vlsirlol Raw Layout 
+//! # vlsir Raw Layout 
 //! 
 //! Layout specified in "raw" geometric format, analogous to most custom layout systems. 
 //! 
 
 syntax = "proto3";
-package vlsirlol.raw;
+package vlsir.raw;
 import "utils.proto";
 
 // # Point
@@ -90,7 +90,7 @@ message Instance {
   // Instance Name
   string name = 1;
   // Cell Reference
-  vlsirlol.utils.Reference cell = 3;
+  vlsir.utils.Reference cell = 3;
   
   // Location of the defined Cell's origin 
   // this location holds regardless of reflection or rotation

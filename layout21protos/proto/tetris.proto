@@ -1,12 +1,12 @@
 
 //! 
-//! # vlsirlol "Tetris" Gridded Layout Schema 
+//! # vlsir "Tetris" Gridded Layout Schema 
 //! 
 //! Remains work-in-progress as of this writing 
 //! 
 
 syntax = "proto3";
-package vlsirlol.tetris;
+package vlsir.tetris;
 
 import "utils.proto";
 import "raw.proto";
@@ -19,7 +19,7 @@ import "views.proto";
 //   // Library Name / Domain 
 //   string domain = 1;
 //   // Distance Units
-//   vlsirlol.raw.Units units = 2;
+//   vlsir.raw.Units units = 2;
 //   // Cell Definitions
 //   repeated Cell cells = 10; 
 // }
@@ -30,7 +30,7 @@ import "views.proto";
 //   // Cell Name
 //   string name = 1;
 //   // IO Interface
-//   vlsirlol.raw.Interface interface = 10;
+//   vlsir.raw.Interface interface = 10;
 //   // Physical Abstrakt
 //   Abstrakt abstrakt = 11;
 //   // Physical Layout Implementation
@@ -112,9 +112,9 @@ message TrackRef {
 //
 message Outline {
   // X Coordinates
-  repeated vlsirlol.raw.Point x = 1;
+  repeated vlsir.raw.Point x = 1;
   // Y Coordinates
-  repeated vlsirlol.raw.Point y = 2;
+  repeated vlsir.raw.Point y = 2;
   // Top-layer index
   int64 top_layer = 3;
 }
@@ -186,7 +186,7 @@ message Instance {
   // Instance Name
   string name = 1;
   // Cell Reference
-  vlsirlol.utils.Reference cell = 3;
+  vlsir.utils.Reference cell = 3;
   
   // Location of the defined Cell's origin 
   // this location holds regardless of reflection settings.
@@ -202,7 +202,7 @@ message Instance {
 message Place {
   oneof place {
     // Absolute 
-    vlsirlol.raw.Point abs = 1;
+    vlsir.raw.Point abs = 1;
     // Relative 
     RelPlace rel = 2;
   }
