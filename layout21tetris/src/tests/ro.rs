@@ -8,7 +8,7 @@ use crate::cell::{self, Instance, LayoutImpl};
 use crate::coords::{PrimPitches, Xy};
 use crate::library::Library;
 use crate::outline::Outline;
-use crate::placement::{Align, Array, ArrayInstance, Arrayable, Place, RelAssign, Separation};
+use crate::placement::{Align, Array, ArrayInstance, Arrayable, Place, RelAssign};
 use crate::raw::{self, LayoutResult};
 use crate::stack::RelZ;
 use crate::utils::Ptr;

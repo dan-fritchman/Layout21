@@ -2,7 +2,6 @@
 //! 
 //! # vlsir "Tetris" Gridded Layout Schema 
 //! 
-//! Remains work-in-progress as of this writing 
 //! 
 
 syntax = "proto3";
@@ -13,29 +12,37 @@ import "raw.proto";
 import "views.proto";
 
 
-// // # Library 
-// // A collection of `Cells` and asssociated metadata. 
-// message Library {
-//   // Library Name / Domain 
-//   string domain = 1;
-//   // Distance Units
-//   vlsir.raw.Units units = 2;
-//   // Cell Definitions
-//   repeated Cell cells = 10; 
-// }
+// # Library 
+// 
+// A collection of `Cells` and asssociated metadata. 
+// Primary data in the `cells` field is valid only if stored in dependency order, 
+// i.e. that each cell-definition must follow all cells that it depends upon. 
+// 
+message Library {
+  // Library Name / Domain 
+  string domain = 1;
+  // Distance Units
+  vlsir.raw.Units units = 2;
+  // Cell Definitions
+  repeated Cell cells = 10; 
 
-// // # Cell 
-// // A multi-view representation of a piece of hardware.
-// message Cell {
-//   // Cell Name
-//   string name = 1;
-//   // IO Interface
-//   vlsir.raw.Interface interface = 10;
-//   // Physical Abstrakt
-//   Abstrakt abstrakt = 11;
-//   // Physical Layout Implementation
-//   Layout layout = 12;
-// }
+  // Author Information 
+  vlsir.utils.AuthorMetadata author = 20;
+}
+
+// # Cell 
+// A multi-view representation of a piece of hardware.
+message Cell {
+  // Cell Name
+  string name = 1;
+
+  // IO Interface
+  vlsir.views.Interface interface = 10;
+  // Physical Abstract
+  Abstract abstract = 11;
+  // Physical Layout Implementation
+  Layout layout = 12;
+}
 
 // # Layout 
 // 
@@ -52,14 +59,12 @@ import "views.proto";
 message Layout {
   // Cell Name
   string name = 1;
-  
   // Outline 
   Outline outline = 10;
-
   // Layout Instances
   repeated Instance instances = 20;
   // Net-to-track assignments
-  repeated Assign assigns = 21;
+  repeated Assign assignments = 21;
   // Track cuts
   repeated TrackCross cuts = 22;
 }
@@ -115,26 +120,26 @@ message Outline {
   repeated vlsir.raw.Point x = 1;
   // Y Coordinates
   repeated vlsir.raw.Point y = 2;
-  // Top-layer index
-  int64 top_layer = 3;
+  // Number of metal layers used 
+  int64 metals = 3;
 }
 
-// # Abstrakt Layout 
+// # Abstract Layout 
 // 
 // Defines the physical interface to a [Cell], including ports and internal blockages, 
 // omitting internal implementation details.
-message Abstrakt {
+message Abstract {
   // Cell Name
   string name = 1;
   // Outline 
   Outline outline = 10;
   // Ports 
-  repeated AbstraktPort ports = 20; 
+  repeated AbstractPort ports = 20; 
 }
 
-// # Abstrakt Port
+// # Abstract Port
 // Combination of a net and set of shapes
-message AbstraktPort {
+message AbstractPort {
   // Port Name
   string net = 1;
   // Enumerated port types
@@ -171,7 +176,7 @@ message ZTopInner {
   repeated TrackCross locs = 1;
 }
 
-// # Abstrakt Port Side 
+// # Abstract Port Side 
 // 
 // A two-value enum, as each layer either runs horizontally or vertically. 
 // Ports on the nearer-origin (bottom or left) sides use variant `BOTTOM_OR_LEFT`, 
@@ -209,6 +214,155 @@ message Place {
 }
 
 // # Relative Place
-// FIXME! 
 message RelPlace { } 
+
+
+
+// # Stack
+//
+// The z-stack, primarily including metal, via, and primitive layers
+message Stack {
+    // Measurement units
+    vlsir.raw.Units units = 1;
+    // Primitive Layer
+    PrimitiveLayer prim = 2;
+    // Set of metal layers
+    repeated MetalLayer metals = 3;
+    // Set of via layers
+    repeated ViaLayer vias = 4;
+
+    // [raw::Layer] Mappings
+    // vlsir.raw.Layers rawlayers = 1;
+    // Layer used for cell outlines/ boundaries
+    vlsir.raw.Layer boundary_layer = 11;
+}
+
+// # LayerEnum 
+// 
+// Type and index of a layer.
+// 
+message LayerEnum {
+  enum LayerType {
+    PRIMITIVE = 0;
+    METAL = 1;
+    VIA = 2;
+  }
+
+  // Layer Type
+  LayerType type = 1;
+  // Index into the associated `LayerType` set 
+  int64 index = 2;
+}
+
+// # MetalLayer
+//
+// Metal layer in a [Stack]
+// Each layer is effectively infinite-spanning in one dimension, and periodic in the other.
+// Layers with `dir=Dir::Horiz` extend to infinity in x, and repeat in y, and vice-versa.
+//
+message MetalLayer {
+  // Direction Enumeration 
+  enum Dir {
+    HORIZ = 0;
+    VERT = 1;
+  }
+  // Ownership split of a layer between Primitives and the Stack. 
+  enum PrimitiveMode {
+    PRIM = 0;   // Owned by Primitives 
+    SPLIT = 1;  // Split between Primitives and the Stack 
+    STACK = 2;  // Owned by the Stack 
+  }
+    // Layer Name
+    string name = 1;
+    // Direction Enumeration (Horizontal/ Vertical)
+    Dir dir = 2;
+    // Default size of wire-cuts
+    int64 cutsize = 3;
+    // Track Size & Type Entries
+    repeated TrackSpec entries = 4;
+    // Offset, in our periodic dimension
+    int64 offset = 5;
+    // Overlap between periods
+    int64 overlap = 6;
+    // Setting for period-by-period flipping
+    bool flip = 7;
+    // Primitive-layer relationship
+    PrimitiveMode prim = 8;
+    // Raw Layer
+    vlsir.raw.Layer raw = 11;
+}
+
+
+// # ViaLayer
+// 
+// Insulator and connector Layer Between `MetalLayers`
+message ViaLayer {
+    // Layer name
+    string name = 1;
+    // Top of the two layers connected by this layer
+    LayerEnum top = 2;
+    // Bottom of the two layers connected by this layer
+    LayerEnum bot = 3;
+    // Via size
+    Xy size = 4;
+    // Raw Layer
+    vlsir.raw.Layer raw = 11;
+}
+
+// # Primitive Layer
+// 
+// Encapsulates all layout information "below" an associated `Stack`.
+// In typical process technologies this primarily includes "base layers", 
+// such as those used in primitive transistors and logic cells. 
+message PrimitiveLayer {
+  // Pitches, in Database Units
+  Xy pitches = 1;
+}
+
+// # Track Specification 
+// 
+// Includes definitions for the single `TrackEntry`
+// and repitition thereof (`Repeat`). 
+// Sole field `spec` is one of the two. 
+// 
+message TrackSpec {
+  message TrackEntry {
+    enum TrackType {
+      GAP = 0; // Insulator Gap
+      SIGNAL = 1; // Signal Track
+      RAIL = 2; // Rail Track. FIXME: Add rail type. 
+    }
+    // TrackType
+    TrackType ttype = 1;
+    // Entry width 
+    int64 width = 2;
+  }
+
+  // Repeated Pattern of Track Entries
+  message Repeat {
+    // List of entries
+    repeated TrackEntry entries = 1;
+    // Number of repetitions 
+    int64 nrep = 2;
+}
+
+  // Sole internal field: either an entry or repetition thereof 
+  oneof spec {
+    // Single Entry 
+    TrackEntry entry = 1;
+    // Repetition 
+    Repeat repeat = 2; 
+  }
+}
+
+// # Xy 
+// 
+// Two-dimensional (x,y) pair. 
+// While similar in content to `vlsir.raw.Point`, `Xy` data does not semantically 
+// (necessarily) refer to a single point in Cartesian space. 
+// More general use-cases include the size of blocks, or the pitch of a grid.
+message Xy {
+  int64 x = 1;
+  int64 y = 2;
+}
 

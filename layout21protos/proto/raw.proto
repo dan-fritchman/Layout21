@@ -7,6 +7,7 @@
 
 syntax = "proto3";
 package vlsir.raw;
+
 import "utils.proto";
 
 // # Point
@@ -115,11 +116,6 @@ message Cell {
   repeated Instance instances = 3;
   // Text Annotations
   repeated TextElement annotations = 4; 
- 
-  // Author
-  string author = 100;
-  // Copyright (something)
-  string copyright = 101;
 }
 
 // # Layout Library 
@@ -131,5 +127,8 @@ message Library {
   Units units = 2; 
   // Cell Definitions
   repeated Cell cells = 10;
+
+  // Author Information 
+  vlsir.utils.AuthorMetadata author = 20;
 }
 

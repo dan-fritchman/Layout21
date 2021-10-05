@@ -9,11 +9,15 @@
 
 syntax = "proto3";
 package vlsir.views;
+
+import "utils.proto";
 import "raw.proto";
 import "circuit.proto";
 
+
 // # Library
-// A collection of `Cells` and asssociated metadata. 
+// 
+// A collection of related `Cells` and asssociated metadata. 
 message Library {
   // Library Name / Domain 
   string domain = 1;
@@ -21,6 +25,9 @@ message Library {
   vlsir.raw.Units units = 2;
   // Cell Definitions
   repeated Cell cells = 3; 
+
+  // Author Information
+  vlsir.utils.AuthorMetadata author = 20;
 }
 
 // # Cell 
@@ -61,11 +68,6 @@ message Abstract {
   repeated AbstractPort ports = 4;
   // Blockages
   repeated vlsir.raw.LayerShapes blockages = 5;
-  
-  // Author
-  string author = 100;
-  // Copyright (something)
-  string copyright = 101;
 }
 
 // # Abstract Port

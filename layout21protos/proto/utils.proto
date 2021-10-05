@@ -50,3 +50,32 @@ message Reference {
     QualifiedName external = 2;
   }
 }
+
+// # Library Metadata
+// 
+// Summary information about any of several categories of `Library`, including: 
+// * Library domain 
+// * (String) cell names
+// * Author information
+message LibraryMetadata {
+  // Library Name / Domain 
+  string domain = 1; 
+  // Cell Names
+  repeated string cell_names = 10;
+  // Author Information
+  AuthorMetadata author = 20;
+}
+
+// # Authorship Metadata 
+//
+// Summary information regarding authorship, ownership, and licensing 
+// of any of several categories of design data. 
+// 
+message AuthorMetadata {
+  // Author Name
+  string author = 1; 
+  // Copyright Information
+  string copyright = 10;
+  // License Information, in SPDX Format 
+  string license = 11;
+}

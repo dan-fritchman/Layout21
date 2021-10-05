@@ -349,15 +349,11 @@ mod tests {
             shapes: vec![],
             instances: vec![],
             annotations: vec![],
-            author: "author".into(),
-            copyright: "copyright".into(),
         };
         assert_eq!(x.name, "cell_name");
         assert_eq!(x.shapes, vec![]);
         assert_eq!(x.instances, vec![]);
         assert_eq!(x.annotations, vec![]);
-        assert_eq!(x.author, "author");
-        assert_eq!(x.copyright, "copyright");
 
         // Protobuf Serialization Round-Trip
         let bytes = to_bytes(&x);
@@ -370,10 +366,13 @@ mod tests {
             domain: "libdomain".into(),
             units: Units::Angstrom.into(),
             cells: Vec::new(),
+            author: None
         };
         assert_eq!(r.domain, "libdomain");
         assert_eq!(r.units, Units::Angstrom.into());
         assert_eq!(r.cells, vec![]);
+        assert_eq!(r.author, None);
+
         // Protobuf Serialization Round-Trip
         let bytes = to_bytes(&r);
         let rt: Library = from_bytes(&bytes).unwrap();

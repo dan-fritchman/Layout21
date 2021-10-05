@@ -145,11 +145,11 @@ impl ValidMetalLayer {
         assert(pitch.raw() > 0)?;
         // Check for fit on the primitive grid, if the layer is in primitives
         match layer.prim {
-            PrimitiveMode::Partial | PrimitiveMode::Owned => {
+            PrimitiveMode::Split | PrimitiveMode::Prim => {
                 let prim_pitch = prim.pitches[!layer.dir];
                 assert(pitch % prim_pitch == 0)?;
             }
-            PrimitiveMode::None => (),
+            PrimitiveMode::Stack => (),
         }
         // Convert to a prototype [LayerPeriod]
         // This is frequently used for calculating track locations

@@ -172,7 +172,7 @@ impl Layer {
             match e {
                 TrackSpec::Entry(ee) => v.push(ee.clone()),
                 // FIXME: why doesn't this recursively call `entries`? Seems it could/should.
-                TrackSpec::Pat(p) => {
+                TrackSpec::Repeat(p) => {
                     for _i in 0..p.nrep {
                         for ee in p.entries.iter() {
                             v.push(ee.clone());
@@ -320,9 +320,12 @@ pub enum FlipMode {
 /// Indication of whether a layer is owned by, partially included in, or external to the primitive blocks
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum PrimitiveMode {
-    Owned,
-    Partial,
-    None,
+    /// Owned by Primitives
+    Prim,
+    /// Partially split between Primitives and Stack 
+    Split,
+    /// Owned by the Stack 
+    Stack,
 }
 /// Description of the primitive-level cells in a [Stack]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

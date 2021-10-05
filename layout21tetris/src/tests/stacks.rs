@@ -71,7 +71,7 @@ impl SampleStacks {
                     name: "met1".into(),
                     entries: vec![
                         TrackSpec::gnd(480),
-                        TrackSpec::pat(vec![TrackEntry::gap(200), TrackEntry::sig(140)], 6),
+                        TrackSpec::repeat(vec![TrackEntry::gap(200), TrackEntry::sig(140)], 6),
                         TrackSpec::gap(200),
                         TrackSpec::pwr(480),
                     ],
@@ -81,7 +81,7 @@ impl SampleStacks {
                     overlap: (480).into(),
                     raw: Some(rawlayers.add(raw::Layer::from_pairs(68, &metal_purps)?)),
                     flip: FlipMode::EveryOther,
-                    prim: PrimitiveMode::Partial,
+                    prim: PrimitiveMode::Split,
                 },
                 Layer {
                     name: "met2".into(),
@@ -92,13 +92,13 @@ impl SampleStacks {
                     overlap: (0).into(),
                     raw: Some(rawlayers.add(raw::Layer::from_pairs(69, &metal_purps)?)),
                     flip: FlipMode::None,
-                    prim: PrimitiveMode::None,
+                    prim: PrimitiveMode::Stack,
                 },
                 Layer {
                     name: "met3".into(),
                     entries: vec![
                         TrackSpec::gnd(480),
-                        TrackSpec::pat(vec![TrackEntry::gap(200), TrackEntry::sig(140)], 6),
+                        TrackSpec::repeat(vec![TrackEntry::gap(200), TrackEntry::sig(140)], 6),
                         TrackSpec::gap(200),
                         TrackSpec::pwr(480),
                     ],
@@ -108,13 +108,13 @@ impl SampleStacks {
                     overlap: (480).into(),
                     raw: Some(rawlayers.add(raw::Layer::from_pairs(70, &metal_purps)?)),
                     flip: FlipMode::EveryOther,
-                    prim: PrimitiveMode::None,
+                    prim: PrimitiveMode::Stack,
                 },
                 Layer {
                     name: "met4".into(),
                     entries: vec![
                         TrackSpec::gnd(510),
-                        TrackSpec::pat(vec![TrackEntry::gap(410), TrackEntry::sig(50)], 8),
+                        TrackSpec::repeat(vec![TrackEntry::gap(410), TrackEntry::sig(50)], 8),
                         TrackSpec::gap(410),
                         TrackSpec::pwr(510),
                     ],
@@ -124,13 +124,13 @@ impl SampleStacks {
                     overlap: (510).into(),
                     raw: Some(rawlayers.add(raw::Layer::from_pairs(71, &metal_purps)?)),
                     flip: FlipMode::EveryOther,
-                    prim: PrimitiveMode::None,
+                    prim: PrimitiveMode::Stack,
                 },
                 Layer {
                     name: "met5".into(),
                     entries: vec![
                         TrackSpec::gnd(480),
-                        TrackSpec::pat(vec![TrackEntry::gap(200), TrackEntry::sig(140)], 6),
+                        TrackSpec::repeat(vec![TrackEntry::gap(200), TrackEntry::sig(140)], 6),
                         TrackSpec::gap(200),
                         TrackSpec::pwr(480),
                     ],
@@ -140,7 +140,7 @@ impl SampleStacks {
                     overlap: (480).into(),
                     raw: Some(rawlayers.add(raw::Layer::from_pairs(72, &metal_purps)?)),
                     flip: FlipMode::EveryOther,
-                    prim: PrimitiveMode::None,
+                    prim: PrimitiveMode::Stack,
                 },
             ],
             vias: vec![

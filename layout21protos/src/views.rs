@@ -63,8 +63,6 @@ mod tests {
             }),
             ports: vec![AbstractPort::default()],
             blockages: vec![LayerShapes::default()],
-            author: "author".into(),
-            copyright: "copyright".into(),
         };
 
         assert_eq!(r.name, "abs");

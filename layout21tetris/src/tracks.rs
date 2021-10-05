@@ -51,10 +51,14 @@ impl RailKind {
         }
     }
 }
+/// # Track "Specification" Entry
+///
+/// Either a single entry, or repitition thereof.
+/// 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum TrackSpec {
     Entry(TrackEntry),
-    Pat(Pattern),
+    Repeat(Repeat),
 }
 impl TrackSpec {
     pub fn gap(width: impl Into<DbUnits>) -> Self {
@@ -87,17 +91,17 @@ impl TrackSpec {
             ttype: TrackType::Rail(RailKind::Gnd),
         })
     }
-    pub fn pat(e: impl Into<Vec<TrackEntry>>, nrep: usize) -> Self {
-        Self::Pat(Pattern::new(e, nrep))
+    pub fn repeat(e: impl Into<Vec<TrackEntry>>, nrep: usize) -> Self {
+        Self::Repeat(Repeat::new(e, nrep))
     }
 }
 /// An array of layout `Entries`, repeated `nrep` times
 #[derive(Default, Clone, Debug, Deserialize, Serialize, PartialEq)]
-pub struct Pattern {
+pub struct Repeat {
     pub entries: Vec<TrackEntry>,
     pub nrep: usize,
 }
-impl Pattern {
+impl Repeat {
     pub fn new(e: impl Into<Vec<TrackEntry>>, nrep: usize) -> Self {
         Self {
             entries: e.into(),
