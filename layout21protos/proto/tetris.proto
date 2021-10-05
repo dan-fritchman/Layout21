@@ -9,7 +9,7 @@ package vlsir.tetris;
 
 import "utils.proto";
 import "raw.proto";
-import "views.proto";
+import "circuit.proto";
 
 
 // # Library 
@@ -23,6 +23,7 @@ message Library {
   string domain = 1;
   // Distance Units
   vlsir.raw.Units units = 2;
+
   // Cell Definitions
   repeated Cell cells = 10; 
 
@@ -37,11 +38,13 @@ message Cell {
   string name = 1;
 
   // IO Interface
-  vlsir.views.Interface interface = 10;
+  vlsir.circuit.Interface interface = 10;
+  // Circuit Module Definition 
+  vlsir.circuit.Module module = 11;
   // Physical Abstract
-  Abstract abstract = 11;
+  Abstract abstract = 12;
   // Physical Layout Implementation
-  Layout layout = 12;
+  Layout layout = 13;
 }
 
 // # Layout 

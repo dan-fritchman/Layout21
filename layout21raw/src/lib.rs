@@ -594,10 +594,9 @@ impl Library {
 }
 
 /// # Dependency-Orderer
-///
-/// Ideally an iterator, but really just a struct that creates an in-order [Vec] at creation time.
 #[derive(Debug)]
 pub struct DepOrder<'lib> {
+    // FIXME: move to utils shared version
     lib: &'lib Library,
     stack: Vec<Ptr<CellBag>>,
     seen: HashSet<Ptr<CellBag>>,

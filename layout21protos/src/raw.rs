@@ -344,7 +344,7 @@ mod tests {
     }
     #[test]
     fn cell() {
-        let x = Cell {
+        let x = Layout {
             name: "cell_name".into(),
             shapes: vec![],
             instances: vec![],
@@ -357,7 +357,7 @@ mod tests {
 
         // Protobuf Serialization Round-Trip
         let bytes = to_bytes(&x);
-        let rt: Cell = from_bytes(&bytes).unwrap();
+        let rt: Layout = from_bytes(&bytes).unwrap();
         assert_eq!(x, rt);
     }
     #[test]
@@ -366,7 +366,7 @@ mod tests {
             domain: "libdomain".into(),
             units: Units::Angstrom.into(),
             cells: Vec::new(),
-            author: None
+            author: None,
         };
         assert_eq!(r.domain, "libdomain");
         assert_eq!(r.units, Units::Angstrom.into());
@@ -376,6 +376,69 @@ mod tests {
         // Protobuf Serialization Round-Trip
         let bytes = to_bytes(&r);
         let rt: Library = from_bytes(&bytes).unwrap();
+        assert_eq!(r, rt);
+    }
+
+    #[test]
+    fn abstrakt_port() {
+        let r = AbstractPort {
+            net: "abs_port_name".into(),
+            shapes: vec![LayerShapes::default()],
+        };
+        assert_eq!(r.net, "abs_port_name");
+        assert_eq!(
+            r.shapes,
+            vec![LayerShapes {
+                layer: None,
+                rectangles: vec![],
+                polygons: vec![],
+                paths: vec![],
+            }]
+        );
+        // Protobuf Serialization Round-Trip
+        let bytes = to_bytes(&r);
+        let rt: AbstractPort = from_bytes(&bytes).unwrap();
+        assert_eq!(r, rt);
+    }
+    #[test]
+    fn abstrakt() {
+        let r = Abstract {
+            name: "abs".into(),
+            outline: Some(Polygon {
+                net: "".into(),
+                vertices: vec![],
+            }),
+            ports: vec![AbstractPort::default()],
+            blockages: vec![LayerShapes::default()],
+        };
+
+        assert_eq!(r.name, "abs");
+        assert_eq!(
+            r.outline,
+            Some(Polygon {
+                net: "".into(),
+                vertices: vec![],
+            })
+        );
+        assert_eq!(
+            r.ports,
+            vec![AbstractPort {
+                net: "".into(),
+                shapes: vec![],
+            }]
+        );
+        assert_eq!(
+            r.blockages,
+            vec![LayerShapes {
+                layer: None,
+                rectangles: vec![],
+                polygons: vec![],
+                paths: vec![],
+            }]
+        );
+        // Protobuf Serialization Round-Trip
+        let bytes = to_bytes(&r);
+        let rt = Abstract::decode(bytes.as_slice()).unwrap();
         assert_eq!(r, rt);
     }
 }

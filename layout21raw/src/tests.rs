@@ -69,7 +69,7 @@ fn resource(fname: &str) -> String {
 #[test]
 fn test_gds_to_proto1() -> LayoutResult<()> {
     // Read a GDS file
-    let samp = resource("dff1_lib.gds");
+    let samp = resource("dff1_lib.golden.gds");
     let gds = gds::gds21::GdsLibrary::load(&samp)?;
 
     // Convert to Layout21::Raw
@@ -85,11 +85,9 @@ fn test_gds_to_proto1() -> LayoutResult<()> {
     // Convert to ProtoBuf
     let p = proto::ProtoExporter::export(&lib)?;
     assert_eq!(p.domain, "dff1_lib");
-    let p2 = proto::ProtoExporter::export(&lib)?;
-    assert_eq!(p, p2);
 
     // And compare against the golden version
-    let p2 = proto::proto::open(&resource("dff1_lib.bin")).unwrap();
+    let p2 = proto::proto::open(&resource("dff1_lib.golden.vlsir.bin")).unwrap();
     assert_eq!(p, p2);
     Ok(())
 }

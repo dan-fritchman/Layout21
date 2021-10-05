@@ -115,3 +115,11 @@ message ExternalModule {
   string desc = 3;
 }
 
+// # Interface 
+// Defines the logical IO of a `Module` 
+message Interface {
+  // Cell Name
+  string name = 1;
+  // Port List 
+  repeated Port ports = 10;
+}

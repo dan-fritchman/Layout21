@@ -9,6 +9,8 @@ syntax = "proto3";
 package vlsir.raw;
 
 import "utils.proto";
+import "circuit.proto";
+
 
 // # Point
 // An (x,y) point in Cartesian layout space.
@@ -105,9 +107,11 @@ message Instance {
 }
 
 // # Layout Cell 
+// 
 // The most common element of layout re-use. 
-// Comprises a named set of geometric elements and [Instance]s of other [Cell]s. 
-message Cell {
+// Comprises a named set of geometric elements and [Instance]s of other [Layout]s. 
+// 
+message Layout {
   // Cell Name
   string name = 1;
   // Shapes, grouped by layer 
@@ -118,7 +122,48 @@ message Cell {
   repeated TextElement annotations = 4; 
 }
 
-// # Layout Library 
+// # Abstract Layout View 
+// 
+// Defines the physical interface to a [Cell], including ports and internal blockages, 
+// omitting internal implementation details.
+//
+message Abstract {
+  // Cell Name
+  string name = 1;
+  // Outline
+  vlsir.raw.Polygon outline = 2;
+  // Ports 
+  repeated AbstractPort ports = 4;
+  // Blockages
+  repeated vlsir.raw.LayerShapes blockages = 5;
+}
+
+// # Abstract Port
+// Combination of a net and set of shapes
+message AbstractPort {
+  // Port Name
+  string net = 1;
+  // Shapes, grouped by layer 
+  repeated vlsir.raw.LayerShapes shapes = 2; 
+}
+
+// # Cell 
+// A multi-view representation of a piece of hardware.
+message Cell {
+  // Cell Name
+  string name = 1;
+
+  // IO Interface
+  vlsir.circuit.Interface interface = 10;
+  // Circuit Module 
+  vlsir.circuit.Module module = 11;
+  // Physical Abstract
+  Abstract abstract = 12;
+  // Physical Layout Implementation
+  Layout layout = 13;
+}
+
+// # Library 
 // A collection of cells and asssociated meta-data. 
 message Library {
   // Library Name / Domain 
@@ -130,5 +175,5 @@ message Library {
 
   // Author Information 
   vlsir.utils.AuthorMetadata author = 20;
-}
+} 
 
