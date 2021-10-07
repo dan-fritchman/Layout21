@@ -725,19 +725,26 @@ impl GdsImporter {
         Ok(inst)
     }
     /// Import a (two-dimensional) [gds21::GdsArrayRef] into [Instance]s
-    /// Arrays are supported if they are:
-    /// * (a) Rectangular, and
-    /// * (b) Use the default orientation, including:
-    ///   * Have the default angle of zero degrees
-    ///   * Do not use the unsupported "absolute" magnitude or angle settings
-    ///   * Are not reflected
-    /// Further support for GDS array orientations may (or may not)
-    /// be expanded in the future.
+    ///
+    /// Returns the newly-created [Instance]s as a vector.
+    /// Instance names are of the form `{array.name}[{col}][{row}]`.
+    ///
+    /// GDSII arrays are described by three spatial points:
+    /// The origin, extent in "rows", and extent in "columns".
+    /// In principle these need not be the same as "x" and "y" spacing,
+    /// i.e. there might be "diamond-shaped" array specifications.
+    ///
+    /// Here, arrays are supported if they are "specified rectangular",
+    /// i.e. that (a) the first two points align in `y`, and (b) the second two points align in `x`.
+    ///
+    /// Further support for such "non-rectangular-specified" arrays may (or may not) become a future addition,
+    /// based on observed GDSII usage.
+    ///
     fn import_instance_array(&mut self, aref: &gds21::GdsArrayRef) -> LayoutResult<Vec<Instance>> {
         let cname = aref.name.clone();
         self.ctx.push(ErrorContext::Array(cname.clone()));
 
-        // Look up the cell-key, which must be imported by now
+        // Look up the cell, which must be imported by now
         let cell = self.unwrap(
             self.cell_map.get(&aref.name),
             format!("Instance Array of invalid cell {}", cname),
@@ -750,38 +757,51 @@ impl GdsImporter {
         let p2 = self.import_point(&aref.xy[2])?;
         // Check for (thus far) unsupported non-rectangular arrays
         if p0.y != p1.y || p0.x != p2.x {
-            return self.fail("Unsupported Non-Rectangular GDS Array");
+            self.fail("Unsupported Non-Rectangular GDS Array")?;
         }
         // Sort out the inter-element spacing
-        let width = p1.x - p0.x;
-        let height = p2.y - p0.y;
-        let xstep = width / (aref.cols as isize);
-        let ystep = height / (aref.rows as isize);
-        // Check the reflection/ rotation settings
+        let mut xstep = (p1.x - p0.x) / isize::from(aref.cols);
+        let mut ystep = (p2.y - p0.y) / isize::from(aref.rows);
+
+        // Incorporate the reflection/ rotation settings
+        let mut angle = None;
+        let mut reflect_vert = false;
         if let Some(strans) = &aref.strans {
             if strans.abs_mag || strans.abs_angle {
-                return self.fail("Unsupported GDSII Array Setting: Absolute Magnitude/ Angle");
+                self.fail("Unsupported GDSII Array Setting: Absolute Magnitude/ Angle")?;
             }
-            if strans.mag.is_some() || strans.angle.is_some() {
-                // println!("Warning support for array orientation in-progress");
-                return self.fail("Unsupported GDSII Array Orientation");
+            if strans.mag.is_some() {
+                self.fail("Unsupported GDSII Array Setting: Magnitude")?;
             }
-            // angle = strans.angle;
-            // reflect = strans.reflected;
+            if let Some(a) = strans.angle {
+                // The angle-setting rotates the *entire* array lattice together.
+                // Update the (x,y) steps via a rotation-matrix multiplication:
+                // x = x * cos(a) - y * sin(a)
+                // y = x * sin(a) + y * cos(a)
+                let prev_xy = (i32::try_from(xstep)?, i32::try_from(ystep)?);
+                let prev_xy = (f64::from(prev_xy.0), f64::from(prev_xy.1));
+                let a = a.to_radians(); // Rust `sin` and `cos` take radians, convert first
+                xstep = (prev_xy.0 * a.cos() - prev_xy.1 * a.sin()) as isize;
+                ystep = (prev_xy.0 * a.sin() + prev_xy.1 * a.cos()) as isize;
+
+                // Set the same angle to each generated Instance
+                angle = Some(a);
+            }
+            // Apply the reflection setting to each generated Instance
+            reflect_vert = strans.reflected;
         }
         // Create the Instances
         let mut insts = Vec::with_capacity((aref.rows * aref.cols) as usize);
-        for ix in 0..(aref.cols as isize) {
+        for ix in 0..isize::from(aref.cols) {
             let x = p0.x + ix * xstep;
-            for iy in 0..(aref.rows as isize) {
+            for iy in 0..isize::from(aref.rows) {
                 let y = p0.y + iy * ystep;
                 insts.push(Instance {
-                    inst_name: "".to_string(), // FIXME: auto naming? Leave blank?
+                    inst_name: format!("{}[{}][{}]", cname, ix, iy), // `{array.name}[{col}][{row}]`
                     cell: cell.clone(),
                     loc: Point::new(x, y),
-                    // Default orientation
-                    reflect_vert: false,
-                    angle: None,
+                    reflect_vert,
+                    angle,
                 });
             }
         }

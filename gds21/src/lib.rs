@@ -333,7 +333,7 @@ pub struct Unsupported;
 #[derive(Default, Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct GdsStrans {
     // Required Fields
-    /// Reflection, about the x-axis. 
+    /// Reflection, about the x-axis.
     /// Applied before rotation.
     pub reflected: bool,
     /// Absolute Magnification Setting
@@ -933,13 +933,18 @@ impl GdsLibrary {
             ..Default::default()
         }
     }
-    /// Read a GDS loaded from file at path `file_name`
-    pub fn load(file_name: &str) -> GdsResult<GdsLibrary> {
-        // Create the parser
-        let mut me = GdsParser::open(file_name)?;
-        // And parse it to a library-tree
-        me.parse_lib()
+    /// Read a GDS loaded from file at path `fname`
+    pub fn load(fname: &str) -> GdsResult<GdsLibrary> {
+        // Create the parser, and parse a Library
+        GdsParser::open(fname)?.parse_lib()
     }
+    /// Read a [GdsLibrary] from byte-vector `bytes`
+    pub fn from_bytes(bytes: Vec<u8>) -> GdsResult<GdsLibrary> {
+        // Create the parser, and parse a Library
+        GdsParser::from_bytes(bytes)?.parse_lib()
+    }
+    /// Run a first-pass scan of GDSII data in `fname`.
+    /// Returns a vector of [GdsStructScan]s including summary info per struct.
     pub fn scan(fname: &str) -> GdsResult<Vec<GdsStructScan>> {
         GdsScanner::scan(fname)
     }
@@ -1096,7 +1101,6 @@ impl From<&str> for GdsError {
 #[cfg(any(test, feature = "selftest"))]
 /// Check `lib` matches across a write-read round-trip cycle
 pub fn roundtrip(lib: &GdsLibrary) -> GdsResult<()> {
-    use read::GdsReader;
     use tempfile::tempfile;
 
     // Write to a temporary file
@@ -1105,9 +1109,10 @@ pub fn roundtrip(lib: &GdsLibrary) -> GdsResult<()> {
 
     // Rewind to the file-start, and read it back
     file.seek(SeekFrom::Start(0))?;
-    let rdr = GdsReader::from_file(file)?;
-    let mut parser = GdsParser::new(rdr)?;
-    let lib2 = parser.parse_lib()?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)?;
+    let lib2 = GdsLibrary::from_bytes(bytes)?;
+
     // And check the two line up
     assert_eq!(*lib, lib2);
     Ok(())

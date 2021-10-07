@@ -2,9 +2,6 @@
 //! # Gds21 Reading & Scanning
 //!
 
-// Crates.io
-use memmap::Mmap;
-
 // Local imports
 use super::*;
 
@@ -16,32 +13,23 @@ pub struct GdsReader {
     /// Read/conversion buffer
     buf: [u8; READER_BUFSIZE],
     /// File being read
-    file: Cursor<Mmap>,
-    // Note: past/alternate versions use an API-compatible [BufReader<File>], like so:
-    // file: BufReader<File>,
-    // Both implement the [Read] and [Seek] traits required by most of [GdsReader]'s methods.
-    // The memory-mapping is *much* faster for initial scanning,
-    // as [BufReader] seems to have an extra-slow [Seek] implementation.
-    // This comes at the cost of injecting the memory-un-safety of loading the [Mmap].
+    file: Cursor<Vec<u8>>, // FIXME: use &[u8], when we get around to piping around all the lifetimes.
 }
 impl GdsReader {
     /// Create a [GdsReader], opening [File] at path `fname`
     pub fn open(fname: &str) -> GdsResult<GdsReader> {
-        Self::from_file(File::open(fname)?)
-    }
-    /// Create a [GdsReader] of [File] `file`
-    pub fn from_file(file: File) -> GdsResult<GdsReader> {
-        // This is our one line of `unsafe`, for loading memory-mapped data.
-        let mmap = unsafe { Mmap::map(&file)? };
-        let cursor = Cursor::new(mmap);
+        let bytes = std::fs::read(fname)?;
+        let cursor = Cursor::new(bytes);
         Ok(Self::new(cursor))
     }
+    /// Create a [GdsReader] of `bytes`
+    pub fn from_bytes(bytes: Vec<u8>) -> GdsReader {
+        Self::new(Cursor::new(bytes))
+    }
     /// Create a [GdsReader] of `file`
-    pub fn new(file: Cursor<Mmap>) -> GdsReader {
-        GdsReader {
-            file,
-            buf: [0; READER_BUFSIZE],
-        }
+    pub fn new(file: Cursor<Vec<u8>>) -> GdsReader {
+        let buf = [0; READER_BUFSIZE];
+        GdsReader { file, buf }
     }
     /// Read the next record-header from our file.
     /// Returns a [GdsRecordHeader] if successful.
@@ -399,6 +387,11 @@ impl GdsParser {
     /// Create a new GdsReader iterator for the file at path `fname`
     pub fn open(fname: &str) -> GdsResult<GdsParser> {
         let rdr = GdsReader::open(fname)?;
+        Self::new(rdr)
+    }
+    /// Create a new GdsReader iterator for the byte-vector `bytes`
+    pub fn from_bytes(bytes: Vec<u8>) -> GdsResult<GdsParser> {
+        let rdr = GdsReader::from_bytes(bytes);
         Self::new(rdr)
     }
     /// Create a new GdsReader iterator
