@@ -380,7 +380,7 @@ mod tests {
     }
 
     #[test]
-    fn abstrakt_port() {
+    fn abs_port() {
         let r = AbstractPort {
             net: "abs_port_name".into(),
             shapes: vec![LayerShapes::default()],
@@ -401,7 +401,7 @@ mod tests {
         assert_eq!(r, rt);
     }
     #[test]
-    fn abstrakt() {
+    fn abs() {
         let r = Abstract {
             name: "abs".into(),
             outline: Some(Polygon {

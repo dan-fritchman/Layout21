@@ -23,7 +23,7 @@ use crate::stack::RelZ;
 
 /// Abstract-Layout
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LayoutAbstract {
+pub struct Abstract {
     /// Cell Name
     pub name: String,
     /// Outline in "Tetris-Shapes"
@@ -33,7 +33,7 @@ pub struct LayoutAbstract {
     /// Ports
     pub ports: Vec<Port>,
 }
-impl LayoutAbstract {
+impl Abstract {
     /// Create a new abstract layout. No ports are initially defined.
     pub fn new(name: impl Into<String>, metals: usize, outline: outline::Outline) -> Self {
         Self {

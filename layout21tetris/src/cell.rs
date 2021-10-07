@@ -3,7 +3,7 @@
 //!
 //! Defines the [Cell] type, which represents a multi-viewed piece of reusable hardware.
 //! [Cell]s can, and generally do, have one or more associated "views",
-//! including [LayoutAbstract]s, [LayoutImpl], interface definitions, and/or "raw" layouts.
+//! including [Abstract]s, [Layout], interface definitions, and/or "raw" layouts.
 //!
 
 // Crates.io
@@ -16,7 +16,7 @@ use crate::placement::{Place, Placeable};
 use crate::raw::{Dir, LayoutError, LayoutResult};
 use crate::stack::{Assign, RelZ};
 use crate::utils::{Ptr, PtrList};
-use crate::{abstrakt, interface, outline, raw, tracks};
+use crate::{abs, interface, outline, raw, tracks};
 
 /// # Layout Cell Implementation
 ///
@@ -24,7 +24,7 @@ use crate::{abstrakt, interface, outline, raw, tracks};
 ///
 #[derive(Debug, Clone, Builder)]
 #[builder(pattern = "owned", setter(into))]
-pub struct LayoutImpl {
+pub struct Layout {
     /// Cell Name
     pub name: String,
     /// Number of Metal Layers Used
@@ -45,11 +45,11 @@ pub struct LayoutImpl {
     #[builder(default)]
     pub places: Vec<Placeable>,
 }
-impl LayoutImpl {
-    /// Create a new [LayoutImpl]
+impl Layout {
+    /// Create a new [Layout]
     pub fn new(name: impl Into<String>, metals: usize, outline: outline::Outline) -> Self {
         let name = name.into();
-        LayoutImpl {
+        Layout {
             name,
             metals,
             outline,
@@ -59,9 +59,9 @@ impl LayoutImpl {
             places: Vec::new(),
         }
     }
-    /// Create a [LayoutImplBuilder], a struct created by the [Builder] macro.
-    pub fn builder() -> LayoutImplBuilder {
-        LayoutImplBuilder::default()
+    /// Create a [LayoutBuilder], a struct created by the [Builder] macro.
+    pub fn builder() -> LayoutBuilder {
+        LayoutBuilder::default()
     }
     /// Assign a net at the given coordinates.
     pub fn assign(
@@ -100,11 +100,11 @@ impl LayoutImpl {
 }
 /// A short-term handle for chaining multiple assignments to a net
 /// Typically used as: `mycell.net("name").at(/* args */).at(/* more args */)`
-/// Takes an exclusive reference to its parent [LayoutImpl],
+/// Takes an exclusive reference to its parent [Layout],
 /// so generally must be dropped quickly to avoid locking it up.
 pub struct NetHandle<'h> {
     name: String,
-    parent: &'h mut LayoutImpl,
+    parent: &'h mut Layout,
 }
 impl<'h> NetHandle<'h> {
     /// Assign our net at the given coordinates.
@@ -125,7 +125,7 @@ pub struct RawLayoutPtr {
     /// Pointer to the raw Library
     pub lib: Ptr<raw::Library>,
     /// Pointer to the raw Cell
-    pub cell: Ptr<raw::CellBag>,
+    pub cell: Ptr<raw::Cell>,
 }
 /// # Cell View Enumeration
 /// All of the ways in which a Cell is represented
@@ -133,8 +133,8 @@ pub struct RawLayoutPtr {
 #[derive(Debug, Clone)]
 pub enum CellView {
     Interface(interface::Bundle),
-    LayoutAbstract(abstrakt::LayoutAbstract),
-    LayoutImpl(LayoutImpl),
+    Abstract(abs::Abstract),
+    Layout(Layout),
     RawLayoutPtr(RawLayoutPtr),
 }
 /// Empty trait, largely for auto-generation of [From] and [Into] implementations.
@@ -143,23 +143,23 @@ trait CellViewable {}
 
 /// Collection of the Views describing a Cell
 #[derive(Debug, Default, Clone)]
-pub struct CellBag {
+pub struct Cell {
     /// Cell Name
     pub name: String,
     /// Interface
     pub interface: Option<interface::Bundle>,
     /// Layout Abstract
-    pub abstrakt: Option<abstrakt::LayoutAbstract>,
+    pub abs: Option<abs::Abstract>,
     /// Layout Implementation
-    pub layout: Option<LayoutImpl>,
+    pub layout: Option<Layout>,
     /// Raw Layout
     /// FIXME: this should probably move "up" a level,
     /// so that cells are either defined as `raw` or `tetris` implementations,
     /// but not both
     pub raw: Option<RawLayoutPtr>,
 }
-impl CellBag {
-    /// Create a new and initially empty [CellBag]
+impl Cell {
+    /// Create a new and initially empty [Cell]
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
@@ -173,10 +173,10 @@ impl CellBag {
             CellView::Interface(x) => {
                 self.interface.replace(x);
             }
-            CellView::LayoutAbstract(x) => {
-                self.abstrakt.replace(x);
+            CellView::Abstract(x) => {
+                self.abs.replace(x);
             }
-            CellView::LayoutImpl(x) => {
+            CellView::Layout(x) => {
                 self.layout.replace(x);
             }
             CellView::RawLayoutPtr(x) => {
@@ -199,7 +199,7 @@ impl CellBag {
         // (although if there are more than one, they better be the same...
         // FIXME: this should be a validation step.)
         // Overall this method probably should move to a "validated" cell in which each view is assured consistent.
-        if let Some(ref x) = self.abstrakt {
+        if let Some(ref x) = self.abs {
             Ok(&x.outline)
         } else if let Some(ref x) = self.layout {
             Ok(&x.outline)
@@ -217,7 +217,7 @@ impl CellBag {
     /// Return whichever view highest-prioritorily dictates the top-layer
     pub fn metals(&self) -> LayoutResult<usize> {
         // FIXME: same commentary as `outline` above
-        if let Some(ref x) = self.abstrakt {
+        if let Some(ref x) = self.abs {
             Ok(x.metals)
         } else if let Some(ref x) = self.layout {
             Ok(x.metals)
@@ -238,17 +238,17 @@ impl CellBag {
         }
     }
 }
-impl From<CellView> for CellBag {
+impl From<CellView> for Cell {
     fn from(src: CellView) -> Self {
         match src {
             CellView::Interface(x) => x.into(),
-            CellView::LayoutAbstract(x) => x.into(),
-            CellView::LayoutImpl(x) => x.into(),
+            CellView::Abstract(x) => x.into(),
+            CellView::Layout(x) => x.into(),
             CellView::RawLayoutPtr(x) => x.into(),
         }
     }
 }
-impl From<interface::Bundle> for CellBag {
+impl From<interface::Bundle> for Cell {
     fn from(src: interface::Bundle) -> Self {
         Self {
             name: src.name.clone(),
@@ -257,17 +257,17 @@ impl From<interface::Bundle> for CellBag {
         }
     }
 }
-impl From<abstrakt::LayoutAbstract> for CellBag {
-    fn from(src: abstrakt::LayoutAbstract) -> Self {
+impl From<abs::Abstract> for Cell {
+    fn from(src: abs::Abstract) -> Self {
         Self {
             name: src.name.clone(),
-            abstrakt: Some(src),
+            abs: Some(src),
             ..Default::default()
         }
     }
 }
-impl From<LayoutImpl> for CellBag {
-    fn from(src: LayoutImpl) -> Self {
+impl From<Layout> for Cell {
+    fn from(src: Layout) -> Self {
         Self {
             name: src.name.clone(),
             layout: Some(src),
@@ -275,7 +275,7 @@ impl From<LayoutImpl> for CellBag {
         }
     }
 }
-impl From<RawLayoutPtr> for CellBag {
+impl From<RawLayoutPtr> for Cell {
     fn from(src: RawLayoutPtr) -> Self {
         let name = {
             let cell = src.cell.read().unwrap();
@@ -295,7 +295,7 @@ pub struct Instance {
     /// Instance Name
     pub inst_name: String,
     /// Cell Definition Reference
-    pub cell: Ptr<CellBag>,
+    pub cell: Ptr<Cell>,
     /// Location of the Instance origin
     /// This origin-position holds regardless of either `reflect` field.
     /// If specified in absolute coordinates, location-units are [PrimPitches].

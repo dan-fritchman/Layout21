@@ -322,9 +322,9 @@ pub enum FlipMode {
 pub enum PrimitiveMode {
     /// Owned by Primitives
     Prim,
-    /// Partially split between Primitives and Stack 
+    /// Partially split between Primitives and Stack
     Split,
-    /// Owned by the Stack 
+    /// Owned by the Stack
     Stack,
 }
 /// Description of the primitive-level cells in a [Stack]

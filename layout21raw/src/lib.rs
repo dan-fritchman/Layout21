@@ -64,8 +64,12 @@ pub enum LayoutError {
     Validation,
     /// Boxed External Errors
     Boxed(Box<dyn std::error::Error>),
-    /// Uncategorized Error with Message
+    /// Uncategorized Error, with String Message
     Str(String),
+    /// # [Ptr] Locking
+    /// Caused by trouble with a [Ptr]: either deadlock, or panic while holding a lock.
+    /// Generally caused by a [std::sync::PoisonError], which is not forwardable due to lifetime constraints.
+    PtrLock,
     /// Everything to be categorized
     Tbd,
 }
@@ -96,6 +100,7 @@ impl std::fmt::Debug for LayoutError {
             ),
             LayoutError::Boxed(err) => err.fmt(f),
             LayoutError::Str(err) => err.fmt(f),
+            LayoutError::PtrLock => write!(f, "[std::sync::PoisonError]"),
             LayoutError::Validation => write!(f, "Error in Validation"),
             LayoutError::Tbd => write!(f, "Uncategorized LayoutError"),
         }
@@ -103,8 +108,8 @@ impl std::fmt::Debug for LayoutError {
 }
 impl std::fmt::Display for LayoutError {
     /// Display a [LayoutError]
+    /// Delegates to the [Debug] implementation
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        // Delegates to the [Debug] implementation
         std::fmt::Debug::fmt(self, f)
     }
 }
@@ -139,7 +144,7 @@ impl From<utils::ser::Error> for LayoutError {
 }
 impl<T> From<std::sync::PoisonError<T>> for LayoutError {
     fn from(_e: std::sync::PoisonError<T>) -> Self {
-        Self::Tbd // FIXME! Can't be boxed due to type lifetime.
+        Self::PtrLock
     }
 }
 impl<T: std::error::Error + 'static> From<Box<T>> for LayoutError {
@@ -295,7 +300,7 @@ pub struct Instance {
     /// Instance Name
     pub inst_name: String,
     /// Cell Definition Reference
-    pub cell: Ptr<CellBag>,
+    pub cell: Ptr<Cell>,
     /// Location of `cell` origin
     /// regardless of rotation or reflection
     pub loc: Point,
@@ -494,7 +499,7 @@ impl Layer {
 /// Contains geometric [Element]s generally representing pins and blockages
 /// Does not contain instances, arrays, or layout-implementation details
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LayoutAbstract {
+pub struct Abstract {
     /// Cell Name
     pub name: String,
     /// Outline
@@ -504,8 +509,8 @@ pub struct LayoutAbstract {
     /// Blockages
     pub blockages: HashMap<LayerKey, Vec<Shape>>,
 }
-impl LayoutAbstract {
-    /// Create a new [LayoutAbstract] with the given `name`
+impl Abstract {
+    /// Create a new [Abstract] with the given `name`
     pub fn new(name: impl Into<String>, outline: Element) -> Self {
         let name = name.into();
         Self {
@@ -546,7 +551,7 @@ pub struct Library {
     /// Layer Definitions
     pub layers: Ptr<Layers>,
     /// Cell Definitions
-    pub cells: PtrList<CellBag>,
+    pub cells: PtrList<Cell>,
 }
 impl Library {
     /// Create a new and empty Library
@@ -598,11 +603,11 @@ impl Library {
 pub struct DepOrder<'lib> {
     // FIXME: move to utils shared version
     lib: &'lib Library,
-    stack: Vec<Ptr<CellBag>>,
-    seen: HashSet<Ptr<CellBag>>,
+    stack: Vec<Ptr<Cell>>,
+    seen: HashSet<Ptr<Cell>>,
 }
 impl<'lib> DepOrder<'lib> {
-    fn order(lib: &'lib Library) -> Vec<Ptr<CellBag>> {
+    fn order(lib: &'lib Library) -> Vec<Ptr<Cell>> {
         let mut myself = Self {
             lib,
             stack: Vec::new(),
@@ -613,7 +618,7 @@ impl<'lib> DepOrder<'lib> {
         }
         myself.stack
     }
-    fn push(&mut self, ptr: &Ptr<CellBag>) {
+    fn push(&mut self, ptr: &Ptr<Cell>) {
         // If the Cell hasn't already been visited, depth-first search it
         if !self.seen.contains(&ptr) {
             // Read the cell-pointer
@@ -633,16 +638,16 @@ impl<'lib> DepOrder<'lib> {
 
 /// Collection of the Views describing a Cell
 #[derive(Debug, Default, Clone)]
-pub struct CellBag {
+pub struct Cell {
     // Cell Name
     pub name: String,
     // Layout Abstract
-    pub abstrakt: Option<LayoutAbstract>,
+    pub abs: Option<Abstract>,
     // Layout Implementation
-    pub layout: Option<LayoutImpl>,
+    pub layout: Option<Layout>,
 }
-impl CellBag {
-    /// Create a new and empty CellBag named `name`
+impl Cell {
+    /// Create a new and empty Cell named `name`
     pub fn new(name: impl Into<String>) -> Self {
         let name = name.into();
         Self {
@@ -651,17 +656,17 @@ impl CellBag {
         }
     }
 }
-impl From<LayoutAbstract> for CellBag {
-    fn from(src: LayoutAbstract) -> Self {
+impl From<Abstract> for Cell {
+    fn from(src: Abstract) -> Self {
         Self {
             name: src.name.clone(),
-            abstrakt: Some(src),
+            abs: Some(src),
             ..Default::default()
         }
     }
 }
-impl From<LayoutImpl> for CellBag {
-    fn from(src: LayoutImpl) -> Self {
+impl From<Layout> for Cell {
+    fn from(src: Layout) -> Self {
         Self {
             name: src.name.clone(),
             layout: Some(src),
@@ -672,7 +677,7 @@ impl From<LayoutImpl> for CellBag {
 
 /// Raw-Layout Implementation
 #[derive(Debug, Clone, Default)]
-pub struct LayoutImpl {
+pub struct Layout {
     /// Cell Name
     pub name: String,
     /// Instances

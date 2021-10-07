@@ -11,8 +11,8 @@ use std::convert::{TryFrom, TryInto};
 // Local imports
 use crate::utils::{ErrorContext, ErrorHelper, Ptr};
 use crate::{
-    AbstractPort, CellBag, Element, Layer, LayerKey, LayerPurpose, Layers, LayoutAbstract,
-    LayoutError, LayoutResult, Library, Point, Shape, Units,
+    Abstract, AbstractPort, Cell, Element, Layer, LayerKey, LayerPurpose, Layers, LayoutError,
+    LayoutResult, Library, Point, Shape, Units,
 };
 use lef21;
 
@@ -41,7 +41,7 @@ impl<'lib> LefExporter<'lib> {
         for cell in self.lib.cells.iter() {
             let cell = cell.read()?;
             // Export cells that have abstracts
-            if let Some(ref a) = cell.abstrakt {
+            if let Some(ref a) = cell.abs {
                 lib.macros.push(self.export_abstract(a)?);
             }
         }
@@ -67,18 +67,18 @@ impl<'lib> LefExporter<'lib> {
         })
     }
     /// Convert a [Cell] to a [lef21::LefMacro] cell-definition
-    fn export_abstract(&mut self, abstrakt: &LayoutAbstract) -> LayoutResult<lef21::LefMacro> {
-        self.ctx.push(ErrorContext::Cell(abstrakt.name.clone()));
+    fn export_abstract(&mut self, abs: &Abstract) -> LayoutResult<lef21::LefMacro> {
+        self.ctx.push(ErrorContext::Cell(abs.name.clone()));
         // Create the empty/default [lef21::LefMacro]
         let mut lefmac = lef21::LefMacro::default();
         // Convert our name
-        lefmac.name = abstrakt.name.clone();
+        lefmac.name = abs.name.clone();
         // Convert ports
-        for port in &abstrakt.ports {
+        for port in &abs.ports {
             lefmac.pins.push(self.export_port(port)?);
         }
         // Convert blockages
-        for (layerkey, blockage) in &abstrakt.blockages {
+        for (layerkey, blockage) in &abs.blockages {
             let obs = self.export_layer_shapes(*layerkey, blockage)?;
             lefmac.obs.push(obs);
         }
@@ -239,16 +239,16 @@ impl LefImporter {
         self.ctx.pop();
         Ok(Units::Angstrom)
     }
-    /// Import a [CellBag]
-    fn import_cell(&mut self, lefmacro: &lef21::LefMacro) -> LayoutResult<CellBag> {
+    /// Import a [Cell]
+    fn import_cell(&mut self, lefmacro: &lef21::LefMacro) -> LayoutResult<Cell> {
         self.ctx.push(ErrorContext::Cell(lefmacro.name.clone()));
-        let abstrakt = self.import_abstract(&lefmacro)?;
-        let cell = CellBag::from(abstrakt);
+        let abs = self.import_abstract(&lefmacro)?;
+        let cell = Cell::from(abs);
         self.ctx.pop();
         Ok(cell)
     }
-    /// Import a [LayoutAbstract]
-    fn import_abstract(&mut self, lefmacro: &lef21::LefMacro) -> LayoutResult<LayoutAbstract> {
+    /// Import a [Abstract]
+    fn import_abstract(&mut self, lefmacro: &lef21::LefMacro) -> LayoutResult<Abstract> {
         self.ctx.push(ErrorContext::Abstract);
         // Create an outline-rectangle.
         let outline = {
@@ -280,12 +280,12 @@ impl LefImporter {
                 },
             }
         };
-        // Create the [LayoutAbstract] to be returned
-        let mut abstrakt = LayoutAbstract::new(&lefmacro.name, outline);
+        // Create the [Abstract] to be returned
+        let mut abs = Abstract::new(&lefmacro.name, outline);
         // Import all pins
         for lefpin in &lefmacro.pins {
-            let abstrakt_port = self.import_pin(lefpin)?;
-            abstrakt.ports.push(abstrakt_port);
+            let abs_port = self.import_pin(lefpin)?;
+            abs.ports.push(abs_port);
         }
         // Import all obstructions
         for lefobs in &lefmacro.obs {
@@ -293,7 +293,7 @@ impl LefImporter {
             let (layerkey, shapes) = self.import_layer_geometries(lefobs)?;
 
             // Extend any existing entry on this layer, or create a new one
-            match abstrakt.blockages.entry(layerkey) {
+            match abs.blockages.entry(layerkey) {
                 Entry::Occupied(mut e) => e.get_mut().extend(shapes),
                 Entry::Vacant(e) => {
                     e.insert(shapes);
@@ -301,11 +301,11 @@ impl LefImporter {
             }
         }
         self.ctx.pop();
-        Ok(abstrakt)
+        Ok(abs)
     }
     /// Import a [LefPin]
     fn import_pin(&mut self, lefpin: &lef21::LefPin) -> LayoutResult<AbstractPort> {
-        let mut abstrakt_port = AbstractPort::new(&lefpin.name);
+        let mut abs_port = AbstractPort::new(&lefpin.name);
         // The LEF "pin vs port" distinction is not a thing here.
         // Only single-port pins can be imported.
         if lefpin.ports.len() != 1 {
@@ -321,7 +321,7 @@ impl LefImporter {
         for port in &lefpin.ports {
             for lef_layer_geom in &port.layers {
                 let (layerkey, shapes) = self.import_layer_geometries(lef_layer_geom)?;
-                match abstrakt_port.shapes.entry(layerkey) {
+                match abs_port.shapes.entry(layerkey) {
                     Entry::Occupied(mut e) => e.get_mut().extend(shapes),
                     Entry::Vacant(e) => {
                         e.insert(shapes);
@@ -329,7 +329,7 @@ impl LefImporter {
                 }
             }
         }
-        Ok(abstrakt_port)
+        Ok(abs_port)
     }
     /// Import a layer's-worth of shapes.
     /// Returns a tuple of (layerkey, shapes)
@@ -480,7 +480,7 @@ mod tests {
     fn test_lef1() -> LayoutResult<()> {
         use crate::utils::{Ptr, PtrList};
         let layers = crate::tests::layers()?;
-        let a = LayoutAbstract {
+        let a = Abstract {
             name: "to_lef1".into(),
             outline: Element {
                 net: None,

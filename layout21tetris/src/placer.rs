@@ -9,7 +9,7 @@ use std::convert::TryFrom;
 
 // Local imports
 use crate::bbox::HasBoundBox;
-use crate::cell::{self, Instance, LayoutImpl};
+use crate::cell::{self, Instance, Layout};
 use crate::coords::{LayerPitches, PrimPitches, UnitSpeced, Xy};
 use crate::library::Library;
 use crate::placement::{
@@ -19,7 +19,7 @@ use crate::raw::{Dir, LayoutError, LayoutResult};
 use crate::utils::{DepOrder, DepOrderer, ErrorContext, ErrorHelper, Ptr};
 use crate::validate::ValidStack;
 use crate::{
-    abstrakt, stack,
+    abs, stack,
     tracks::{TrackIntersection, TrackRef},
 };
 
@@ -57,8 +57,8 @@ impl Placer {
         self.ctx.pop();
         Ok(())
     }
-    /// Update placements for [LayoutImpl] `layout`
-    fn place_layout(&mut self, layout: &mut LayoutImpl) -> LayoutResult<()> {
+    /// Update placements for [Layout] `layout`
+    fn place_layout(&mut self, layout: &mut Layout) -> LayoutResult<()> {
         self.ctx.push(ErrorContext::Impl);
 
         // Move `instances` and `places` into one vector of [Placeable]s
@@ -386,7 +386,7 @@ impl Placer {
         // Get the track on `newlayer` closest to `par`
         let new_track: TrackRef = self.convert_track_layer(&par, newlayer)?;
 
-        // And get the above/below indicator required for `TrackIntersection` 
+        // And get the above/below indicator required for `TrackIntersection`
         let relz = if cross.layer == new_track.layer + 1 {
             Ok(stack::RelZ::Above)
         } else if cross.layer == new_track.layer - 1 {
@@ -407,12 +407,12 @@ impl Placer {
     }
     /// Resolve a location of [Instance] `inst` relative to its [RelativePlace] `rel`.
     fn locate_instance_port(&mut self, inst: &Instance, portname: &str) -> LayoutResult<PortLoc> {
-        // Port locations are only valid for Cells with Abstrakt definitions. Otherwise fail.
+        // Port locations are only valid for Cells with Abs definitions. Otherwise fail.
         let cell = inst.cell.read()?; // Note `cell` is alive for the duration of this function
         let abs = self.unwrap(
-            cell.abstrakt.as_ref(),
+            cell.abs.as_ref(),
             format!(
-                "Cannot Location Port {} on Cell {} with no Abstrakt View",
+                "Cannot Location Port {} on Cell {} with no Abs View",
                 portname, cell.name
             ),
         )?;
@@ -423,8 +423,8 @@ impl Placer {
         )?;
 
         let loc = match &port.kind {
-            abstrakt::PortKind::Edge { .. /*layer, track, side*/ } => unimplemented!(),
-            abstrakt::PortKind::ZTopEdge { track, side, into } => {
+            abs::PortKind::Edge { .. /*layer, track, side*/ } => unimplemented!(),
+            abs::PortKind::ZTopEdge { track, side, into } => {
                 let top_metal = self.unwrap(cell.top_metal()?, "No metal layers")?;
                 let (dir, nsignals) = {
                     // Get relevant data from our [Layer], and quickly drop a reference to it.
@@ -469,10 +469,10 @@ impl Placer {
                     let into = into.0;
                     // And sort out the orthogonal range, based on location, size, and `into` tracks 
                     match (side, inst.reflected(dir)) {
-                        (abstrakt::Side::BottomOrLeft, false)=> (loc, loc+into),
-                        (abstrakt::Side::BottomOrLeft, true)=> (loc-into, loc),
-                        (abstrakt::Side::TopOrRight, false)=> (loc+into, loc+size),
-                        (abstrakt::Side::TopOrRight, true)=> (loc-size, loc-into),
+                        (abs::Side::BottomOrLeft, false)=> (loc, loc+into),
+                        (abs::Side::BottomOrLeft, true)=> (loc-into, loc),
+                        (abs::Side::TopOrRight, false)=> (loc+into, loc+size),
+                        (abs::Side::TopOrRight, true)=> (loc-size, loc-into),
                     }
                 };
 
@@ -494,7 +494,7 @@ impl Placer {
                     ),
                 }
             }
-            abstrakt::PortKind::ZTopInner { .. } => unimplemented!(),
+            abs::PortKind::ZTopInner { .. } => unimplemented!(),
         };
         Ok(loc)
     }
@@ -555,7 +555,7 @@ impl Placer {
     }
 }
 
-/// Resolved Locations corresponding to [abstrakt::PortKind]s
+/// Resolved Locations corresponding to [abs::PortKind]s
 #[derive(Debug, Clone)]
 pub enum PortLoc {
     Edge {
@@ -649,7 +649,7 @@ mod tests {
 
         let mut lib = Library::new("test_place2");
         // Create a unit cell which we'll instantiate a few times
-        let unit = LayoutImpl::new("unit", 0, Outline::rect(3, 7)?);
+        let unit = Layout::new("unit", 0, Outline::rect(3, 7)?);
         let unit = lib.cells.add(unit);
         // Create an initial instance
         let i0 = Instance {
@@ -660,7 +660,7 @@ mod tests {
             reflect_vert: false,
         };
         // Create the parent cell which instantiates it
-        let mut parent = LayoutImpl::new("parent", 0, Outline::rect(100, 100)?);
+        let mut parent = Layout::new("parent", 0, Outline::rect(100, 100)?);
         let i0 = parent.instances.add(i0);
         // Create another Instance, placed relative to `i0`
         let i1 = Instance {
@@ -964,10 +964,10 @@ mod tests {
     }
     pub struct SampleLib {
         pub lib: Library,
-        pub big: Ptr<cell::CellBag>,
+        pub big: Ptr<cell::Cell>,
         pub ibig: Ptr<cell::Instance>,
-        pub lil: Ptr<cell::CellBag>,
-        pub parent: LayoutImpl,
+        pub lil: Ptr<cell::Cell>,
+        pub parent: Layout,
     }
     impl SampleLib {
         /// Get a sample library with test cells `big`, `lil`, and `parent`.
@@ -975,10 +975,10 @@ mod tests {
         pub fn get() -> LayoutResult<SampleLib> {
             let mut lib = Library::new("_rename_me_plz_");
             // Create a big center cell
-            let big = LayoutImpl::new("big", 1, Outline::rect(11, 12)?);
+            let big = Layout::new("big", 1, Outline::rect(11, 12)?);
             let big = lib.cells.add(big);
             // Create the parent cell which instantiates it
-            let mut parent = LayoutImpl::new("parent", 3, Outline::rect(40, 35)?);
+            let mut parent = Layout::new("parent", 3, Outline::rect(40, 35)?);
             // Create an initial instance
             let ibig = Instance {
                 inst_name: "ibig".into(),
@@ -989,18 +989,18 @@ mod tests {
             };
             let ibig = parent.instances.add(ibig);
             // Create a unit cell which we'll instantiate a few times around `ibig`
-            let mut lil = cell::CellBag::new("lil");
-            lil.layout = Some(LayoutImpl::new("lil", 1, Outline::rect(2, 1)?));
-            let mut lil_abstrakt = abstrakt::LayoutAbstract::new("lil", 1, Outline::rect(2, 1)?);
-            lil_abstrakt.ports.push(abstrakt::Port {
+            let mut lil = cell::Cell::new("lil");
+            lil.layout = Some(Layout::new("lil", 1, Outline::rect(2, 1)?));
+            let mut lil_abs = abs::Abstract::new("lil", 1, Outline::rect(2, 1)?);
+            lil_abs.ports.push(abs::Port {
                 name: "PPP".into(),
-                kind: abstrakt::PortKind::ZTopEdge {
+                kind: abs::PortKind::ZTopEdge {
                     track: 0,
-                    side: abstrakt::Side::BottomOrLeft,
+                    side: abs::Side::BottomOrLeft,
                     into: (2, stack::RelZ::Above),
                 },
             });
-            lil.abstrakt = Some(lil_abstrakt);
+            lil.abs = Some(lil_abs);
             let lil = lib.cells.add(lil);
             Ok(SampleLib {
                 lib,

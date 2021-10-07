@@ -11,7 +11,7 @@ use std::fmt::Debug;
 use slotmap::{new_key_type, SlotMap};
 
 // Local imports
-use crate::cell::{Instance, LayoutImpl};
+use crate::cell::{Instance, Layout};
 use crate::coords::{DbUnits, HasUnits, PrimPitches, UnitSpeced, Xy};
 use crate::library::Library;
 use crate::outline::Outline;
@@ -20,7 +20,7 @@ use crate::stack::{LayerPeriod, RelZ};
 use crate::tracks::{Track, TrackSegmentType};
 use crate::utils::{ErrorContext, ErrorHelper};
 use crate::utils::{Ptr, PtrList};
-use crate::{abstrakt, cell, validate};
+use crate::{abs, cell, validate};
 
 // Create key-types for each internal type stored in [SlotMap]s
 new_key_type! {
@@ -31,7 +31,7 @@ new_key_type! {
 #[derive(Debug, Clone)]
 struct TempCell<'lib> {
     /// Reference to the source [Cell]
-    cell: &'lib LayoutImpl,
+    cell: &'lib Layout,
     /// Reference to the source [Library]
     lib: &'lib Library,
     /// Instances and references to their definitions
@@ -82,9 +82,9 @@ pub struct RawExporter {
     lib: Library,
     /// Source (validated) [Stack]
     stack: validate::ValidStack,
-    /// HashMap from source [CellBag] to exported [raw::CellBag],
+    /// HashMap from source [Cell] to exported [raw::Cell],
     /// largely for lookup during conversion of [Instance]s
-    rawcells: HashMap<Ptr<cell::CellBag>, Ptr<raw::CellBag>>,
+    rawcells: HashMap<Ptr<cell::Cell>, Ptr<raw::Cell>>,
     /// Context stack, largely for error reporting
     ctx: Vec<ErrorContext>,
 }
@@ -154,7 +154,7 @@ impl<'lib> RawExporter {
         {
             // Get write-access to the raw-lib
             let mut rawlib = rawlibptr.write()?;
-            // Convert each defined [Cell] to a [raw::CellBag]
+            // Convert each defined [Cell] to a [raw::Cell]
             for srcptr in self.lib.dep_order() {
                 let rawptr = self.export_cell(&*srcptr.read()?, &mut rawlib.cells)?;
                 self.rawcells.insert(srcptr.clone(), rawptr);
@@ -163,19 +163,19 @@ impl<'lib> RawExporter {
         self.ctx.pop();
         Ok(rawlibptr)
     }
-    /// Convert a [CellBag] to a [raw::CellBag] and add to `rawcells`.
+    /// Convert a [Cell] to a [raw::Cell] and add to `rawcells`.
     /// FIXME: In reality only one of the cell-views is converted,
     /// generally the "most specific" available view.
     fn export_cell(
         &mut self,
-        cell: &cell::CellBag,
-        rawcells: &mut PtrList<raw::CellBag>,
-    ) -> LayoutResult<Ptr<raw::CellBag>> {
+        cell: &cell::Cell,
+        rawcells: &mut PtrList<raw::Cell>,
+    ) -> LayoutResult<Ptr<raw::Cell>> {
         if let Some(ref x) = cell.raw {
             // Raw definitions store the cell-pointer
             // Just return a copy of it and *don't* add it to `rawcells`
             // First check for validity, i.e. lack of alternate definitions
-            if cell.abstrakt.is_some() || cell.layout.is_some() {
+            if cell.abs.is_some() || cell.layout.is_some() {
                 // FIXME: move this to validation stages
                 return self.fail(format!(
                     "Cell {} has an invalid combination of raw-definition and tetris-definition",
@@ -184,7 +184,7 @@ impl<'lib> RawExporter {
             }
             return Ok(x.cell.clone());
         }
-        if cell.abstrakt.is_none() && cell.layout.is_none() {
+        if cell.abs.is_none() && cell.layout.is_none() {
             // FIXME: move this to validation stages
             return self.fail(format!(
                 "Cell {} has no abstract nor implementation",
@@ -193,19 +193,19 @@ impl<'lib> RawExporter {
         }
 
         // Create the raw-cell
-        let mut rawcell = raw::CellBag::new(&cell.name.to_string());
+        let mut rawcell = raw::Cell::new(&cell.name.to_string());
         // And create each defined view
         if let Some(ref x) = cell.layout {
             rawcell.layout = Some(self.export_layout_impl(x)?);
         }
-        if let Some(ref x) = cell.abstrakt {
-            rawcell.abstrakt = Some(self.export_abstract(x)?);
+        if let Some(ref x) = cell.abs {
+            rawcell.abs = Some(self.export_abstract(x)?);
         }
         // Add it to `rawcells`, and return the pointer that comes back
         Ok(rawcells.add(rawcell))
     }
     /// Convert to a raw layout cell
-    fn export_layout_impl(&self, layout: &LayoutImpl) -> LayoutResult<raw::LayoutImpl> {
+    fn export_layout_impl(&self, layout: &Layout) -> LayoutResult<raw::Layout> {
         if layout.outline.x.len() > 1 {
             return Err(LayoutError::Str(
                 "Non-rectangular outline; conversions not supported (yet)".into(),
@@ -237,8 +237,8 @@ impl<'lib> RawExporter {
                 self.export_instance(&*inst)
             })
             .collect::<Result<Vec<_>, _>>()?;
-        // Aaaand create our new [raw::CellBag]
-        Ok(raw::LayoutImpl {
+        // Aaaand create our new [raw::Cell]
+        Ok(raw::Layout {
             name: layout.name.clone(),
             insts,
             elems,
@@ -270,7 +270,7 @@ impl<'lib> RawExporter {
         })
     }
     /// Create a [TempCell], organizing [Cell] data in more-convenient fashion for conversion
-    fn temp_cell<'a>(&'a self, layout: &'a LayoutImpl) -> LayoutResult<TempCell<'a>> {
+    fn temp_cell<'a>(&'a self, layout: &'a Layout) -> LayoutResult<TempCell<'a>> {
         // Collect references to its instances
         let instances = layout.instances.clone();
         // Validate `cuts`, and arrange them by layer
@@ -431,18 +431,15 @@ impl<'lib> RawExporter {
         self.ok(res, "Error Assigning Track")?;
         Ok(())
     }
-    /// Convert a [LayoutAbstract] into raw form.
-    pub fn export_abstract(
-        &mut self,
-        abs: &abstrakt::LayoutAbstract,
-    ) -> LayoutResult<raw::LayoutAbstract> {
+    /// Convert a [Abstract] into raw form.
+    pub fn export_abstract(&mut self, abs: &abs::Abstract) -> LayoutResult<raw::Abstract> {
         self.ctx.push(ErrorContext::Abstract);
 
         // Create the outline-element, and grab a copy of its inner shape
         let outline = self.export_outline(&abs.outline)?;
         let outline_shape = outline.inner.clone();
         // Create the raw abstract
-        let mut rawabs = raw::LayoutAbstract::new(&abs.name, outline);
+        let mut rawabs = raw::Abstract::new(&abs.name, outline);
 
         // Draw a blockage on each layer, equal to the shape of the outline
         for layerindex in 0..abs.metals {
@@ -456,17 +453,17 @@ impl<'lib> RawExporter {
             let rawport = self.export_abstract_port(abs, port)?;
             rawabs.ports.push(rawport);
         }
-        // And return the [raw::LayoutAbstract]
+        // And return the [raw::Abstract]
         self.ctx.pop();
         Ok(rawabs)
     }
-    /// Convert an [abstrakt::Port] into raw form.
+    /// Convert an [abs::Port] into raw form.
     pub fn export_abstract_port(
         &mut self,
-        abs: &abstrakt::LayoutAbstract,
-        port: &abstrakt::Port,
+        abs: &abs::Abstract,
+        port: &abs::Port,
     ) -> LayoutResult<raw::AbstractPort> {
-        use abstrakt::PortKind::{Edge, ZTopEdge, ZTopInner};
+        use abs::PortKind::{Edge, ZTopEdge, ZTopInner};
 
         let (layerkey, shape): (raw::LayerKey, raw::Shape) = match &port.kind {
             Edge {
@@ -477,8 +474,8 @@ impl<'lib> RawExporter {
                 let layer = &self.stack.metal(*layer_index)?.spec;
                 // First get the "infinite dimension" coordinate from the edge
                 let infdims: (DbUnits, DbUnits) = match side {
-                    abstrakt::Side::BottomOrLeft => (DbUnits(0), DbUnits(100)),
-                    abstrakt::Side::TopOrRight => {
+                    abs::Side::BottomOrLeft => (DbUnits(0), DbUnits(100)),
+                    abs::Side::TopOrRight => {
                         // FIXME: this assumes rectangular outlines; will take some more work for polygons.
                         let outside = self.db_units(abs.outline.max(layer.dir));
                         (outside - DbUnits(100), outside)
@@ -503,7 +500,7 @@ impl<'lib> RawExporter {
             }
             ZTopEdge { track, side, into } => {
                 let top_metal = if abs.metals == 0 {
-                    self.fail("Abstrakt Port with no metal layers")
+                    self.fail("Abs Port with no metal layers")
                 } else {
                     Ok(abs.metals - 1)
                 }?;
@@ -516,8 +513,8 @@ impl<'lib> RawExporter {
                 let other_layer_center = other_layer.center(into.0)?;
                 // First get the "infinite dimension" coordinate from the edge
                 let infdims: (DbUnits, DbUnits) = match side {
-                    abstrakt::Side::BottomOrLeft => (DbUnits(0), other_layer_center),
-                    abstrakt::Side::TopOrRight => {
+                    abs::Side::BottomOrLeft => (DbUnits(0), other_layer_center),
+                    abs::Side::TopOrRight => {
                         // FIXME: this assumes rectangular outlines; will take some more work for polygons.
                         let outside = self.db_units(abs.outline.max(layer.dir));
                         (other_layer_center, outside)

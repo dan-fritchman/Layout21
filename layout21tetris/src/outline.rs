@@ -36,7 +36,7 @@ impl Outline {
     pub fn new(x: &[Int], y: &[Int]) -> LayoutResult<Self> {
         // Check that x and y are of compatible lengths
         if x.len() < 1 || x.len() != y.len() {
-            // FIXME: probably worth creating a specific error type 
+            // FIXME: probably worth creating a specific error type
             return Err(LayoutError::Validation);
         }
         // Check for:

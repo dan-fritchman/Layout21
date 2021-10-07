@@ -4,7 +4,7 @@
 
 // Local imports
 use crate::bbox::{BoundBox, HasBoundBox};
-use crate::cell::{CellBag, Instance};
+use crate::cell::{Cell, Instance};
 use crate::coords::{HasUnits, Int, PrimPitches, UnitSpeced, Xy};
 use crate::raw::{Dir, LayoutError, LayoutResult};
 use crate::utils::Ptr;
@@ -129,7 +129,7 @@ pub enum SepBy {
     /// Separated by [UnitSpeced]-distance in x and y, and by layers in z
     UnitSpeced(UnitSpeced),
     /// Separated by the size of another Cell
-    SizeOf(Ptr<CellBag>),
+    SizeOf(Ptr<Cell>),
 }
 /// Three-dimensional separation units
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -232,7 +232,7 @@ pub struct GroupInstance {
 #[derive(Debug, Clone)]
 pub enum Arrayable {
     /// Instance of a Cell
-    Instance(Ptr<CellBag>),
+    Instance(Ptr<Cell>),
     /// Uniform array of placeable elements
     Array(Ptr<Array>),
     /// Group of other placeable elements

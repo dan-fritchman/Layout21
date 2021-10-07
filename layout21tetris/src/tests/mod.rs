@@ -3,13 +3,13 @@
 //!
 
 // Local imports
-use super::cell::{self, Instance, LayoutImpl};
+use super::cell::{self, Instance, Layout};
 use super::library::Library;
 use super::outline::Outline;
 use super::raw::LayoutResult;
 use super::stack::*;
 use super::tracks::*;
-use super::{abstrakt, rawconv, validate::ValidStack};
+use super::{abs, rawconv, validate::ValidStack};
 
 use crate::utils::PtrList;
 
@@ -21,7 +21,7 @@ use stacks::SampleStacks;
 /// Create an empty cell
 #[test]
 fn empty_cell() -> LayoutResult<()> {
-    let c = LayoutImpl {
+    let c = Layout {
         name: "EmptyCell".into(),
         metals: 5,
         outline: Outline::rect(50, 5)?,
@@ -31,13 +31,13 @@ fn empty_cell() -> LayoutResult<()> {
         places: Vec::new(),
     };
     let mut lib = Library::new("EmptyCellLib");
-    let _c2 = lib.cells.insert(cell::CellBag::from(c));
+    let _c2 = lib.cells.insert(cell::Cell::from(c));
     exports(lib, SampleStacks::pdka()?)
 }
 /// Create a layout-implementation
 #[test]
 fn create_layout() -> LayoutResult<()> {
-    LayoutImpl {
+    Layout {
         name: "HereGoes".into(),
         metals: 4,
         outline: Outline::rect(50, 5)?,
@@ -61,7 +61,7 @@ fn create_layout() -> LayoutResult<()> {
 fn create_lib1() -> LayoutResult<()> {
     let mut lib = Library::new("lib1");
 
-    lib.cells.insert(LayoutImpl {
+    lib.cells.insert(Layout {
         name: "HereGoes".into(),
         metals: 3,
         outline: Outline::rect(50, 5)?,
@@ -121,10 +121,10 @@ fn create_lib1() -> LayoutResult<()> {
 #[test]
 fn create_lib2() -> LayoutResult<()> {
     let mut lib = Library::new("lib2");
-    let c2 = LayoutImpl::new("IsInst", 2, Outline::rect(100, 10)?);
+    let c2 = Layout::new("IsInst", 2, Outline::rect(100, 10)?);
     let c2 = lib.cells.insert(c2);
 
-    lib.cells.insert(LayoutImpl {
+    lib.cells.insert(Layout {
         name: "HasInst".into(),
         metals: 4,
         outline: Outline::rect(200, 20)?,
@@ -156,40 +156,40 @@ fn create_lib2() -> LayoutResult<()> {
 fn create_abstract() -> LayoutResult<()> {
     let outline = Outline::rect(11, 11)?;
     let ports = vec![
-        abstrakt::Port {
+        abs::Port {
             name: "edge_bot".into(),
-            kind: abstrakt::PortKind::Edge {
+            kind: abs::PortKind::Edge {
                 layer: 2,
                 track: 2,
-                side: abstrakt::Side::BottomOrLeft,
+                side: abs::Side::BottomOrLeft,
             },
         },
-        abstrakt::Port {
+        abs::Port {
             name: "edge_top".into(),
-            kind: abstrakt::PortKind::Edge {
+            kind: abs::PortKind::Edge {
                 layer: 2,
                 track: 4,
-                side: abstrakt::Side::TopOrRight,
+                side: abs::Side::TopOrRight,
             },
         },
-        abstrakt::Port {
+        abs::Port {
             name: "edge_left".into(),
-            kind: abstrakt::PortKind::Edge {
+            kind: abs::PortKind::Edge {
                 layer: 1,
                 track: 1,
-                side: abstrakt::Side::BottomOrLeft,
+                side: abs::Side::BottomOrLeft,
             },
         },
-        abstrakt::Port {
+        abs::Port {
             name: "edge_right".into(),
-            kind: abstrakt::PortKind::Edge {
+            kind: abs::PortKind::Edge {
                 layer: 1,
                 track: 5,
-                side: abstrakt::Side::TopOrRight,
+                side: abs::Side::TopOrRight,
             },
         },
     ];
-    abstrakt::LayoutAbstract {
+    abs::Abstract {
         name: "abstrack".into(),
         outline,
         metals: 4,
@@ -203,15 +203,15 @@ fn create_abstract() -> LayoutResult<()> {
 fn create_lib3() -> LayoutResult<()> {
     let mut lib = Library::new("lib3");
 
-    let c2 = lib.cells.insert(abstrakt::LayoutAbstract {
-        name: "IsAbstrakt".into(),
+    let c2 = lib.cells.insert(abs::Abstract {
+        name: "IsAbs".into(),
         metals: 1,
         outline: Outline::rect(100, 10)?,
         ports: Vec::new(),
     });
 
-    lib.cells.insert(LayoutImpl {
-        name: "HasAbstrakts".into(),
+    lib.cells.insert(Layout {
+        name: "HasAbss".into(),
         metals: 4,
         outline: Outline::rect(500, 50)?,
         instances: vec![

@@ -17,9 +17,8 @@ use std::convert::{TryFrom, TryInto};
 use crate::utils::Ptr;
 use crate::utils::{ErrorContext, ErrorHelper};
 use crate::{
-    AbstractPort, CellBag, DepOrder, Element, Instance, LayerKey, LayerPurpose, Layers,
-    LayoutAbstract, LayoutError, LayoutImpl, LayoutResult, Library, Point, Shape, TextElement,
-    Units,
+    Abstract, AbstractPort, Cell, DepOrder, Element, Instance, LayerKey, LayerPurpose, Layers,
+    Layout, LayoutError, LayoutResult, Library, Point, Shape, TextElement, Units,
 };
 pub use layout21protos as proto;
 
@@ -64,7 +63,7 @@ impl<'lib> ProtoExporter<'lib> {
         })
     }
     /// Convert a [Cell] to a [proto::Cell] cell-definition
-    fn export_cell(&mut self, cell: &CellBag) -> LayoutResult<proto::Cell> {
+    fn export_cell(&mut self, cell: &Cell) -> LayoutResult<proto::Cell> {
         self.ctx.push(ErrorContext::Cell(cell.name.clone()));
 
         let mut pcell = proto::Cell::default();
@@ -73,14 +72,14 @@ impl<'lib> ProtoExporter<'lib> {
         if let Some(ref lay) = cell.layout {
             pcell.layout = Some(self.export_layout(lay)?);
         }
-        if let Some(ref a) = cell.abstrakt {
+        if let Some(ref a) = cell.abs {
             pcell.r#abstract = Some(self.export_abstract(a)?);
         }
         self.ctx.pop();
         Ok(pcell)
     }
-    /// Convert a [LayoutAbstract]
-    fn export_abstract(&mut self, abs: &LayoutAbstract) -> LayoutResult<proto::Abstract> {
+    /// Convert a [Abstract]
+    fn export_abstract(&mut self, abs: &Abstract) -> LayoutResult<proto::Abstract> {
         self.ctx.push(ErrorContext::Abstract);
         // Create the new [proto::Abstract]
         let mut pabs = proto::Abstract::default();
@@ -138,8 +137,8 @@ impl<'lib> ProtoExporter<'lib> {
         }
         Ok(pport)
     }
-    /// Convert a [LayoutImpl] to a [proto::Cell] cell-definition
-    fn export_layout(&mut self, cell: &LayoutImpl) -> LayoutResult<proto::Layout> {
+    /// Convert a [Layout] to a [proto::Cell] cell-definition
+    fn export_layout(&mut self, cell: &Layout) -> LayoutResult<proto::Layout> {
         self.ctx.push(ErrorContext::Impl);
         // Create the empty/default [proto::Layout]
         let mut pcell = proto::Layout::default();
@@ -339,7 +338,7 @@ enum ProtoShape {
 pub struct ProtoImporter {
     pub layers: Ptr<Layers>,
     ctx: Vec<ErrorContext>,
-    cell_map: HashMap<String, Ptr<CellBag>>,
+    cell_map: HashMap<String, Ptr<Cell>>,
     lib: Library,
 }
 impl ProtoImporter {
@@ -395,27 +394,27 @@ impl ProtoImporter {
         self.ctx.pop();
         Ok(ours)
     }
-    /// Import a [CellBag]
-    fn import_cell(&mut self, pcell: &proto::Cell) -> LayoutResult<CellBag> {
+    /// Import a [Cell]
+    fn import_cell(&mut self, pcell: &proto::Cell) -> LayoutResult<Cell> {
         self.ctx.push(ErrorContext::Cell(pcell.name.clone()));
-        let mut cell = CellBag::new(&pcell.name);
+        let mut cell = Cell::new(&pcell.name);
         if let Some(ref lay) = pcell.layout {
             cell.layout = Some(self.import_layout(lay)?);
         }
         if let Some(ref a) = pcell.r#abstract {
-            cell.abstrakt = Some(self.import_abstract(a)?);
+            cell.abs = Some(self.import_abstract(a)?);
         }
         self.ctx.pop();
         Ok(cell)
     }
-    /// Import a [LayoutAbstract]
+    /// Import a [Abstract]
     #[allow(dead_code)] // FIXME!
-    fn import_abstract(&mut self, _pcell: &proto::Abstract) -> LayoutResult<LayoutAbstract> {
+    fn import_abstract(&mut self, _pcell: &proto::Abstract) -> LayoutResult<Abstract> {
         todo!()
     }
-    /// Import a [LayoutImpl]
-    fn import_layout(&mut self, pcell: &proto::Layout) -> LayoutResult<LayoutImpl> {
-        let mut cell = LayoutImpl::default();
+    /// Import a [Layout]
+    fn import_layout(&mut self, pcell: &proto::Layout) -> LayoutResult<Layout> {
+        let mut cell = Layout::default();
         let name = pcell.name.clone();
         cell.name = name.clone();
         self.ctx.push(ErrorContext::Impl);
@@ -519,7 +518,7 @@ impl ProtoImporter {
         })
     }
     /// Import a proto-defined pointer, AKA [proto::Reference]
-    fn import_reference(&mut self, pinst: &proto::Instance) -> LayoutResult<Ptr<CellBag>> {
+    fn import_reference(&mut self, pinst: &proto::Instance) -> LayoutResult<Ptr<Cell>> {
         // Mostly wind through protobuf-generated structures' layers of [Option]s
         let pref = self.unwrap(
             pinst.cell.as_ref(),
@@ -612,7 +611,7 @@ fn proto1() -> LayoutResult<()> {
         let mut layers = lib.layers.write()?;
         layers.get_or_insert(0, 0)?
     };
-    let c1 = lib.cells.insert(LayoutImpl {
+    let c1 = lib.cells.insert(Layout {
         name: "prt_cell".into(),
         elems: vec![
             Element {
@@ -648,7 +647,7 @@ fn proto1() -> LayoutResult<()> {
             string: "prt_text".into(),
         }],
     });
-    lib.cells.insert(LayoutImpl {
+    lib.cells.insert(Layout {
         name: "prt_cell_with_inst".into(),
         elems: Vec::new(),
         insts: vec![Instance {

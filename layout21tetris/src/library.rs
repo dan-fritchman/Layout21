@@ -19,7 +19,7 @@ pub struct Library {
     /// Library Name
     pub name: String,
     /// Cell Definitions
-    pub cells: PtrList<cell::CellBag>,
+    pub cells: PtrList<cell::Cell>,
     /// [raw::Library] Definitions
     pub rawlibs: PtrList<raw::Library>,
 }
@@ -35,8 +35,8 @@ impl Library {
     pub fn to_raw(self, stack: validate::ValidStack) -> LayoutResult<Ptr<raw::Library>> {
         rawconv::RawExporter::convert(self, stack)
     }
-    /// Add a [CellBag]
-    pub fn add_cell(&mut self, cell: cell::CellBag) -> Ptr<cell::CellBag> {
+    /// Add a [Cell]
+    pub fn add_cell(&mut self, cell: cell::Cell) -> Ptr<cell::Cell> {
         self.cells.insert(cell)
     }
     /// Add a [raw::Library]
@@ -44,7 +44,7 @@ impl Library {
         self.rawlibs.insert(rawlib)
     }
     /// Create an ordered list in which dependent cells follow their dependencies.
-    pub fn dep_order(&self) -> Vec<Ptr<cell::CellBag>> {
+    pub fn dep_order(&self) -> Vec<Ptr<cell::Cell>> {
         DepOrder::order(self)
     }
 }
@@ -57,11 +57,11 @@ impl Library {
 #[derive(Debug)]
 pub struct DepOrder<'lib> {
     lib: &'lib Library,
-    stack: Vec<Ptr<cell::CellBag>>,
-    seen: HashSet<Ptr<cell::CellBag>>,
+    stack: Vec<Ptr<cell::Cell>>,
+    seen: HashSet<Ptr<cell::Cell>>,
 }
 impl<'lib> DepOrder<'lib> {
-    fn order(lib: &'lib Library) -> Vec<Ptr<cell::CellBag>> {
+    fn order(lib: &'lib Library) -> Vec<Ptr<cell::Cell>> {
         let mut myself = Self {
             lib,
             stack: Vec::new(),
@@ -72,7 +72,7 @@ impl<'lib> DepOrder<'lib> {
         }
         myself.stack
     }
-    fn push(&mut self, ptr: &Ptr<cell::CellBag>) {
+    fn push(&mut self, ptr: &Ptr<cell::Cell>) {
         // If the Cell hasn't already been visited, depth-first search it
         if !self.seen.contains(&ptr) {
             // Read the cell-pointer

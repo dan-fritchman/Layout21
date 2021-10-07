@@ -54,7 +54,7 @@ impl RailKind {
 /// # Track "Specification" Entry
 ///
 /// Either a single entry, or repitition thereof.
-/// 
+///
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum TrackSpec {
     Entry(TrackEntry),

@@ -3,8 +3,8 @@
 //!
 
 // Local imports
-use crate::abstrakt;
-use crate::cell::{self, Instance, LayoutImpl};
+use crate::abs;
+use crate::cell::{self, Instance, Layout};
 use crate::coords::{PrimPitches, Xy};
 use crate::library::Library;
 use crate::outline::Outline;
@@ -16,40 +16,40 @@ use crate::utils::Ptr;
 // Test-locals
 use super::{exports, resource, stacks::SampleStacks};
 
-/// Create an abstrakt unit-cell
-fn abstract_unit_cell(_lib: &mut Library) -> LayoutResult<Ptr<cell::CellBag>> {
+/// Create an abs unit-cell
+fn abstract_unit_cell(_lib: &mut Library) -> LayoutResult<Ptr<cell::Cell>> {
     Ok(Ptr::new(abstract_unit()?.into()))
 }
-/// Create an abstrakt unit-cell
-fn abstract_unit() -> LayoutResult<abstrakt::LayoutAbstract> {
+/// Create an abs unit-cell
+fn abstract_unit() -> LayoutResult<abs::Abstract> {
     let unitsize = (18, 1);
 
-    let unit = abstrakt::LayoutAbstract {
+    let unit = abs::Abstract {
         name: "UnitCell".into(),
         metals: 1,
         outline: Outline::rect(unitsize.0, unitsize.1)?,
         ports: vec![
-            abstrakt::Port {
+            abs::Port {
                 name: "en".into(),
-                kind: abstrakt::PortKind::ZTopEdge {
+                kind: abs::PortKind::ZTopEdge {
                     track: 2,
-                    side: abstrakt::Side::BottomOrLeft,
+                    side: abs::Side::BottomOrLeft,
                     into: (5, RelZ::Above),
                 },
             },
-            abstrakt::Port {
+            abs::Port {
                 name: "inp".into(),
-                kind: abstrakt::PortKind::ZTopEdge {
+                kind: abs::PortKind::ZTopEdge {
                     track: 3,
-                    side: abstrakt::Side::TopOrRight,
+                    side: abs::Side::TopOrRight,
                     into: (11, RelZ::Above),
                 },
             },
-            abstrakt::Port {
+            abs::Port {
                 name: "out".into(),
-                kind: abstrakt::PortKind::ZTopEdge {
+                kind: abs::PortKind::ZTopEdge {
                     track: 5,
-                    side: abstrakt::Side::TopOrRight,
+                    side: abs::Side::TopOrRight,
                     into: (11, RelZ::Above),
                 },
             },
@@ -58,11 +58,11 @@ fn abstract_unit() -> LayoutResult<abstrakt::LayoutAbstract> {
     Ok(unit)
 }
 /// RO, absolute-placement edition
-fn ro_abs(unit: Ptr<cell::CellBag>) -> LayoutResult<cell::CellBag> {
+fn ro_abs(unit: Ptr<cell::Cell>) -> LayoutResult<cell::Cell> {
     let unitsize = (18, 1);
 
     // Create an initially empty layout
-    let mut ro = LayoutImpl::new(
+    let mut ro = Layout::new(
         "RO",                   // name
         4,                      // metals
         Outline::rect(130, 7)?, // outline
@@ -132,12 +132,12 @@ fn ro_abs(unit: Ptr<cell::CellBag>) -> LayoutResult<cell::CellBag> {
     Ok(ro.into())
 }
 /// RO, relative-placement edition
-fn ro_rel(unit: Ptr<cell::CellBag>) -> LayoutResult<cell::CellBag> {
+fn ro_rel(unit: Ptr<cell::Cell>) -> LayoutResult<cell::Cell> {
     use crate::placement::{Placeable, RelativePlace, SepBy, Separation, Side};
     let unitsize = (18, 1);
 
     // Create an initially empty layout
-    let mut ro = LayoutImpl::builder()
+    let mut ro = Layout::builder()
         .name("RO")
         .metals(4_usize)
         .outline(Outline::rect(130, 7)?)
@@ -234,7 +234,7 @@ fn ro_rel(unit: Ptr<cell::CellBag>) -> LayoutResult<cell::CellBag> {
             }
             // Assign the output
             let m3track = m1track + ((x + 1) % 3) as usize;
-            let m1track = (y * 12 + 11) as usize;
+            // let m1track = (y * 12 + 11) as usize;
             ro.net(format!("dly{}", ((x + 1) % 3)))
                 .at(2, m3track, m2track + 2, RelZ::Below);
             //     .at(1, m2track + 2, m1track, RelZ::Below)
@@ -262,7 +262,7 @@ fn ro_rel(unit: Ptr<cell::CellBag>) -> LayoutResult<cell::CellBag> {
     }
     Ok(ro.into())
 }
-/// Test importing and wrapping an existing GDSII into a [Library]/[CellBag]
+/// Test importing and wrapping an existing GDSII into a [Library]/[Cell]
 #[test]
 fn wrap_gds() -> LayoutResult<()> {
     let mut lib = Library::new("wrap_gds");
@@ -270,7 +270,7 @@ fn wrap_gds() -> LayoutResult<()> {
     exports(lib, SampleStacks::pdka()?)
 }
 /// Most internal implementation of the `wrap_gds` test
-fn _wrap_gds(lib: &mut Library) -> LayoutResult<Ptr<cell::CellBag>> {
+fn _wrap_gds(lib: &mut Library) -> LayoutResult<Ptr<cell::Cell>> {
     // Import a [GdsLibrary] to a [raw::Library]
     let gds_fname = resource("ginv.gds");
     let gds = raw::gds::gds21::GdsLibrary::load(&gds_fname)?;
@@ -284,7 +284,7 @@ fn _wrap_gds(lib: &mut Library) -> LayoutResult<Ptr<cell::CellBag>> {
 
     // Add tracking of our dependence on the [raw::Library]
     let rawlibptr = lib.add_rawlib(rawlib);
-    // Create a [CellBag] from the [raw::Library]'s sole cell
+    // Create a [Cell] from the [raw::Library]'s sole cell
     let unitsize = (18, 1);
     let wrapped = cell::RawLayoutPtr {
         outline: Outline::rect(unitsize.0, unitsize.1)?, // outline
@@ -295,7 +295,7 @@ fn _wrap_gds(lib: &mut Library) -> LayoutResult<Ptr<cell::CellBag>> {
     let wrapped = lib.cells.insert(wrapped);
 
     // Create a wrapper cell
-    let mut wrapper = LayoutImpl::new(
+    let mut wrapper = Layout::new(
         "Wrapper",                              // name
         1,                                      // metals
         Outline::rect(unitsize.0, unitsize.1)?, // outline
@@ -308,20 +308,20 @@ fn _wrap_gds(lib: &mut Library) -> LayoutResult<Ptr<cell::CellBag>> {
         reflect_vert: false,
     });
     // Convert the layout to a [Cell]
-    let mut wrapper: cell::CellBag = wrapper.into();
+    let mut wrapper: cell::Cell = wrapper.into();
     // And add an [Abstract] view
-    wrapper.abstrakt = Some(abstract_unit()?);
+    wrapper.abs = Some(abstract_unit()?);
     // Finally add the wrapper [Cell] to our [Library], and return a pointer to it.
     let wrapper = lib.cells.insert(wrapper);
     Ok(wrapper)
 }
 /// RO, array-placement edition
-fn ro_array(unit: Ptr<cell::CellBag>) -> LayoutResult<cell::CellBag> {
+fn ro_array(unit: Ptr<cell::Cell>) -> LayoutResult<cell::Cell> {
     use crate::placement::{Placeable, SepBy, Separation};
     let unitsize = (18, 1);
 
     // Create an initially empty layout
-    let mut ro = LayoutImpl::new(
+    let mut ro = Layout::new(
         "RO",                   // name
         4,                      // metals
         Outline::rect(130, 7)?, // outline
@@ -436,8 +436,8 @@ fn ro_array(unit: Ptr<cell::CellBag>) -> LayoutResult<cell::CellBag> {
 /// Accepts function-arguments for the unit-cell and wrapper-cell factories.
 fn _ro_test(
     libname: &str,
-    unitfn: fn(&mut Library) -> LayoutResult<Ptr<cell::CellBag>>,
-    wrapfn: fn(Ptr<cell::CellBag>) -> LayoutResult<cell::CellBag>,
+    unitfn: fn(&mut Library) -> LayoutResult<Ptr<cell::Cell>>,
+    wrapfn: fn(Ptr<cell::Cell>) -> LayoutResult<cell::Cell>,
 ) -> LayoutResult<()> {
     let mut lib = Library::new(libname);
     let unit = unitfn(&mut lib)?; // Create the unit cell
@@ -459,14 +459,14 @@ fn ro_wrap_gds_array() -> LayoutResult<()> {
     _ro_test("RoWrapGdsArray", _wrap_gds, ro_array)
 }
 #[test]
-fn ro_abstrakt_abs() -> LayoutResult<()> {
-    _ro_test("RoAbstraktAbs", abstract_unit_cell, ro_abs)
+fn ro_abs_abs() -> LayoutResult<()> {
+    _ro_test("RoAbsAbs", abstract_unit_cell, ro_abs)
 }
 #[test]
-fn ro_abstrakt_rel() -> LayoutResult<()> {
-    _ro_test("RoAbstraktRel", abstract_unit_cell, ro_rel)
+fn ro_abs_rel() -> LayoutResult<()> {
+    _ro_test("RoAbsRel", abstract_unit_cell, ro_rel)
 }
 #[test]
-fn ro_abstrakt_array() -> LayoutResult<()> {
-    _ro_test("RoAbstraktArray", abstract_unit_cell, ro_rel)
+fn ro_abs_array() -> LayoutResult<()> {
+    _ro_test("RoAbsArray", abstract_unit_cell, ro_rel)
 }

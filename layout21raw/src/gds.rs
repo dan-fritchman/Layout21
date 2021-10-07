@@ -13,11 +13,10 @@ use std::hash::Hash;
 use slotmap::{new_key_type, SlotMap};
 
 // Local imports
-use crate::utils::Ptr;
-use crate::utils::{ErrorContext, ErrorHelper};
-use crate::{AbstractPort, LayerKey, LayoutAbstract, TextElement};
+use crate::utils::{ErrorContext, ErrorHelper, Ptr};
+use crate::{Abstract, AbstractPort, LayerKey, TextElement};
 use crate::{
-    CellBag, Dir, Element, Instance, LayerPurpose, Layers, LayoutImpl, Library, Point, Shape, Units,
+    Cell, Dir, Element, Instance, LayerPurpose, Layers, Layout, Library, Point, Shape, Units,
 };
 use crate::{LayoutError, LayoutResult};
 pub use gds21;
@@ -73,15 +72,15 @@ impl<'lib> GdsExporter<'lib> {
         self.ctx.pop();
         Ok(gdslib)
     }
-    /// Convert a [CellBag] to a [gds21::GdsStruct] cell-definition
+    /// Convert a [Cell] to a [gds21::GdsStruct] cell-definition
     /// Adds to the running list `structs`.
-    fn export_cell(&mut self, cell: &CellBag) -> LayoutResult<gds21::GdsStruct> {
+    fn export_cell(&mut self, cell: &Cell) -> LayoutResult<gds21::GdsStruct> {
         self.ctx.push(ErrorContext::Cell(cell.name.clone()));
 
         // Convert the primary implementation-data
         let strukt = if let Some(ref lay) = cell.layout {
             self.export_layout(lay)
-        } else if let Some(ref a) = cell.abstrakt {
+        } else if let Some(ref a) = cell.abs {
             println!(
                 "No implementation for Cell {}, exporting abstract to GDSII",
                 cell.name
@@ -96,8 +95,8 @@ impl<'lib> GdsExporter<'lib> {
         self.ctx.pop();
         Ok(strukt)
     }
-    /// Convert a [LayoutAbstract]
-    fn export_abstract(&mut self, abs: &LayoutAbstract) -> LayoutResult<gds21::GdsStruct> {
+    /// Convert a [Abstract]
+    fn export_abstract(&mut self, abs: &Abstract) -> LayoutResult<gds21::GdsStruct> {
         self.ctx.push(ErrorContext::Abstract);
 
         let mut elems = Vec::with_capacity(1 + abs.ports.len());
@@ -136,8 +135,8 @@ impl<'lib> GdsExporter<'lib> {
         }
         Ok(elems)
     }
-    /// Convert a [LayoutImpl] to a [gds21::GdsStruct] cell-definition
-    fn export_layout(&mut self, cell: &LayoutImpl) -> LayoutResult<gds21::GdsStruct> {
+    /// Convert a [Layout] to a [gds21::GdsStruct] cell-definition
+    fn export_layout(&mut self, cell: &Layout) -> LayoutResult<gds21::GdsStruct> {
         self.ctx.push(ErrorContext::Impl);
         let mut elems = Vec::with_capacity(cell.elems.len() + cell.insts.len());
         // Convert each [Instance]
@@ -384,7 +383,7 @@ pub struct GdsImporter {
     pub layers: Ptr<Layers>,
     ctx: Vec<ErrorContext>,
     unsupported: Vec<gds21::GdsElement>,
-    cell_map: HashMap<String, Ptr<CellBag>>,
+    cell_map: HashMap<String, Ptr<Cell>>,
     lib: Library,
 }
 impl GdsImporter {
@@ -484,16 +483,16 @@ impl GdsImporter {
         self.cell_map.insert(name.to_string(), key);
         Ok(())
     }
-    /// Import a GDS Cell ([gds21::GdsStruct]) into a [CellBag]
-    fn import_cell(&mut self, strukt: &gds21::GdsStruct) -> LayoutResult<CellBag> {
+    /// Import a GDS Cell ([gds21::GdsStruct]) into a [Cell]
+    fn import_cell(&mut self, strukt: &gds21::GdsStruct) -> LayoutResult<Cell> {
         self.ctx.push(ErrorContext::Cell(strukt.name.clone()));
         let cell = self.import_layout(strukt)?.into();
         self.ctx.pop();
         Ok(cell)
     }
-    /// Import a GDS Cell ([gds21::GdsStruct]) into a [LayoutImpl]
-    fn import_layout(&mut self, strukt: &gds21::GdsStruct) -> LayoutResult<LayoutImpl> {
-        let mut layout = LayoutImpl::default();
+    /// Import a GDS Cell ([gds21::GdsStruct]) into a [Layout]
+    fn import_layout(&mut self, strukt: &gds21::GdsStruct) -> LayoutResult<Layout> {
+        let mut layout = Layout::default();
         let name = strukt.name.clone();
         layout.name = name.clone();
         self.ctx.push(ErrorContext::Impl);
@@ -592,7 +591,7 @@ impl GdsImporter {
                 loc,
             });
         }
-        // Pull the elements out of the local slot-map, into the vector that [LayoutImpl] wants
+        // Pull the elements out of the local slot-map, into the vector that [Layout] wants
         layout.elems = elems.drain().map(|(_k, v)| v).collect();
         self.ctx.pop();
         Ok(layout)
