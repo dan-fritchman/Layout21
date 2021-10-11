@@ -17,7 +17,7 @@ pub struct GdsReader {
 }
 impl GdsReader {
     /// Create a [GdsReader], opening [File] at path `fname`
-    pub fn open(fname: &str) -> GdsResult<GdsReader> {
+    pub fn open(fname: impl AsRef<Path>) -> GdsResult<GdsReader> {
         let bytes = std::fs::read(fname)?;
         let cursor = Cursor::new(bytes);
         Ok(Self::new(cursor))
@@ -245,7 +245,7 @@ impl GdsScanner {
         Ok(Self { rdr, nxt })
     }
     /// Open and scan structs in file `fname`
-    pub fn scan(fname: &str) -> GdsResult<Vec<GdsStructScan>> {
+    pub fn scan(fname: impl AsRef<Path>) -> GdsResult<Vec<GdsStructScan>> {
         let rdr = GdsReader::open(fname)?;
         let mut me = Self::new(rdr)?;
         me.scan_lib()
@@ -385,7 +385,7 @@ pub struct GdsParser {
 }
 impl GdsParser {
     /// Create a new GdsReader iterator for the file at path `fname`
-    pub fn open(fname: &str) -> GdsResult<GdsParser> {
+    pub fn open(fname: impl AsRef<Path>) -> GdsResult<GdsParser> {
         let rdr = GdsReader::open(fname)?;
         Self::new(rdr)
     }

@@ -100,6 +100,7 @@
 
 // Std-Lib
 use std::convert::TryFrom;
+use std::path::Path;
 
 // Crates.io Imports
 use derive_more::{Add, AddAssign, Sub, SubAssign};
@@ -191,11 +192,11 @@ impl LefLibrary {
         LefLibrary::default()
     }
     /// Open a [LefLibrary] from file `fname`
-    pub fn open(fname: &str) -> LefResult<LefLibrary> {
+    pub fn open(fname: impl AsRef<Path>) -> LefResult<LefLibrary> {
         read::parse_file(fname)
     }
     /// Write a [LefLibrary] to file `fname`.  
-    pub fn save(&self, fname: &str) -> LefResult<()> {
+    pub fn save(&self, fname: impl AsRef<Path>) -> LefResult<()> {
         write::save(self, fname)
     }
     /// Write a [LefLibrary] to a LEF-format [String].  
@@ -641,6 +642,8 @@ macro_rules! enumstr {
             }
             /// Create a [$enum_name] from one of the string-values specified in the Lef format.
             /// Returns `None` if input `txt` does not match one of [$enum_name]'s variants.
+            /// Note `from_str` is case *sensitive*, i.e. uses a native string comparison.
+            /// Conversion to case-insensitive matching generall requires re-casing outside `from_str`.
             fn from_str(txt: &str) -> Option<Self> {
                 match txt {
                     $( $strval => Some(Self::$variant)),*,
@@ -659,17 +662,15 @@ macro_rules! enumstr {
     }
 }
 enumstr!(
-    /// # Lef Parser Keys
+    /// # Lef Key(Word)s
     ///
-    /// Enumerated "keywords" primarily used by the [LefParser].
+    /// Enumerated "key(word)s" use in LEF parsing and generation.
     ///
-    /// Unlike typical programming languages, LEF does not include "keywords" in the sense of being reserved at all points in the program.
-    /// Legality of [LefKey]s is instead context-dependent.
-    /// For example a [LefMacro] is free to use the name "MACRO" for one of its pins,
-    /// whereas while during [LefLibrary] definition, "MACRO" is a reserved key.
+    /// Unlike typical programming languages, LEF does not really have *keywords*  in the sense of being reserved at all points in the program.
+    /// Legality of [LefKey]s is instead context-dependent, more as in a YAML or JSON schema.
+    /// For example a [LefMacro] is free to use the name "MACRO" for one of its pins, whereas while during [LefLibrary] definition, "MACRO" is a key with special meaning.
     ///
-    /// LEF syntax is case-insensitive. [LefKey]s are always written in the (conventional) upper-case form,
-    /// but parsed case-insensitively.
+    /// LEF syntax is case-insensitive. [LefKey]s are always written in the (conventional) upper-case form, but parsed case-insensitively.
     ///
     LefKey {
         Library: "LIBRARY",

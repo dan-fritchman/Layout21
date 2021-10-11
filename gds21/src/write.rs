@@ -12,7 +12,7 @@ pub struct GdsWriter<'wr> {
 }
 impl<'wr> GdsWriter<'wr> {
     /// Create new [GdsWriter] with destination file `fname`
-    pub fn open(fname: &str) -> GdsResult<Self> {
+    pub fn open(fname: impl AsRef<Path>) -> GdsResult<Self> {
         let file = BufWriter::new(File::create(fname)?);
         Ok(Self::new(file))
     }

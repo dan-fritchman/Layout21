@@ -168,7 +168,7 @@ fn record_too_long() -> GdsResult<()> {
 }
 
 /// Compare `lib` to "golden" data loaded from JSON at path `golden`.
-fn check(lib: &GdsLibrary, fname: &str) {
+fn check(lib: &GdsLibrary, fname: impl AsRef<Path>) {
     use layout21utils::ser::SerializationFormat::Json;
     // Uncomment this bit to over-write the golden data
     // Json::save(lib, fname);
@@ -177,6 +177,6 @@ fn check(lib: &GdsLibrary, fname: &str) {
     assert_eq!(*lib, golden);
 }
 /// Grab the full path of resource-file `fname`
-fn resource(fname: &str) -> String {
-    format!("{}/resources/{}", env!("CARGO_MANIFEST_DIR"), fname)
+fn resource(rname: &str) -> String {
+    format!("{}/resources/{}", env!("CARGO_MANIFEST_DIR"), rname)
 }

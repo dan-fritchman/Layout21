@@ -1,5 +1,6 @@
 use super::read::{parse_str, LefLexer, LefParser, Token};
 use super::*;
+use std::path::Path;
 
 #[test]
 fn test_points() -> LefResult<()> {
@@ -92,12 +93,15 @@ fn it_parses_lib2() -> LefResult<()> {
     Ok(())
 }
 /// Helper function: Assert that `data` equals the content in YAML file `fname`
-fn check_yaml<T: Eq + std::fmt::Debug + serde::de::DeserializeOwned>(data: &T, fname: &str) {
+fn check_yaml<T>(data: &T, fname: impl AsRef<Path>)
+where
+    T: Eq + std::fmt::Debug + serde::de::DeserializeOwned,
+{
     use crate::utils::SerializationFormat::Yaml;
     let golden: T = Yaml.open(fname).unwrap();
     assert_eq!(*data, golden);
 }
 /// Helper function: Grab the full path of resource-file `fname`
-fn resource(fname: &str) -> String {
-    format!("{}/resources/{}", env!("CARGO_MANIFEST_DIR"), fname)
+fn resource(rname: &str) -> String {
+    format!("{}/resources/{}", env!("CARGO_MANIFEST_DIR"), rname)
 }

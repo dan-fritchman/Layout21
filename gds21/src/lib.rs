@@ -70,6 +70,7 @@ use std::fs::File;
 #[allow(unused_imports)]
 use std::io::prelude::*;
 use std::io::{BufWriter, Cursor, Read, Seek, SeekFrom, Write};
+use std::path::Path;
 use std::{fmt, mem, str};
 
 // Crates.io
@@ -934,7 +935,7 @@ impl GdsLibrary {
         }
     }
     /// Read a GDS loaded from file at path `fname`
-    pub fn load(fname: &str) -> GdsResult<GdsLibrary> {
+    pub fn load(fname: impl AsRef<Path>) -> GdsResult<GdsLibrary> {
         // Create the parser, and parse a Library
         GdsParser::open(fname)?.parse_lib()
     }
@@ -945,7 +946,7 @@ impl GdsLibrary {
     }
     /// Run a first-pass scan of GDSII data in `fname`.
     /// Returns a vector of [GdsStructScan]s including summary info per struct.
-    pub fn scan(fname: &str) -> GdsResult<Vec<GdsStructScan>> {
+    pub fn scan(fname: impl AsRef<Path>) -> GdsResult<Vec<GdsStructScan>> {
         GdsScanner::scan(fname)
     }
     /// Collect and return the library's aggregate statistics
@@ -959,7 +960,7 @@ impl GdsLibrary {
         stats
     }
     /// Save to file `fname`
-    pub fn save(&self, fname: &str) -> GdsResult<()> {
+    pub fn save(&self, fname: impl AsRef<Path>) -> GdsResult<()> {
         let mut wr = GdsWriter::open(fname)?;
         wr.write_lib(self)
     }

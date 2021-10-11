@@ -273,6 +273,6 @@ pub fn exports(lib: Library, stack: ValidStack) -> LayoutResult<()> {
     Ok(())
 }
 /// Grab the full path of resource-file `fname`
-fn resource(fname: &str) -> String {
-    format!("{}/resources/{}", env!("CARGO_MANIFEST_DIR"), fname)
+fn resource(rname: &str) -> String {
+    format!("{}/resources/{}", env!("CARGO_MANIFEST_DIR"), rname)
 }

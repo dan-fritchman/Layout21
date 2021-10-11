@@ -61,8 +61,8 @@ fn test_layers() -> LayoutResult<()> {
     Ok(())
 }
 /// Grab the full path of resource-file `fname`
-fn resource(fname: &str) -> String {
-    format!("{}/resources/{}", env!("CARGO_MANIFEST_DIR"), fname)
+fn resource(rname: &str) -> String {
+    format!("{}/resources/{}", env!("CARGO_MANIFEST_DIR"), rname)
 }
 /// Take a trip through GDSII -> Layout21::Raw -> ProtoBuf
 #[cfg(all(feature = "gds", feature = "proto"))]

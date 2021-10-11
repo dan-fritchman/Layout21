@@ -7,6 +7,7 @@
 #[allow(unused_imports)]
 use std::io::prelude::*;
 use std::io::{BufReader, BufWriter, Read, Write};
+use std::path::Path;
 
 // Crates.io Imports
 use serde::de::DeserializeOwned;
@@ -28,7 +29,7 @@ impl SerializationFormat {
         }
     }
     /// Save `data` to file `fname`
-    pub fn save(&self, data: &impl Serialize, fname: &str) -> Result<(), Error> {
+    pub fn save(&self, data: &impl Serialize, fname: impl AsRef<Path>) -> Result<(), Error> {
         let mut file = BufWriter::new(std::fs::File::create(fname)?);
         let s = self.to_string(data)?;
         file.write_all(s.as_bytes())?;
@@ -36,7 +37,7 @@ impl SerializationFormat {
         Ok(())
     }
     /// Load from file at path `fname`
-    pub fn open<T: DeserializeOwned>(&self, fname: &str) -> Result<T, Error> {
+    pub fn open<T: DeserializeOwned>(&self, fname: impl AsRef<Path>) -> Result<T, Error> {
         let file = std::fs::File::open(&fname)?;
         let mut file = BufReader::new(file);
         let rv: T = match *self {
@@ -64,11 +65,11 @@ impl SerializationFormat {
 ///
 pub trait SerdeFile: Serialize + DeserializeOwned {
     /// Save in `fmt`-format to file `fname`
-    fn save(&self, fmt: SerializationFormat, fname: &str) -> Result<(), Error> {
+    fn save(&self, fmt: SerializationFormat, fname: impl AsRef<Path>) -> Result<(), Error> {
         fmt.save(self, fname)
     }
     /// Open from `fmt`-format file `fname`
-    fn open(fname: &str, fmt: SerializationFormat) -> Result<Self, Error> {
+    fn open(fname: impl AsRef<Path>, fmt: SerializationFormat) -> Result<Self, Error> {
         fmt.open(fname)
     }
 }

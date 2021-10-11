@@ -7,13 +7,14 @@
 
 // Standard Lib Imports
 use std::io::Read;
+use std::path::Path;
 use std::str::Chars;
 
 // Local imports
 use super::*;
 
 /// Parse LEF content from file `fname`
-pub fn parse_file(fname: &str) -> LefResult<LefLibrary> {
+pub fn parse_file(fname: impl AsRef<Path>) -> LefResult<LefLibrary> {
     let mut file = std::fs::File::open(fname)?;
     let mut src = String::new();
     file.read_to_string(&mut src)?;

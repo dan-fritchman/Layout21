@@ -11,7 +11,7 @@ use super::*;
 
 /// Write a [LefLibrary] to file `fname`.  
 /// Fields are written in the LEF-recommended order.  
-pub fn save(lib: &LefLibrary, fname: &str) -> LefResult<()> {
+pub fn save(lib: &LefLibrary, fname: impl AsRef<Path>) -> LefResult<()> {
     let f = std::fs::File::create(fname)?;
     LefWriter::new(f).write_lib(lib)
 }
