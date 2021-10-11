@@ -2,14 +2,14 @@
 //! # Lef21 Library Exchange Format (LEF) Parser & Writer
 //!
 //! [Library Exchange Format (LEF)](https://en.wikipedia.org/wiki/Library_Exchange_Format)
-//! is an ASCII text based format for integrated circuit (IC) layout and technology.
+//! is an ASCII-based format for integrated circuit (IC) layout and technology.
 //!
 //! LEF is near-ubiquitously used IC-industry-wide for two related purposes:
 //!
-//! * *Libraries* of LEF *Macros* commonly provide the *physical abstract* view of a circuit design.
+//! * *Libraries* of LEF *macros* commonly provide the *physical abstract* view of a circuit design.
 //!   * Such abstract-views are commonly the target for layout-synthesis programs ("place and route").
-//!   * They include a circuit's pin locations and requirements for "obstruction" blockages, among other metadata, typically without including the circuit's internal layout implementation.
-//! * LEF *technology descriptions* ("tech-lef") provide a concise description of rules for assembling such cells, as commonly performed by layout-synthesis software.
+//!   * They include a circuit's pin locations and requirements for "obstruction" blockages, among other metadata, typically without including the internal implementation.
+//! * LEF *technology descriptions* ("tech-lef") provide a concise description of design-rules for assembling such cells, as commonly performed by layout-synthesis software.
 //!
 //! Lef21 includes comprehensive support for parsing and writing LEF *design libraries*, primarily stored as its [`LefLibrary`] and [`LefMacro`] types.
 //! A select subset of tech-lef features are also supported, particularly those which blur the lines between technology and library data.
@@ -24,7 +24,7 @@
 //! ```
 //!
 //! Each [`LefLibrary`] is a short tree of macro-definitions, which are in turn primarily comprised of pin-definitions and obstructions.
-//! The shape of this tree is of the form:
+//! This tree is of the form:
 //!
 //! * [`LefLibrary`]
 //!   * Library Metadata
@@ -36,6 +36,19 @@
 //!     * Obstructions ([`LefLayerGeometries`])
 //!
 //! All fields of all layers in the [`LefLibrary`] tree are publicly accessible and modifiable.
+//!
+//! Lef21 libraries are saved to file with their `save` method:
+//!
+//! ```skip
+//! lib.save("yourlib.lef")?;
+//! ```
+//!
+//! Or converted to in-memory LEF-format [String]s via `to_string()`:
+//!
+//! ```skip
+//! let s = lib.to_string()?;
+//! println!({}, s);
+//! ```
 //!
 //! ## Serialization
 //!
@@ -69,21 +82,28 @@
 //! Lef21 correspondingly uses the LEF format's concepts, idioms, and terminology (e.g. "macro" vs. "cell") throughout.
 //! Its LEF data structures are nonetheless designed for direct manipulation, for example in programmatically modifying existing LEF content.
 //!
-//! LEF is frequently paired with the DEF format for specifying circuit's internal physical implementations.
-//! Like LEF, DEF is a text-based format. More common industry usage pairs LEF with [GDSII](https://crates.io/crates/gds21)'s binary implementation format,
+//! LEF is frequently paired with the DEF ASCII-based format for specifying circuit's internal physical implementations.
+//! More common industry usage pairs LEF with [GDSII](https://crates.io/crates/gds21)'s binary implementation format,
 //! which dramatically reduces data-sizes for large circuits.
-//! DEF is not supported by Lef21. GDSII is supported by the related [gds21](https://crates.io/crates/gds21) crate.
+//! DEF is not supported by Lef21. GDSII is supported by the related [gds21](https://crates.io/crates/gds21) crate.  
 //!
-//! LEF was originally designed by Tangent Systems, later acquired by Cadence Design Systems.
+//! ## License
+//!
+//! Lef21 and Layout21 are published under a permissive BSD license.
+//!
+//! The LEF format was originally designed by Tangent Systems, later acquired by Cadence Design Systems.
 //! Lef21 holds no relationship to either entity, nor any authority or ownership over the format.
-//! Countless LEF-format design descriptions are freely available as open-source software;
-//! their examples serve as the basis for Lef21.
+//! Countless LEF-format design descriptions are [freely available](https://github.com/google/skywater-pdk-libs-sky130_fd_sc_hd/blob/main/cells/mux2/sky130_fd_sc_hd__mux2_1.lef)
+//! as open-source software.
+//! Their examples serve as the basis for Lef21.
+//!
 
 // Std-Lib
 use std::convert::TryFrom;
 
 // Crates.io Imports
 use derive_more::{Add, AddAssign, Sub, SubAssign};
+use once_cell::sync::Lazy;
 #[allow(unused_imports)]
 use rust_decimal::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -105,6 +125,12 @@ mod tests;
 /// Uses [rust_decimal](https://crates.io/crates/rust_decimal) internally.
 pub type LefDecimal = rust_decimal::Decimal;
 
+// Static short-hands for two common [LefDecimal] values, both representing spec-versions
+// Note [`once_cell`](https://docs.rs/once_cell/1.8.0/once_cell/#lazy-initialized-global-data)
+// demands these be `static`, not `const`, for reasons outside our grasp.
+static V5P4: Lazy<LefDecimal> = Lazy::new(|| LefDecimal::from_str("5.4").unwrap());
+static V5P8: Lazy<LefDecimal> = Lazy::new(|| LefDecimal::from_str("5.8").unwrap());
+
 /// # Lef Library  
 ///
 /// LEF's primary design-content container, including a set of macro/cell definitions and assocaited metadata.
@@ -124,12 +150,12 @@ pub struct LefLibrary {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub version: Option<LefDecimal>,
-    /// Case-Sensitive Name Setting
+    /// Case-Sensitive Name Setting  
     /// Valid for LEF versions 5.4 and earlier
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub names_case_sensitive: Option<LefOnOff>,
-    /// Wire-Extension Pin Settings
+    /// Wire-Extension Pin Settings  
     /// Valid for LEF versions 5.4 and earlier
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
@@ -159,8 +185,8 @@ pub struct LefLibrary {
     pub extensions: Unsupported,
 }
 impl LefLibrary {
-    /// Create a new and initially empty [LefLibrary]
-    /// Also available via [Default]
+    /// Create a new and initially empty [LefLibrary].  
+    /// Also available via [Default].
     pub fn new() -> LefLibrary {
         LefLibrary::default()
     }
@@ -168,13 +194,23 @@ impl LefLibrary {
     pub fn open(fname: &str) -> LefResult<LefLibrary> {
         read::parse_file(fname)
     }
-    /// Write a [LefLibrary] to file `fname`
-    /// Fields are written in the LEF-recommended order
+    /// Write a [LefLibrary] to file `fname`.  
     pub fn save(&self, fname: &str) -> LefResult<()> {
         write::save(self, fname)
     }
+    /// Write a [LefLibrary] to a LEF-format [String].  
+    pub fn to_string(&self) -> LefResult<String> {
+        write::to_string(self)
+    }
 }
-/// Lef Macro Definition
+/// # Lef Macro
+///
+/// The primary block-level construct comprising each [LefLibrary].
+/// Defines a hardware-block's physical abstract, including:
+/// * Pin definitions (`pins`) with locations, directions, and associated metadata
+/// * Required blockage-obstructions (`obs`)
+/// * A variety of other block-level metadata
+///
 #[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[builder(pattern = "owned", setter(into), private)]
 pub struct LefMacro {
@@ -195,7 +231,7 @@ pub struct LefMacro {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub class: Option<LefMacroClass>,
-    /// Foreign (GDSII) Cell
+    /// Foreign (i.e. GDSII, DEF) Cell
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub foreign: Option<LefForeign>,
@@ -211,12 +247,12 @@ pub struct LefMacro {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub symmetry: Option<Vec<LefSymmetry>>,
-    /// Site Name
-    /// Note the optional `sitePattern` is not supported
+    /// Site Name  
+    /// Note the optional `SITEPATTERN` is not supported
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub site: Option<String>,
-    /// Source
+    /// Source  
     /// Valid for LEF versions 5.4 and earlier
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
@@ -272,10 +308,10 @@ pub struct LefForeign {
     /// Location
     pub pt: Option<LefPoint>,
 
-    // Unsupported
+    // Unsupported Fields
     /// Orientation (Unsupported)
     #[serde(default, skip_serializing)]
-    pub orient: Option<Unsupported>,
+    pub orient: Unsupported,
 }
 /// # Lef Pin Definition
 ///
@@ -517,6 +553,8 @@ pub struct LefUnits {
     /// Defaults to 100, i.e. 1 DBU = 10nm
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub database_microns: Option<LefDbuPerMicron>,
+
+    // Unsupported Fields
     #[serde(default, skip_serializing)]
     pub time_ns: Unsupported,
     #[serde(default, skip_serializing)]
@@ -588,7 +626,7 @@ macro_rules! enumstr {
     }) => {
         $(#[$meta])*
         #[allow(dead_code)]
-        #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+        #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
         pub enum $enum_name {
             $( #[doc=$strval]
                 $variant ),*
@@ -618,6 +656,88 @@ macro_rules! enumstr {
                 write!(f, "{}", s)
             }
         }
+    }
+}
+enumstr!(
+    /// # Lef Parser Keys
+    ///
+    /// Enumerated "keywords" primarily used by the [LefParser].
+    ///
+    /// Unlike typical programming languages, LEF does not include "keywords" in the sense of being reserved at all points in the program.
+    /// Legality of [LefKey]s is instead context-dependent.
+    /// For example a [LefMacro] is free to use the name "MACRO" for one of its pins,
+    /// whereas while during [LefLibrary] definition, "MACRO" is a reserved key.
+    ///
+    /// LEF syntax is case-insensitive. [LefKey]s are always written in the (conventional) upper-case form,
+    /// but parsed case-insensitively.
+    ///
+    LefKey {
+        Library: "LIBRARY",
+        Version: "VERSION",
+        Foreign: "FOREIGN",
+        Origin: "ORIGIN",
+        Source: "SOURCE",
+        NamesCaseSensitive: "NAMESCASESENSITIVE",
+        NoWireExtensionAtPin: "NOWIREEXTENSIONATPIN",
+        Macro: "MACRO",
+        End: "END",
+        Pin: "PIN",
+        Port: "PORT",
+        Obs: "OBS",
+        Layer: "LAYER",
+        Direction: "DIRECTION",
+        Use: "USE",
+        Shape: "SHAPE",
+        Path: "PATH",
+        Polygon: "POLYGON",
+        Rect: "RECT",
+        Via: "VIA",
+        Width: "WIDTH",
+        Class: "CLASS",
+        Symmetry: "SYMMETRY",
+        RowPattern: "ROWPATTERN",
+        Site: "SITE",
+        Size: "SIZE",
+        By: "BY",
+        BusBitChars: "BUSBITCHARS",
+        DividerChar: "DIVIDERCHAR",
+        Units: "UNITS",
+        BeginExtension: "BEGINEXT",
+        Tristate: "TRISTATE",
+        Input: "INPUT",
+        Output: "OUTPUT",
+        Inout: "INOUT",
+        FeedThru: "FEEDTHRU",
+        ExceptPgNet: "EXCEPTPGNET",
+        DesignRuleWidth: "DESIGNRULEWIDTH",
+        Spacing: "SPACING",
+        Bump: "BUMP",
+
+        // ANTENNA Fields
+        AntennaModel: "ANTENNAMODEL",
+        AntennaDiffArea: "ANTENNADIFFAREA",
+        AntennaGateArea: "ANTENNAGATEAREA",
+        AntennaPartialMetalArea: "ANTENNAPARTIALMETALAREA",
+        AntennaPartialMetalSideArea: "ANTENNAPARTIALMETALSIDEAREA",
+        AntennaPartialCutArea: "ANTENNAPARTIALCUTAREA",
+        AntennaPartialDiffArea: "ANTENNAPARTIALDIFFAREA",
+        AntennaMaxAreaCar: "ANTENNAMAXAREACAR",
+        AntennaMaxSideAreaCar: "ANTENNAMAXSIDEAREACAR",
+        AntennaMaxCutCar: "ANTENNAMAXCUTCAR",
+
+        // Unsupported
+        TaperRule: "TAPERRULE",
+        NetExpr: "NETEXPR",
+        SupplySensitivity: "SUPPLYSENSITIVITY",
+        GroundSensitivity: "GROUNDSENSITIVITY",
+        MustJoin: "MUSTJOIN",
+        Property: "PROPERTY",
+    }
+);
+impl LefKey {
+    /// Lef Key parsing, performed case-insensitively by internally converting to upper-case.
+    fn parse(txt: &str) -> Option<Self> {
+        Self::from_str(&txt.to_ascii_uppercase())
     }
 }
 enumstr!(
@@ -670,6 +790,17 @@ enumstr!(
     }
 );
 enumstr!(
+    /// Identifiers for the enumerated [LefMacroClass]es
+    LefMacroClassName {
+        Block: "BLOCK",
+        Pad: "PAD",
+        Core: "CORE",
+        EndCap: "ENDCAP",
+        Cover: "COVER",
+        Ring: "RING"
+    }
+);
+enumstr!(
     /// Sub-Types for Macros of Class [LefMacroClass::Pad]
     LefPadClassType {
         Input: "INPUT",
@@ -680,7 +811,6 @@ enumstr!(
         AreaIo: "AREAIO",
     }
 );
-
 enumstr!(
     /// Sub-Types for Macros of Class [LefMacroClass::EndCap]
     LefEndCapClassType {
@@ -753,31 +883,24 @@ pub enum LefError {
         line_num: usize,
         pos: usize,
     },
-    /// Errors parsing numeric [LefDecimal] values
-    ParseNum(rust_decimal::Error),
-    /// File I/O Errors
-    Io(std::io::Error),
-    /// Other wrapped errors, generally from other crates
+    /// Wrapped errors, generally from other crates
     Boxed(Box<dyn std::error::Error>),
-    /// Other string-typed errors, generally from other crates
+    /// String message-valued errors
     Str(String),
 }
 impl From<utils::ser::Error> for LefError {
-    /// Convert common IO & file errors by wrapping them
     fn from(e: utils::ser::Error) -> Self {
         Self::Boxed(Box::new(e))
     }
 }
 impl From<std::io::Error> for LefError {
-    /// Convert common IO & file errors by wrapping them
     fn from(e: std::io::Error) -> Self {
-        Self::Io(e)
+        Self::Boxed(Box::new(e))
     }
 }
 impl From<rust_decimal::Error> for LefError {
-    /// Convert integer-parsing errors by wrapping them
     fn from(e: rust_decimal::Error) -> Self {
-        Self::ParseNum(e)
+        Self::Boxed(Box::new(e))
     }
 }
 impl From<String> for LefError {
@@ -792,6 +915,14 @@ impl From<&str> for LefError {
         Self::Str(e.into())
     }
 }
+// One of these days, this way is gonna way, and we'll delete all these specific error-types above.
+// impl<E: std::error::Error> From<E> for LefError {
+//     /// Wrap External Errors
+//     fn from(e: E) -> Self {
+//         Self::Boxed(Box::new(e))
+//     }
+// }
+
 /// Lef21 Library-Wide Result Type
 pub type LefResult<T> = Result<T, LefError>;
 

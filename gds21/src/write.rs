@@ -244,18 +244,6 @@ trait Encode {
     // Default Methods
     /// Encode a [GdsLibrary]
     fn encode_lib(&mut self, lib: &GdsLibrary) -> GdsResult<()> {
-        // Check our in-memory self doesn't include any unsupported features
-        if lib.libdirsize.is_some()
-            || lib.srfname.is_some()
-            || lib.libsecur.is_some()
-            || lib.reflibs.is_some()
-            || lib.fonts.is_some()
-            || lib.attrtable.is_some()
-            || lib.generations.is_some()
-            || lib.format_type.is_some()
-        {
-            return Err(GdsError::Unsupported(None, Some(GdsContext::Library)));
-        }
         // Write our header content
         self.encode_records(&[
             GdsRecord::Header {

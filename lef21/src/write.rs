@@ -4,48 +4,43 @@
 
 // Standard Lib Imports
 use std::io::Write;
+use std::ops::{AddAssign, SubAssign};
 
 // Local imports
 use super::*;
 
-/// Write a [LefLibrary] to file `fname`
-/// Fields are written in the LEF-recommended order
+/// Write a [LefLibrary] to file `fname`.  
+/// Fields are written in the LEF-recommended order.  
 pub fn save(lib: &LefLibrary, fname: &str) -> LefResult<()> {
     let f = std::fs::File::create(fname)?;
     LefWriter::new(f).write_lib(lib)
 }
-
-/// State kept over the course of a write
-struct LefWriterSession {
-    lef_version: LefDecimal,
-}
-impl Default for LefWriterSession {
-    fn default() -> Self {
-        Self {
-            lef_version: LefDecimal::from_str("5.8").unwrap(),
-        }
-    }
+/// Write a [LefLibrary] to LEF-format [String].  
+/// Fields are written in the LEF-recommended order.  
+pub fn to_string(lib: &LefLibrary) -> LefResult<String> {
+    let mut buf = Vec::new();
+    LefWriter::new(&mut buf).write_lib(lib)?;
+    let rv = std::str::from_utf8(buf.as_slice()).unwrap().to_string();
+    Ok(rv)
 }
 
 /// # Lef Writing Helper
 pub struct LefWriter<'wr> {
     /// Write Destination
     dest: Box<dyn Write + 'wr>,
-    /// Indentation Level
-    indent_level: usize,
-    /// Indentation String. Usually a series of spaces or tabs.
-    indent_str: String,
+    /// Indentation Helper
+    indent: Indent,
     /// Session State
     session: LefWriterSession,
 }
+// FIXME: use [LefKey]s instead of all these string literals!
 impl<'wr> LefWriter<'wr> {
     /// Create a new [LefWriter] to destination `dest`.
     /// Destination is boxed internally.
     fn new(dest: impl Write + 'wr) -> Self {
         Self {
             dest: Box::new(dest),
-            indent_level: 0,
-            indent_str: "    ".into(),
+            indent: Indent::new("    "), // Always uses four spaces. Potentially make this an option.
             session: LefWriterSession::default(),
         }
     }
@@ -85,7 +80,7 @@ impl<'wr> LefWriter<'wr> {
         }
         if let Some(ref v) = lib.units {
             self.write_line(format_args!("UNITS "))?;
-            self.indent_level += 1;
+            self.indent += 1;
             if let Some(ref db) = v.database_microns {
                 self.write_line(format_args!("DATABASE MICRONS {} ; ", db.0))?;
             }
@@ -98,7 +93,7 @@ impl<'wr> LefWriter<'wr> {
             //     || v.voltage_volts.is_some()
             //     || v.frequency_mhz.is_some()
             // { }
-            self.indent_level -= 1;
+            self.indent -= 1;
             self.write_line(format_args!("END UNITS "))?;
         }
 
@@ -124,7 +119,7 @@ impl<'wr> LefWriter<'wr> {
     /// Write a [LefSite] definition
     fn write_site(&mut self, site: &LefSite) -> LefResult<()> {
         self.write_line(format_args!("SITE {} ; ", site.name))?;
-        self.indent_level += 1;
+        self.indent += 1;
         self.write_line(format_args!("CLASS {};", site.class))?;
         if let Some(ref v) = site.symmetry {
             self.write_symmetries(v)?;
@@ -132,14 +127,14 @@ impl<'wr> LefWriter<'wr> {
         // ROWPATTERN would be written here
         // if site.row_pattern.is_some() { }
         self.write_line(format_args!("SIZE {} BY {} ;", site.size.0, site.size.1))?;
-        self.indent_level -= 1;
+        self.indent -= 1;
         self.write_line(format_args!("END {} ; ", site.name))?;
         Ok(())
     }
     /// Write a [LefMacro], in recommended order of fields.
     fn write_macro(&mut self, mac: &LefMacro) -> LefResult<()> {
         self.write_line(format_args!("MACRO {} ; ", mac.name))?;
-        self.indent_level += 1;
+        self.indent += 1;
 
         if let Some(ref v) = mac.class {
             self.write_macro_class(v)?;
@@ -182,11 +177,11 @@ impl<'wr> LefWriter<'wr> {
         }
         if !mac.obs.is_empty() {
             self.write_line(format_args!("OBS "))?;
-            self.indent_level += 1;
+            self.indent += 1;
             for layer in mac.obs.iter() {
                 self.write_layer_geom(layer)?;
             }
-            self.indent_level -= 1;
+            self.indent -= 1;
             self.write_line(format_args!("END "))?;
         }
 
@@ -194,14 +189,14 @@ impl<'wr> LefWriter<'wr> {
         // if mac.density.is_some() { }
         // if mac.properties.is_some() { }
 
-        self.indent_level -= 1;
+        self.indent -= 1;
         self.write_line(format_args!("END {} ", mac.name))?;
         Ok(())
     }
     /// Write a [LefPin] definition
     fn write_pin(&mut self, pin: &LefPin) -> LefResult<()> {
         self.write_line(format_args!("PIN {} ", pin.name))?;
-        self.indent_level += 1;
+        self.indent += 1;
         if let Some(ref v) = pin.direction {
             self.write_line(format_args!("DIRECTION {} ; ", v))?;
         }
@@ -238,21 +233,21 @@ impl<'wr> LefWriter<'wr> {
         for port in pin.ports.iter() {
             self.write_port(port)?;
         }
-        self.indent_level -= 1;
+        self.indent -= 1;
         self.write_line(format_args!("END {} ", pin.name))?;
         Ok(())
     }
     /// Write a [LefPort] definition
     fn write_port(&mut self, port: &LefPort) -> LefResult<()> {
         self.write_line(format_args!("PORT "))?;
-        self.indent_level += 1;
+        self.indent += 1;
         if let Some(ref v) = port.class {
             self.write_line(format_args!("CLASS {} ; ", v))?;
         }
         for layer in port.layers.iter() {
             self.write_layer_geom(layer)?;
         }
-        self.indent_level -= 1;
+        self.indent -= 1;
         self.write_line(format_args!("END "))?;
         Ok(())
     }
@@ -269,7 +264,7 @@ impl<'wr> LefWriter<'wr> {
             None => "".into(),
         };
         self.write_line(format_args!("LAYER {} {}{};", layer.layer_name, pg, sps))?;
-        self.indent_level += 1;
+        self.indent += 1;
 
         if let Some(ref v) = layer.width {
             self.write_line(format_args!("WIDTH {} ; ", v))?;
@@ -280,7 +275,7 @@ impl<'wr> LefWriter<'wr> {
         for via in layer.vias.iter() {
             self.write_line(format_args!("VIA {} {} ;", via.pt, via.via_name,))?;
         }
-        self.indent_level -= 1;
+        self.indent -= 1;
         Ok(()) // Note [LefLayerGeometries] have no "END" or other closing delimeter.
     }
     fn write_geom(&mut self, geom: &LefGeometry) -> LefResult<()> {
@@ -342,16 +337,59 @@ impl<'wr> LefWriter<'wr> {
     /// Helper function writing a single line at the current indentation level.
     /// Note while the newline character is added, any trailing semicolons are not.
     fn write_line(&mut self, args: std::fmt::Arguments) -> std::io::Result<()> {
-        let indent = self.indent_str.repeat(self.indent_level);
-        writeln!(self.dest, "{}{}", indent, args)
+        writeln!(self.dest, "{}{}", self.indent.state, args)
     }
 }
-/// Helper function to call `T`'s [Display] method if `opt` is Some,
-/// or return and empty string if `opt` is None.
+/// Helper function to call `T`'s [Display] method if `opt` is Some, or return an empty string if `opt` is None.
 fn display_option<T: std::fmt::Display>(opt: &Option<T>) -> String {
     if let Some(s) = opt {
         s.to_string()
     } else {
         String::new()
+    }
+}
+
+/// State kept over the course of a write
+struct LefWriterSession {
+    lef_version: LefDecimal,
+}
+impl Default for LefWriterSession {
+    /// Default version is v5.8
+    fn default() -> Self {
+        Self {
+            lef_version: V5P8.clone(),
+        }
+    }
+}
+
+/// Indentation Helper
+struct Indent {
+    unit: String,
+    level: usize,
+    state: String,
+}
+impl Indent {
+    /// Create a new [Indent], initially at level 0
+    fn new(unit: impl Into<String>) -> Self {
+        Self {
+            unit: unit.into(),
+            level: 0,
+            state: String::new(),
+        }
+    }
+}
+impl AddAssign<usize> for Indent {
+    fn add_assign(&mut self, rhs: usize) {
+        self.level += rhs;
+        self.state = self.unit.repeat(self.level);
+    }
+}
+impl SubAssign<usize> for Indent {
+    fn sub_assign(&mut self, rhs: usize) {
+        if rhs > self.level {
+            panic!("Indentation cannot go below 0");
+        }
+        self.level -= rhs;
+        self.state = self.unit.repeat(self.level);
     }
 }

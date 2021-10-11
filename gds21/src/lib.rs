@@ -898,31 +898,31 @@ pub struct GdsLibrary {
     /// Struct Definitions
     pub structs: Vec<GdsStruct>,
 
-    // Optional (and all thus far unsupported) fields
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub libdirsize: Option<Unsupported>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub srfname: Option<Unsupported>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub libsecur: Option<Unsupported>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub reflibs: Option<Unsupported>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub fonts: Option<Unsupported>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub attrtable: Option<Unsupported>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub generations: Option<Unsupported>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub format_type: Option<GdsFormatType>,
+    // Unsupported Fields
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub libdirsize: Unsupported,
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub srfname: Unsupported,
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub libsecur: Unsupported,
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub reflibs: Unsupported,
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub fonts: Unsupported,
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub attrtable: Unsupported,
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub generations: Unsupported,
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub format_type: Unsupported,
 }
 impl GdsLibrary {
     /// Create a new and empty [GdsLibrary]

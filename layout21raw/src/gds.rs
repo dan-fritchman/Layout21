@@ -424,18 +424,18 @@ impl GdsImporter {
     /// Internal implementation method. Convert all, starting from our top-level [gds21::GdsLibrary].
     fn import_lib(&mut self, gdslib: &gds21::GdsLibrary) -> LayoutResult<()> {
         self.ctx.push(ErrorContext::Library(gdslib.name.clone()));
-        // Check our GDS doesn't (somehow) include any unsupported features
-        if gdslib.libdirsize.is_some()
-            || gdslib.srfname.is_some()
-            || gdslib.libsecur.is_some()
-            || gdslib.reflibs.is_some()
-            || gdslib.fonts.is_some()
-            || gdslib.attrtable.is_some()
-            || gdslib.generations.is_some()
-            || gdslib.format_type.is_some()
-        {
-            return self.fail("Unsupported GDSII Feature");
-        }
+        // Unsupported GDSII features, if ever added, shall be imported here:
+        // if gdslib.libdirsize.is_some()
+        //     || gdslib.srfname.is_some()
+        //     || gdslib.libsecur.is_some()
+        //     || gdslib.reflibs.is_some()
+        //     || gdslib.fonts.is_some()
+        //     || gdslib.attrtable.is_some()
+        //     || gdslib.generations.is_some()
+        //     || gdslib.format_type.is_some()
+        // {
+        //     return self.fail("Unsupported GDSII Feature");
+        // }
         // Give our library the same name as the GDS
         self.lib.name = gdslib.name.clone();
         // Set its distance units
