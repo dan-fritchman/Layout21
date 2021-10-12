@@ -16,7 +16,7 @@ Like most large Rust projects `layout21` is a multi-crate workspace. Some intern
 | Crate       | Description | [crates.io](https://crates.io) | [docs.rs](https://docs.rs) |
 | ----------- | ----------- | ------------------------------ | -------------------------- |
 | [gds21](./gds21) | GDSII Parsing, Generation, and Manipulation | [![](https://img.shields.io/crates/v/gds21.svg)](https://crates.io/crates/gds21) | [![](https://docs.rs/gds21/badge.svg)](https://docs.rs/gds21) | 
-| [lef21](./lef21) | LEF Parsing, Generation, and Manipulation   | | | 
+| [lef21](./lef21) | LEF Parsing, Generation, and Manipulation   | [![](https://img.shields.io/crates/v/lef21.svg)](https://crates.io/crates/lef21) | [![](https://docs.rs/lef21/badge.svg)](https://docs.rs/lef21) | 
 | [layout21protos](./layout21protos) | Protobuf Schema Definitions | | | 
 | [layout21raw](./layout21raw)       | "Raw" geometric layout. Analogous to most existing layout systems. |  | | 
 | [layout21tetris](./layout21tetris) | Gridded gate-array-style semi-custom layout | | | 
