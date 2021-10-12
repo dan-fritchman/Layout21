@@ -8,7 +8,7 @@ use std::convert::TryFrom;
 // Local imports
 use crate::coords::{DbUnits, Xy};
 use crate::raw::{self, Dir, LayoutError, LayoutResult, Units};
-use crate::stack::{Assign, Layer, LayerPeriodData, PrimitiveLayer, RelZ, Stack};
+use crate::stack::{Assign, LayerPeriodData, MetalLayer, PrimitiveLayer, RelZ, Stack};
 use crate::stack::{PrimitiveMode, ViaLayer, ViaTarget};
 use crate::tracks::TrackIntersection;
 use crate::utils::Ptr;
@@ -29,7 +29,7 @@ impl StackValidator {
             units,
             boundary_layer,
             vias,
-            layers,
+            metals,
             prim,
             rawlayers,
             ..
@@ -39,17 +39,17 @@ impl StackValidator {
         assert(prim.pitches.y.raw() > 0)?;
 
         // Validate each metal layer
-        let mut metals = Vec::new();
-        for (num, layer) in layers.into_iter().enumerate() {
-            metals.push(ValidMetalLayer::validate(layer, num, &prim)?);
+        let mut valid_metals = Vec::new();
+        for (num, layer) in metals.into_iter().enumerate() {
+            valid_metals.push(ValidMetalLayer::validate(layer, num, &prim)?);
         }
         // Calculate pitches as the *least-common multiple* of same-direction layers below each layer
-        let mut pitches = vec![DbUnits(0); metals.len()];
-        for (num, metal) in metals.iter().enumerate() {
+        let mut pitches = vec![DbUnits(0); valid_metals.len()];
+        for (num, metal) in valid_metals.iter().enumerate() {
             let mut pitch = prim.pitches[!metal.spec.dir];
             for nn in 0..num + 1 {
-                if metals[nn].spec.dir == metal.spec.dir {
-                    pitch = num_integer::lcm(pitch.raw(), metals[nn].pitch.raw()).into();
+                if valid_metals[nn].spec.dir == metal.spec.dir {
+                    pitch = num_integer::lcm(pitch.raw(), valid_metals[nn].pitch.raw()).into();
                 }
             }
             pitches[num] = pitch;
@@ -60,7 +60,7 @@ impl StackValidator {
             units,
             vias,
             pitches,
-            metals,
+            metals: valid_metals,
             prim,
             rawlayers,
             boundary_layer,
@@ -118,7 +118,7 @@ impl ValidStack {
 #[derive(Debug)]
 pub struct ValidMetalLayer {
     /// Original Layer Spec
-    pub spec: Layer,
+    pub spec: MetalLayer,
 
     // Derived data
     /// Index in layers array
@@ -133,7 +133,7 @@ pub struct ValidMetalLayer {
 impl ValidMetalLayer {
     /// Perform validation on a [Layer], return a corresponding [ValidMetalLayer]
     pub fn validate<'prim>(
-        layer: Layer,
+        layer: MetalLayer,
         index: usize,
         prim: &'prim PrimitiveLayer,
     ) -> LayoutResult<ValidMetalLayer> {

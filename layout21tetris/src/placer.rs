@@ -9,7 +9,7 @@ use std::convert::TryFrom;
 
 // Local imports
 use crate::bbox::HasBoundBox;
-use crate::cell::{self, Instance, Layout};
+use crate::{instance::Instance, layout::Layout};
 use crate::coords::{LayerPitches, PrimPitches, UnitSpeced, Xy};
 use crate::library::Library;
 use crate::placement::{
@@ -116,7 +116,7 @@ impl Placer {
     fn flatten_array_inst(
         &mut self,
         array_inst: &ArrayInstance,
-    ) -> LayoutResult<Vec<cell::Instance>> {
+    ) -> LayoutResult<Vec<Instance>> {
         // Read the child-Instances from the underlying [Array] definition
         let mut children = {
             let array = array_inst.array.read()?;
@@ -634,6 +634,7 @@ impl DepOrder for PlaceOrder {
 mod tests {
     use super::*;
     use crate::outline::Outline;
+    use crate::cell::Cell;
     use crate::placement::{Place, Placeable, RelAssign, RelativePlace, SepBy, Separation, Side};
     use crate::tests::{exports, stacks::SampleStacks};
 
@@ -964,9 +965,9 @@ mod tests {
     }
     pub struct SampleLib {
         pub lib: Library,
-        pub big: Ptr<cell::Cell>,
-        pub ibig: Ptr<cell::Instance>,
-        pub lil: Ptr<cell::Cell>,
+        pub big: Ptr<Cell>,
+        pub ibig: Ptr<Instance>,
+        pub lil: Ptr<Cell>,
         pub parent: Layout,
     }
     impl SampleLib {
@@ -989,7 +990,7 @@ mod tests {
             };
             let ibig = parent.instances.add(ibig);
             // Create a unit cell which we'll instantiate a few times around `ibig`
-            let mut lil = cell::Cell::new("lil");
+            let mut lil = Cell::new("lil");
             lil.layout = Some(Layout::new("lil", 1, Outline::rect(2, 1)?));
             let mut lil_abs = abs::Abstract::new("lil", 1, Outline::rect(2, 1)?);
             lil_abs.ports.push(abs::Port {

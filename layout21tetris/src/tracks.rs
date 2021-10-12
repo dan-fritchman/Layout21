@@ -5,8 +5,8 @@ use std::fmt::Debug;
 use serde::{Deserialize, Serialize};
 
 // Local imports
-use crate::cell::Instance;
 use crate::coords::DbUnits;
+use crate::instance::Instance;
 use crate::raw::{Dir, LayoutError, LayoutResult};
 use crate::stack::{Assign, RelZ};
 use crate::utils::Ptr;

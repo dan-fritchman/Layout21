@@ -5,8 +5,8 @@ use std::fmt::Debug;
 use serde::{Deserialize, Serialize};
 
 // Local imports
-use crate::cell::Instance;
 use crate::coords::{DbUnits, Xy};
+use crate::instance::Instance;
 use crate::raw::{self, Dir, LayoutResult, Units};
 use crate::utils::Ptr;
 use crate::{tracks::*, validate};
@@ -21,7 +21,7 @@ pub struct Stack {
     /// Primitive Layer
     pub prim: PrimitiveLayer,
     /// Set of metal layers
-    pub layers: Vec<Layer>,
+    pub metals: Vec<MetalLayer>,
     /// Set of via layers
     pub vias: Vec<ViaLayer>,
     /// [raw::Layer] Mappings
@@ -36,14 +36,14 @@ impl Stack {
         StackValidator::validate(self)
     }
 }
-/// # Layer
+/// # MetalLayer
 ///
 /// Metal layer in a [Stack]
 /// Each layer is effectively infinite-spanning in one dimension, and periodic in the other.
 /// Layers with `dir=Dir::Horiz` extend to infinity in x, and repeat in y, and vice-versa.
 ///
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Layer {
+pub struct MetalLayer {
     /// Layer Name
     pub name: String,
     /// Direction Enumeration (Horizontal/ Vertical)
@@ -68,7 +68,7 @@ pub struct LayerPeriodData {
     pub signals: Vec<TrackData>,
     pub rails: Vec<TrackData>,
 }
-impl Layer {
+impl MetalLayer {
     /// Convert this [Layer]'s track-info into a [LayerPeriodData]
     pub(crate) fn to_layer_period_data(&self) -> LayoutResult<LayerPeriodData> {
         let mut period = LayerPeriodData::default();

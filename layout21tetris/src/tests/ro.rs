@@ -4,7 +4,7 @@
 
 // Local imports
 use crate::abs;
-use crate::cell::{self, Instance, Layout};
+use crate::cell::{Cell, RawLayoutPtr};
 use crate::coords::{PrimPitches, Xy};
 use crate::library::Library;
 use crate::outline::Outline;
@@ -12,12 +12,13 @@ use crate::placement::{Align, Array, ArrayInstance, Arrayable, Place, RelAssign}
 use crate::raw::{self, LayoutResult};
 use crate::stack::RelZ;
 use crate::utils::Ptr;
+use crate::{instance::Instance, layout::Layout};
 
 // Test-locals
 use super::{exports, resource, stacks::SampleStacks};
 
 /// Create an abs unit-cell
-fn abstract_unit_cell(_lib: &mut Library) -> LayoutResult<Ptr<cell::Cell>> {
+fn abstract_unit_cell(_lib: &mut Library) -> LayoutResult<Ptr<Cell>> {
     Ok(Ptr::new(abstract_unit()?.into()))
 }
 /// Create an abs unit-cell
@@ -58,7 +59,7 @@ fn abstract_unit() -> LayoutResult<abs::Abstract> {
     Ok(unit)
 }
 /// RO, absolute-placement edition
-fn ro_abs(unit: Ptr<cell::Cell>) -> LayoutResult<cell::Cell> {
+fn ro_abs(unit: Ptr<Cell>) -> LayoutResult<Cell> {
     let unitsize = (18, 1);
 
     // Create an initially empty layout
@@ -132,7 +133,7 @@ fn ro_abs(unit: Ptr<cell::Cell>) -> LayoutResult<cell::Cell> {
     Ok(ro.into())
 }
 /// RO, relative-placement edition
-fn ro_rel(unit: Ptr<cell::Cell>) -> LayoutResult<cell::Cell> {
+fn ro_rel(unit: Ptr<Cell>) -> LayoutResult<Cell> {
     use crate::placement::{Placeable, RelativePlace, SepBy, Separation, Side};
     let unitsize = (18, 1);
 
@@ -270,7 +271,7 @@ fn wrap_gds() -> LayoutResult<()> {
     exports(lib, SampleStacks::pdka()?)
 }
 /// Most internal implementation of the `wrap_gds` test
-fn _wrap_gds(lib: &mut Library) -> LayoutResult<Ptr<cell::Cell>> {
+fn _wrap_gds(lib: &mut Library) -> LayoutResult<Ptr<Cell>> {
     // Import a [GdsLibrary] to a [raw::Library]
     let gds_fname = resource("ginv.gds");
     let gds = raw::gds::gds21::GdsLibrary::load(&gds_fname)?;
@@ -286,7 +287,7 @@ fn _wrap_gds(lib: &mut Library) -> LayoutResult<Ptr<cell::Cell>> {
     let rawlibptr = lib.add_rawlib(rawlib);
     // Create a [Cell] from the [raw::Library]'s sole cell
     let unitsize = (18, 1);
-    let wrapped = cell::RawLayoutPtr {
+    let wrapped = RawLayoutPtr {
         outline: Outline::rect(unitsize.0, unitsize.1)?, // outline
         metals: 1,
         lib: rawlibptr,
@@ -308,7 +309,7 @@ fn _wrap_gds(lib: &mut Library) -> LayoutResult<Ptr<cell::Cell>> {
         reflect_vert: false,
     });
     // Convert the layout to a [Cell]
-    let mut wrapper: cell::Cell = wrapper.into();
+    let mut wrapper: Cell = wrapper.into();
     // And add an [Abstract] view
     wrapper.abs = Some(abstract_unit()?);
     // Finally add the wrapper [Cell] to our [Library], and return a pointer to it.
@@ -316,7 +317,7 @@ fn _wrap_gds(lib: &mut Library) -> LayoutResult<Ptr<cell::Cell>> {
     Ok(wrapper)
 }
 /// RO, array-placement edition
-fn ro_array(unit: Ptr<cell::Cell>) -> LayoutResult<cell::Cell> {
+fn ro_array(unit: Ptr<Cell>) -> LayoutResult<Cell> {
     use crate::placement::{Placeable, SepBy, Separation};
     let unitsize = (18, 1);
 
@@ -436,8 +437,8 @@ fn ro_array(unit: Ptr<cell::Cell>) -> LayoutResult<cell::Cell> {
 /// Accepts function-arguments for the unit-cell and wrapper-cell factories.
 fn _ro_test(
     libname: &str,
-    unitfn: fn(&mut Library) -> LayoutResult<Ptr<cell::Cell>>,
-    wrapfn: fn(Ptr<cell::Cell>) -> LayoutResult<cell::Cell>,
+    unitfn: fn(&mut Library) -> LayoutResult<Ptr<Cell>>,
+    wrapfn: fn(Ptr<Cell>) -> LayoutResult<Cell>,
 ) -> LayoutResult<()> {
     let mut lib = Library::new(libname);
     let unit = unitfn(&mut lib)?; // Create the unit cell

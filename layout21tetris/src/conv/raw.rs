@@ -11,7 +11,6 @@ use std::fmt::Debug;
 use slotmap::{new_key_type, SlotMap};
 
 // Local imports
-use crate::cell::{Instance, Layout};
 use crate::coords::{DbUnits, HasUnits, PrimPitches, UnitSpeced, Xy};
 use crate::library::Library;
 use crate::outline::Outline;
@@ -21,6 +20,7 @@ use crate::tracks::{Track, TrackSegmentType};
 use crate::utils::{ErrorContext, ErrorHelper};
 use crate::utils::{Ptr, PtrList};
 use crate::{abs, cell, validate};
+use crate::{instance::Instance, layout::Layout};
 
 // Create key-types for each internal type stored in [SlotMap]s
 new_key_type! {

@@ -4,10 +4,10 @@
 
 // Local imports
 use crate::bbox::{BoundBox, HasBoundBox};
-use crate::cell::{Cell, Instance};
 use crate::coords::{HasUnits, Int, PrimPitches, UnitSpeced, Xy};
 use crate::raw::{Dir, LayoutError, LayoutResult};
 use crate::utils::Ptr;
+use crate::{cell::Cell, instance::Instance};
 
 /// # Placement Enumeration
 ///

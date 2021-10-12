@@ -3,13 +3,13 @@
 //!
 
 // Local imports
-use super::cell::{self, Instance, Layout};
 use super::library::Library;
 use super::outline::Outline;
 use super::raw::LayoutResult;
 use super::stack::*;
 use super::tracks::*;
-use super::{abs, rawconv, validate::ValidStack};
+use super::{abs, conv, validate::ValidStack};
+use crate::{cell::Cell, instance::Instance, layout::Layout};
 
 use crate::utils::PtrList;
 
@@ -31,7 +31,7 @@ fn empty_cell() -> LayoutResult<()> {
         places: Vec::new(),
     };
     let mut lib = Library::new("EmptyCellLib");
-    let _c2 = lib.cells.insert(cell::Cell::from(c));
+    let _c2 = lib.cells.insert(Cell::from(c));
     exports(lib, SampleStacks::pdka()?)
 }
 /// Create a layout-implementation
@@ -249,7 +249,7 @@ pub fn exports(lib: Library, stack: ValidStack) -> LayoutResult<()> {
     // Serializable formats will generally be written as YAML.
     use crate::utils::SerializationFormat::Yaml;
 
-    let rawlib = rawconv::RawExporter::convert(lib, stack)?;
+    let rawlib = conv::raw::RawExporter::convert(lib, stack)?;
     let rawlib = rawlib.read()?;
 
     // Export to ProtoBuf, save as YAML and binary
