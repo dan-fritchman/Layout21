@@ -7,7 +7,7 @@
 //!
 
 // Crates.io
-use enum_dispatch::enum_dispatch;
+use derive_more;
 
 // Local imports
 use crate::bbox::{BoundBox, HasBoundBox};
@@ -129,17 +129,13 @@ pub struct RawLayoutPtr {
 }
 /// # Cell View Enumeration
 /// All of the ways in which a Cell is represented
-#[enum_dispatch]
-#[derive(Debug, Clone)]
+#[derive(derive_more::From, Debug, Clone)]
 pub enum CellView {
     Interface(interface::Bundle),
     Abstract(abs::Abstract),
     Layout(Layout),
     RawLayoutPtr(RawLayoutPtr),
 }
-/// Empty trait, largely for auto-generation of [From] and [Into] implementations.
-#[enum_dispatch(CellView)]
-trait CellViewable {}
 
 /// Collection of the Views describing a Cell
 #[derive(Debug, Default, Clone)]

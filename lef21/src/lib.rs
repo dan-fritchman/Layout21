@@ -6,9 +6,9 @@
 //!
 //! LEF is near-ubiquitously used IC-industry-wide for two related purposes:
 //!
-//! * *Libraries* of LEF *macros* commonly provide the *physical abstract* view of a circuit design.
+//! * LEF *design libraries*, primarily comprised of LEF *macros*, provide the *physical abstract* view of circuit designs.
 //!   * Such abstract-views are commonly the target for layout-synthesis programs ("place and route").
-//!   * They include a circuit's pin locations and requirements for "obstruction" blockages, among other metadata, typically without including the internal implementation.
+//!   * They include a circuit's pin locations and requirements for physical blockages ("obstructions"), among other metadata, typically without including the circuit's internal implementation.
 //! * LEF *technology descriptions* ("tech-lef") provide a concise description of design-rules for assembling such cells, as commonly performed by layout-synthesis software.
 //!
 //! Lef21 includes comprehensive support for parsing and writing LEF *design libraries*, primarily stored as its [`LefLibrary`] and [`LefMacro`] types.
@@ -24,26 +24,26 @@
 //! ```
 //!
 //! Each [`LefLibrary`] is a short tree of macro-definitions, which are in turn primarily comprised of pin-definitions and obstructions.
-//! This tree is of the form:
+//! This [`LefLibrary`] tree is of the form:
 //!
 //! * [`LefLibrary`]
 //!   * Library Metadata
-//!   * Vec<[`LefMacro`]>
+//!   * Macro Definitions, stored as Vec<[`LefMacro`]>
 //!     * Macro Metadata
-//!     * Vec<[`LefPin`]>
+//!     * Blockages / Obstructions, stored as Vec<[`LefLayerGeometries`]>
+//!     * Pin Definitions, stored as Vec<[`LefPin`]>
 //!       * Pin Metadata
-//!       * Vec<[`LefPort`]>
-//!     * Obstructions ([`LefLayerGeometries`])
+//!       * Port Definitions, stored as Vec<[`LefPort`]>
 //!
 //! All fields of all layers in the [`LefLibrary`] tree are publicly accessible and modifiable.
 //!
-//! Lef21 libraries are saved to file with their `save` method:
+//! Lef21 libraries can be saved to file with their [`LefLibrary::save`] method:
 //!
 //! ```skip
 //! lib.save("yourlib.lef")?;
 //! ```
 //!
-//! Or converted to in-memory LEF-format [String]s via `to_string()`:
+//! Or converted to in-memory LEF-format [String]s via [`LefLibrary::to_string`]:
 //!
 //! ```skip
 //! let s = lib.to_string()?;
@@ -134,7 +134,7 @@ static V5P8: Lazy<LefDecimal> = Lazy::new(|| LefDecimal::from_str("5.8").unwrap(
 
 /// # Lef Library  
 ///
-/// LEF's primary design-content container, including a set of macro/cell definitions and assocaited metadata.
+/// LEF's primary design-content container, including a set of macro/cell definitions and associated metadata.
 #[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[builder(pattern = "owned", setter(into), private)]
 pub struct LefLibrary {
@@ -374,7 +374,7 @@ pub struct LefPin {
     #[builder(default)]
     pub properties: Unsupported,
 }
-/// Enumerated Pin Directions
+/// # Lef Pin Direction
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum LefPinDirection {
     Input,
@@ -396,7 +396,7 @@ impl std::fmt::Display for LefPinDirection {
 }
 /// # Lef Antenna Attributes
 ///
-/// Stored as key-value pairs from string-keys name "ANTENNA*" to [LefDecimal] values.
+/// Stored as key-value pairs from string-keys named "ANTENNA*" to [LefDecimal] values.
 /// Note each pair may have an optional `layer` specifier,
 /// and that each key may have multiple attributes, generally specifying different layers.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -410,7 +410,6 @@ pub struct LefPinAntennaAttr {
 /// Defines the physical locations and optional metadata of a port on a pin.
 /// LEF includes the notion of multiple "weakly connected" ports per pin;
 /// each [LefPort] is one such weakly-connected point.
-/// See the [LefPin] documentation for more information.
 #[derive(Clone, Default, Builder, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[builder(pattern = "owned", setter(into), private)]
 pub struct LefPort {
@@ -425,7 +424,8 @@ pub struct LefPort {
 ///
 /// Most LEF spatial data (e.g. ports, blockages) is organized by layer.
 /// [LefLayerGeometries] stores the combination of a layer (name)
-/// and suire of geometric primitives (e.g. rectangles, polygons) and vias on that layer.
+/// and suite of geometric primitives (e.g. rectangles, polygons) and vias on that layer.  
+///
 /// [LefLayerGeometries] are the primary building block of [LefPort]s and macro obstructions.
 ///
 #[derive(Clone, Default, Builder, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -456,7 +456,7 @@ pub struct LefLayerGeometries {
 ///
 /// A located instance of via-type `via_name`, typically used as part of a [LefLayerGeometries] definition.
 /// The via-type is generally interpreted as a string-valued reference into tech-lef data.
-/// It is stored in each [LefVia] exactly as in LEF: as a string (name).
+/// It is stored in each [LefVia] exactly as in LEF, as a string type-name.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct LefVia {
     /// Via-Type Name
@@ -494,8 +494,8 @@ pub enum LefShape {
 }
 /// # Lef X-Y Spatial Point
 ///
-/// Specified in [LefDecimal]-valued coordinates.
-/// Supports common mathematical operations (Add, Sub, increment, etc.).
+/// Specified in [LefDecimal]-valued Cartesian coordinates.  
+/// Supports common mathematical operations (Add, Sub, increment, etc.).  
 #[derive(
     Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq, Add, AddAssign, Sub, SubAssign,
 )]
@@ -547,7 +547,11 @@ impl LefDbuPerMicron {
         self.0
     }
 }
-/// Measurement Unit Conversion Factors
+/// # Lef Physical-Dimension Units
+///
+/// Conversion factors for a variety of physical quantities.  
+/// Only the distance-measurement `database_microns` is supported.
+///
 #[derive(Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct LefUnits {
     /// Database Distance Units per Micron
@@ -603,14 +607,16 @@ pub struct LefSite {
 ///
 /// Empty placeholder struct for unsupported LEF features.
 /// These fields are largely included for documentation purposes.
-/// They are never parsed, and can only be set to the zero-size [Unsupported] value.
+/// They are never parsed, never written or serialized, and can only be set to the zero-size [Unsupported] value.
 #[derive(Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Unsupported;
 
-/// Lef String-Enumeration Trait
+/// # Lef String-Enumeration Trait
+///
 /// Defines two central methods:
 /// * `to_str(&self) -> &'static str` converts the enum to its Lef-String values.
 /// * `from_str(&str) -> Option<Self>` does the opposite, returning an [Option] indicator of success or failure.
+///
 trait LefEnum: std::marker::Sized {
     fn to_str(&self) -> &'static str;
     fn from_str(txt: &str) -> Option<Self>;
@@ -664,13 +670,13 @@ macro_rules! enumstr {
 enumstr!(
     /// # Lef Key(Word)s
     ///
-    /// Enumerated "key(word)s" use in LEF parsing and generation.
+    /// Enumerated "key(word)s" used in LEF parsing and generation.
     ///
     /// Unlike typical programming languages, LEF does not really have *keywords*  in the sense of being reserved at all points in the program.
     /// Legality of [LefKey]s is instead context-dependent, more as in a YAML or JSON schema.
     /// For example a [LefMacro] is free to use the name "MACRO" for one of its pins, whereas while during [LefLibrary] definition, "MACRO" is a key with special meaning.
     ///
-    /// LEF syntax is case-insensitive. [LefKey]s are always written in the (conventional) upper-case form, but parsed case-insensitively.
+    /// LEF syntax is case-insensitive. [LefKey]s are always written in the (conventional) upper-case form, but are parsed case-insensitively.
     ///
     LefKey {
         Library: "LIBRARY",
@@ -770,10 +776,11 @@ enumstr!(
     }
 );
 enumstr!(
-    /// # Lef Pin-Usage (`USE`)  
-    /// Specifies the usage-intent for a pin.
-    /// Note this is the noun form of "use", pronounced with the hard "s".
-    /// Not the verb form pronounced like the New Jersey second-person plural "yous".
+    /// # Lef Pin-Usage 
+    /// 
+    /// Specifies the usage-intent for a [LefPin]. 
+    /// Note this is the noun form of "use", pronounced with the hard "s" - 
+    /// not the verb form pronounced like the New Jersey second-person plural "yous".
     LefPinUse {
         Signal: "SIGNAL",
         Analog: "ANALOG",
@@ -866,7 +873,7 @@ enumstr!(
     }
 );
 
-/// Lef Error Enumeration
+/// # Lef Error Enumeration
 #[derive(Debug)]
 pub enum LefError {
     /// Lexer Errors

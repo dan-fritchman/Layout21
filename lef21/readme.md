@@ -1,24 +1,27 @@
-# lef21
+
+# Lef21
+
+[![docs](https://docs.rs/lef21/badge.svg)](https://docs.rs/lef21)
 
 
 ## Lef21 Library Exchange Format (LEF) Parser & Writer
 
 [Library Exchange Format (LEF)](https://en.wikipedia.org/wiki/Library_Exchange_Format)
-is an ASCII text based format for integrated circuit (IC) layout and technology.
+is an ASCII-based format for integrated circuit (IC) layout and technology.
 
 LEF is near-ubiquitously used IC-industry-wide for two related purposes:
 
-* *Libraries* of LEF *Macros* commonly provide the *physical abstract* view of a circuit design.
+* LEF *design libraries*, primarily comprised of LEF *macros*, provide the *physical abstract* view of circuit designs.
   * Such abstract-views are commonly the target for layout-synthesis programs ("place and route").
-  * They include a circuit's pin locations and requirements for "obstruction" blockages, among other metadata, typically without including the circuit's internal layout implementation.
-* LEF *technology descriptions* ("tech-lef") provide a concise description of rules for assembling such cells, as commonly performed by layout-synthesis software.
+  * They include a circuit's pin locations and requirements for physical blockages ("obstructions"), among other metadata, typically without including the circuit's internal implementation.
+* LEF *technology descriptions* ("tech-lef") provide a concise description of design-rules for assembling such cells, as commonly performed by layout-synthesis software.
 
-Lef21 includes comprehensive support for parsing and writing LEF *design libraries*, primarily stored as its [LefLibrary] type.
+Lef21 includes comprehensive support for parsing and writing LEF *design libraries*, primarily stored as its [`LefLibrary`] and [`LefMacro`] types.
 A select subset of tech-lef features are also supported, particularly those which blur the lines between technology and library data.
 
 ### Usage
 
-Creating a [`LefLibrary`] from file solely requires a call to the [LefLibrary::open] method:
+Creating a [`LefLibrary`] from file solely requires a call to the [`LefLibrary::open`] method:
 
 ```skip
 use lef21::LefLibrary;
@@ -26,18 +29,31 @@ let lib = LefLibrary::open("mylib.lef")?;
 ```
 
 Each [`LefLibrary`] is a short tree of macro-definitions, which are in turn primarily comprised of pin-definitions and obstructions.
-The shape of this tree is of the form:
+This [`LefLibrary`] tree is of the form:
 
 * [`LefLibrary`]
   * Library Metadata
-  * Vec<[`LefMacro`]>
+  * Macro Definitions, stored as Vec<[`LefMacro`]>
     * Macro Metadata
-    * Vec<[`LefPin`]>
+    * Blockages / Obstructions, stored as Vec<[`LefLayerGeometries`]>
+    * Pin Definitions, stored as Vec<[`LefPin`]>
       * Pin Metadata
-      * Vec<[`LefPort`]>
-    * Obstructions ([`LefLayerGeometries`])
+      * Port Definitions, stored as Vec<[`LefPort`]>
 
 All fields of all layers in the [`LefLibrary`] tree are publicly accessible and modifiable.
+
+Lef21 libraries can be saved to file with their [`LefLibrary::save`] method:
+
+```skip
+lib.save("yourlib.lef")?;
+```
+
+Or converted to in-memory LEF-format [String]s via [`LefLibrary::to_string`]:
+
+```skip
+let s = lib.to_string()?;
+println!({}, s);
+```
 
 ### Serialization
 
@@ -71,14 +87,18 @@ Lef21 is a subset of the larger [Layout21](https://github.com/dan-fritchman/Layo
 Lef21 correspondingly uses the LEF format's concepts, idioms, and terminology (e.g. "macro" vs. "cell") throughout.
 Its LEF data structures are nonetheless designed for direct manipulation, for example in programmatically modifying existing LEF content.
 
-LEF is frequently paired with the DEF format for specifying circuit's internal physical implementations.
-Like LEF, DEF is a text-based format. More common industry usage pairs LEF with [GDSII](https://crates.io/crates/gds21)'s binary implementation format,
+LEF is frequently paired with the DEF ASCII-based format for specifying circuit's internal physical implementations.
+More common industry usage pairs LEF with [GDSII](https://crates.io/crates/gds21)'s binary implementation format,
 which dramatically reduces data-sizes for large circuits.
 DEF is not supported by Lef21. GDSII is supported by the related [gds21](https://crates.io/crates/gds21) crate.
 
-LEF was originally designed by Tangent Systems, later acquired by Cadence Design Systems.
-Lef21 holds no relationship to either entity, nor any authority or ownership over the format.
-Countless LEF-format design descriptions are freely available as open-source software;
-their examples serve as the basis for Lef21.
+### License
 
-License: BSD-3-Clause
+Lef21 and Layout21 are published under a permissive BSD license.
+
+The LEF format was originally designed by Tangent Systems, later acquired by Cadence Design Systems.
+Lef21 holds no relationship to either entity, nor any authority or ownership over the format.
+Countless LEF-format design descriptions are [freely available](https://github.com/google/skywater-pdk-libs-sky130_fd_sc_hd/blob/main/cells/mux2/sky130_fd_sc_hd__mux2_1.lef)
+as open-source software.
+Their examples serve as the basis for Lef21.
+

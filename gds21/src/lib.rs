@@ -7,39 +7,34 @@
 //! Reading and generating GDSII-format data are primary goals;
 //! offering ease-of-use functionality for more elaborate manipulations of GDS data is not.
 //! (Although these manipulations can be performed on Gds21's data structures).
-//! Gds21 accordingly stores layout data on GDSII's terms, using GDSII's idioms and naming conventions.
+//! Gds21 accordingly stores layout data on GDSII's terms, using GDSII's idioms, naming conventions, and datatypes.
 //!
 //! Layout data is represented in three primary forms:
 //!
 //! * A short tree with three layers:
-//!   * The root is a [GdsLibrary], which primarily consists of a set of cells ([GdsStruct]s), and secondarily a set of metadata.
-//!     Each [GdsLibrary] is a universe unto itself, in that it has no mechanisms for comprehending layout cells or data defined outside itself.
-//!     On-disk each [GdsLibrary] is typically paired one-to-one with a `.gds` file.
-//!   * Libraries consist of cell definitions AKA [GdsStruct]s, which define each layout cell (or module, or "struct" in GDSII terms).
-//!   * Cells consist of [GdsElement]s, an enumeration which includes individual polygons ([GdsBoundary]),
-//!     instances of other layout cells ([GdsStructRef]), text ([GdsTextElem]), and a few other geometric elements.
-//! * For storage on disk, the [GdsLibrary] tree is flattened to a series of [GdsRecord]s.
+//!   * The root is a [`GdsLibrary`], which primarily consists of a set of cells ([`GdsStruct`]s), and secondarily a set of metadata.
+//!     Each [`GdsLibrary`] is a universe unto itself, in that it has no mechanisms for comprehending layout cells or data defined outside itself.
+//!     On-disk each [`GdsLibrary`] is typically paired one-to-one with a `.gds` file.
+//!   * Libraries consist of cell definitions AKA [`GdsStruct`]s, which define each layout cell (or module, or "struct" in GDSII terms).
+//!   * Cells consist of [`GdsElement`]s, an enumeration which includes individual polygons ([`GdsBoundary`]),
+//!     instances of other layout cells ([`GdsStructRef`]), text ([`GdsTextElem`]), and a few other geometric elements.
+//! * For storage on disk, the [`GdsLibrary`] tree is flattened to a series of [`GdsRecord`]s.
 //!   These records indicate the beginning, end, and content of each tree-node.
 //!   Detailed descriptions of these records comprise the majority of the GDSII spec.
 //! * Records are stored on-disk in binary form as detailed in the GDSII spec.
 //!   Each includes a record-type header, datatype, length field, and optional additional content.
-//!   These raw-bytes are never stored by Gds21, only generated and consumed on their way into and out of [Read] and [Write] objects (typically [File]s).
+//!   These raw-bytes are never stored by Gds21, only generated and consumed on their way into and out of [`Read`] and [`Write`] objects (typically [`File`]s).
 //!
-//! ## Alternate Serialization
-//!
-//! Each element in Gds21's [GdsLibrary] tree is [serde]-serializable.
-//! Gds21 includes dependencies for serializing and de-serializing to and from [JSON](serde_json), [YAML](serde_yaml), and [TOML](toml) formats.
-//! Note these text-based representations will generally be substantially larger than binary GDSII data.
 //!
 //! ## Usage
 //!
-//! Loading a [GdsLibrary] from disk:
+//! Loading a [`GdsLibrary`] from disk:
 //!
 //! ```skip
 //! let lib = GdsLibrary::load("sample.gds")?;
 //! ```
 //!
-//! Creating a new and empty [GdsLibrary], and adding a [GdsStruct] cell-definition:
+//! Creating a new and empty [`GdsLibrary`], and adding a [`GdsStruct`] cell-definition:
 //!
 //! ```
 //! use gds21::{GdsLibrary, GdsStruct};
@@ -47,13 +42,17 @@
 //! lib.structs.push(GdsStruct::new("mycell"));
 //! ```
 //!
-//! Saving a [GdsLibrary] to disk:
+//! Saving a [`GdsLibrary`] to disk:
 //!
 //! ```skip
 //! lib.save("mylib.gds");
 //! ```
 //!
-//! Converting a [GdsLibrary] to JSON, YAML, or TOML:
+//! ## Serialization
+//!
+//! Each element in Gds21's [`GdsLibrary`] tree is [`serde`]-serializable.
+//! GDSII data can be straightforwardly serialized in any serde-supported format.
+//! Examples:
 //!
 //! ```text
 //! let lib = gds21::GdsLibrary::new("mylib");
@@ -61,6 +60,22 @@
 //! let yaml = serde_yaml::to_string(&lib);
 //! let toml = toml::to_string(&lib);
 //! ```
+//!
+//! Gds21 includes built-in support for a subset of serde-formats via its [`SerializationFormat`] enumeration,
+//! and support for directly reading and writing files in each format via its accompanying [`SerdeFile`] trait.
+//! Example using [`SerializationFormat::Yaml`]:
+//!
+//! ```skip
+//! use gds21::SerializationFormat::Yaml;
+//! let lib = gds21::GdsLibrary::new("mylib");
+//!
+//! // Write to YAML-format file
+//! Yaml.save(&lib, "mylib.gds.yaml")?;
+//! // And read back from file
+//! let lib2: gds21::GdsLibrary = Yaml.open("mylib.gds.yaml")?;  
+//! ```
+//!
+//! Note these text-based representations will generally be substantially larger than binary GDSII data.
 //!
 
 // Std-Lib Imports
@@ -77,8 +92,7 @@ use std::{fmt, mem, str};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use chrono::prelude::*;
 use chrono::{Datelike, NaiveDate, NaiveDateTime};
-use derive_more::{Add, AddAssign, Sub, SubAssign};
-use enum_dispatch::enum_dispatch;
+use derive_more::{self, Add, AddAssign, Sub, SubAssign};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use serde::{Deserialize, Serialize};
@@ -87,15 +101,15 @@ extern crate derive_builder;
 
 // Local Imports
 use layout21utils as utils;
+#[doc(inline)]
+pub use utils::{SerdeFile, SerializationFormat};
 
 // Internal Modules
 #[doc(hidden)]
 mod read;
-#[doc(inline)]
 use read::{GdsParser, GdsScanner, GdsStructScan};
 #[doc(hidden)]
 mod write;
-#[doc(inline)]
 use write::GdsWriter;
 #[cfg(test)]
 mod tests;
@@ -324,7 +338,7 @@ impl GdsFloat64 {
     }
 }
 
-/// Placeholder for Unsupported (But Spec-Valid) Features
+/// # Unsupported (But Spec-Valid) Features
 #[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Unsupported;
 
@@ -373,7 +387,8 @@ pub struct GdsPlex(i32);
 /// # Gds Library Units
 ///
 /// Each GDSII Library has two length-units, referred to as "DB Units" and "User Units" respectively.
-/// Essentially all other spatial data throughout the Library is denoted in "DB Units".
+/// Essentially all spatial data throughout the Library is denoted in "DB Units".
+/// "User units" are a sort of recommendation for GUI programs to use when displaying the Library.  
 ///
 /// From the spec's `UNITS` record-description:  
 /// ```text
@@ -404,7 +419,7 @@ impl GdsUnits {
 impl Default for GdsUnits {
     /// Default values for GDS Units:
     /// * DB-Unit = 1nm
-    /// * User-Unit = 1µm (1000x the DB-Unit )
+    /// * User-Unit = 1µm (1000x the DB-Unit)
     fn default() -> Self {
         Self(1e-3, 1e-9)
     }
@@ -761,8 +776,7 @@ pub struct GdsBox {
 ///
 /// Note the `properties` vectors are pushed down to each enum variant.
 ///
-#[enum_dispatch]
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(derive_more::From, Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub enum GdsElement {
     GdsBoundary(GdsBoundary),
     GdsPath(GdsPath),
@@ -772,12 +786,10 @@ pub enum GdsElement {
     GdsNode(GdsNode),
     GdsBox(GdsBox),
 }
-/// Empty trait for conversion between each [GdsElement] variant and the associated struct.
-/// Dispatched from the [GdsElement] enum by the `enum_dispatch` macros.
-#[enum_dispatch(GdsElement)]
-trait GdsElementVariants {}
 
-/// Summary statistics for a [GdsLibrary] or [GdsStruct].
+/// # Gds Summary Stats  
+///
+/// Summary statistics for a [GdsLibrary] or [GdsStruct].  
 /// Total numbers of elements of each type.
 #[derive(Debug, Default, Deserialize, Serialize, PartialEq, Add, AddAssign, Sub, SubAssign)]
 pub struct GdsStats {
@@ -946,7 +958,8 @@ impl GdsLibrary {
     }
     /// Run a first-pass scan of GDSII data in `fname`.
     /// Returns a vector of [GdsStructScan]s including summary info per struct.
-    pub fn scan(fname: impl AsRef<Path>) -> GdsResult<Vec<GdsStructScan>> {
+    #[allow(dead_code)] // FIXME!
+    fn scan(fname: impl AsRef<Path>) -> GdsResult<Vec<GdsStructScan>> {
         GdsScanner::scan(fname)
     }
     /// Collect and return the library's aggregate statistics
@@ -970,9 +983,9 @@ impl GdsLibrary {
         wr.write_lib(self)
     }
 }
-// Enable [GdsLibrary] serialization to file,
-// in each of `utils` supported formats.
-impl utils::ser::SerdeFile for GdsLibrary {}
+// Enable [GdsLibrary] and [GdsStruct] serialization to file, in each of `utils` supported formats.
+impl SerdeFile for GdsLibrary {}
+impl SerdeFile for GdsStruct {}
 
 /// # Gds Layer Spec
 ///
@@ -989,7 +1002,7 @@ pub struct GdsLayerSpec {
     /// DataType (or TextType, NodeType, etc.) ID Number
     pub xtype: i16,
 }
-/// Trait for "layered" elements
+/// # Has-Layer Trait  
 /// Sole function `layerspec` returns a [GdsLayerSpec] including the two numbers `layer` and `xtype`.
 pub trait HasLayer {
     fn layerspec(&self) -> GdsLayerSpec;
