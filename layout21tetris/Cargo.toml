@@ -14,11 +14,11 @@ exclude = ["resources",]
 # Local workspace dependencies
 layout21raw = {path = "../layout21raw", version = "0.2.1"}
 layout21utils = {path = "../layout21utils", version = "0.2.1"}
+layout21protos = {path = "../layout21protos", version = "0.2.1"}
 
 # Crates.io 
 derive_builder = "0.9"
 derive_more = "0.99.16"
-enum_dispatch = "0.3.1"
 num-integer = "0.1"
 num-traits = "0.2"
 serde = {version = "1.0", features = ["derive"]}

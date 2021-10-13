@@ -6,7 +6,7 @@
 use std::convert::TryFrom;
 
 // Local imports
-use crate::coords::{DbUnits, Xy};
+use crate::coords::{DbUnits, HasUnits, Xy};
 use crate::raw::{self, Dir, LayoutError, LayoutResult, Units};
 use crate::stack::{Assign, LayerPeriodData, MetalLayer, PrimitiveLayer, RelZ, Stack};
 use crate::stack::{PrimitiveMode, ViaLayer, ViaTarget};

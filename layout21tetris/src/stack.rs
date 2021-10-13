@@ -295,6 +295,14 @@ pub struct Assign {
     /// Track Intersection Location
     pub at: TrackIntersection,
 }
+impl Assign {
+    pub fn new(net: impl Into<String>, at: impl Into<TrackIntersection>) -> Self {
+        Self {
+            net: net.into(),
+            at: at.into(),
+        }
+    }
+}
 /// Relative Z-Axis Reference to one Layer `Above` or `Below` another
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum RelZ {
