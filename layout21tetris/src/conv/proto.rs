@@ -7,8 +7,6 @@ use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 
 // Local imports
-use crate::raw::{Dir, LayoutError, LayoutResult};
-use crate::utils::{DepOrder, DepOrderer, ErrorContext, ErrorHelper, Ptr};
 use crate::{
     // FIXME: some of these should come from `validate`
     abs::{Abstract, Port},
@@ -19,8 +17,10 @@ use crate::{
     library::Library,
     outline::Outline,
     placement::Place,
+    raw::{Dir, LayoutError, LayoutResult},
     stack::{Assign, RelZ},
     tracks::TrackIntersection,
+    utils::{DepOrder, DepOrderer, ErrorContext, ErrorHelper, Ptr},
 };
 // Proto-crate imports and aliases
 use layout21protos as proto;
@@ -462,11 +462,11 @@ impl ProtoLibImporter {
             External(_) => self.fail("Import of external proto-references not supported"),
         }?;
         // Now look that up in our hashmap
-        let cellkey = self.unwrap(
+        let cellptr = self.unwrap(
             self.cell_map.get(cellname),
             format!("Instance tproto::Instance of undefined cell {}", cellname),
         )?;
-        Ok(cellkey.clone())
+        Ok(cellptr.clone())
     }
     /// Import a [tproto::Point] designed to be interpreted as [PrimPitches]
     fn import_xy_prim_pitches(&mut self, pt: &rawproto::Point) -> LayoutResult<Xy<PrimPitches>> {

@@ -11,16 +11,15 @@ use std::sync::{Arc, RwLock};
 use by_address::ByAddress;
 
 ///
-/// # Ptr
-/// Internal type-alias for cell and library pointers.
+/// # Ptr  
 ///
-/// All are thread-safe and reference-counted "smart pointers".
-/// While none of the code *using* them is threaded (yet, maybe ever),
-/// we'll see how much heartache this induces in both design and performance.
+/// Internal type-alias for cell and library pointers.
+/// All are thread-safe and reference-counted "smart pointers".  
 ///
 /// Attribute access is largely forwarded through [Deref] calls,
 /// allowing for fairly natural syntax after grabbing `read()` or `write()` access.
-/// For examaple:
+/// For example:
+/// 
 /// ```text
 /// let data = ptr.read()?;
 /// data.some_function();
@@ -107,8 +106,7 @@ impl<T> Hash for Ptr<T> {
 ///
 /// # Pointer List
 ///
-/// Newtype wrapping a <Vec<Ptr>>, adding an interface designed
-/// for ease of getting referable [Ptr]s upon insertion.
+/// Newtype wrapping a [Vec<Ptr>], adding an interface designed for ease of getting referable [Ptr]s upon insertion.
 /// Other methods are passed into the underlying [Vec] via [Deref] and [DerefMut].
 ///
 #[derive(Debug, Clone)]
@@ -130,7 +128,7 @@ impl<T> PtrList<T> {
         let ptrs = vals.into_iter().map(|v| Ptr::new(v)).collect();
         Self(ptrs)
     }
-    /// Add a `Ptr<T>`-convertible element, commonly an owned `T`.
+    /// Add a `T`-convertible element.
     /// Returns a cloned [Ptr] to it, which can be used to access it.
     pub fn add(&mut self, t: impl Into<T>) -> Ptr<T> {
         let t = Ptr::new(t.into()); // Convert if necessary
