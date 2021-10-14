@@ -60,8 +60,6 @@ pub enum LayoutError {
         err: Box<dyn std::error::Error>,
         stack: Vec<ErrorContext>,
     },
-    /// Validation of input data
-    Validation,
     /// Boxed External Errors
     Boxed(Box<dyn std::error::Error>),
     /// Uncategorized Error, with String Message
@@ -70,13 +68,15 @@ pub enum LayoutError {
     /// Caused by trouble with a [Ptr]: either deadlock, or panic while holding a lock.
     /// Generally caused by a [std::sync::PoisonError], which is not forwardable due to lifetime constraints.
     PtrLock,
-    /// Everything to be categorized
-    Tbd,
 }
 impl LayoutError {
     /// Create a [LayoutError::Message] from anything String-convertible
     pub fn msg(s: impl Into<String>) -> Self {
         Self::Str(s.into())
+    }
+    /// Create an error-variant [Result] of our [LayoutError::Message] variant from anything String-convertible
+    pub fn fail<T>(s: impl Into<String>) -> Result<T, Self> {
+        Err(Self::msg(s))
     }
 }
 impl std::fmt::Debug for LayoutError {
@@ -101,8 +101,6 @@ impl std::fmt::Debug for LayoutError {
             LayoutError::Boxed(err) => err.fmt(f),
             LayoutError::Str(err) => err.fmt(f),
             LayoutError::PtrLock => write!(f, "[std::sync::PoisonError]"),
-            LayoutError::Validation => write!(f, "Error in Validation"),
-            LayoutError::Tbd => write!(f, "Uncategorized LayoutError"),
         }
     }
 }
@@ -341,7 +339,7 @@ impl Layers {
                 return Ok(k);
             }
         }
-        Err(LayoutError::msg("No more layer numbers available"))
+        LayoutError::fail("No more layer numbers available")
     }
     /// Get a reference to the [LayerKey] for layer-number `num`
     pub fn keynum(&self, num: i16) -> Option<LayerKey> {
@@ -399,6 +397,10 @@ impl Layers {
             }
         };
         Ok((key, purpose))
+    }
+    /// Get a shared reference to the internal <[LayerKey], [Layer]> map
+    pub fn slots(&self) -> &SlotMap<LayerKey, Layer> {
+        &self.slots
     }
 }
 /// Layer-Purpose Enumeration
@@ -476,7 +478,7 @@ impl Layer {
         match purp {
             LayerPurpose::Named(_, k) | LayerPurpose::Other(k) => {
                 if k != num {
-                    return Err(LayoutError::msg("Invalid LayerPurpose"));
+                    LayoutError::fail("Invalid LayerPurpose")?;
                 }
             }
             _ => (),

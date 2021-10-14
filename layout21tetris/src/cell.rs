@@ -104,7 +104,10 @@ impl Cell {
         } else if let Some(ref x) = self.raw {
             Ok(&x.outline)
         } else {
-            Err(LayoutError::Validation)
+            LayoutError::fail(format!(
+                "Failed to retrieve outline of cell {} with no abstract or implementation",
+                self.name,
+            ))
         }
     }
     /// Size of the [Cell]'s rectangular `boundbox`.
@@ -122,7 +125,10 @@ impl Cell {
         } else if let Some(ref x) = self.raw {
             Ok(x.metals)
         } else {
-            Err(LayoutError::Validation)
+            LayoutError::fail(format!(
+                "Failed to retrieve metal-layers of cell {} with no abstract or implementation",
+                self.name,
+            ))
         }
     }
     /// Get the cell's top metal layer (numer).

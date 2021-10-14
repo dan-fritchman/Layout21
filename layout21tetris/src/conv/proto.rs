@@ -280,7 +280,7 @@ impl DepOrder for CellOrder {
         Ok(())
     }
     fn fail() -> Result<(), Self::Error> {
-        Err(LayoutError::msg("Cell ordering error"))
+        LayoutError::fail("Cell ordering error")
     }
 }
 
@@ -503,19 +503,8 @@ impl ErrorHelper for ProtoLibImporter {
 }
 
 #[test]
-fn proto_export1() -> LayoutResult<()> {
-    // Initial proto-export test
-    let lib = Library::new("proto1");
-    let plib = ProtoExporter::export(&lib)?;
-    assert_eq!(plib.domain, "proto1");
-    assert_eq!(plib.cells, Vec::new());
-    assert_eq!(plib.author, None);
-    Ok(())
-}
-
-#[test]
 fn proto_roundtrip1() -> LayoutResult<()> {
-    // Initial proto-export test
+    // Proto-export
     let lib = Library::new("proto_rt1");
     let plib = ProtoExporter::export(&lib)?;
     assert_eq!(plib.domain, "proto_rt1");
@@ -527,6 +516,107 @@ fn proto_roundtrip1() -> LayoutResult<()> {
     assert_eq!(lib2.name, "proto_rt1");
     assert_eq!(lib2.cells.len(), 0);
     assert_eq!(lib2.rawlibs.len(), 0);
+
+    Ok(())
+}
+
+#[test]
+fn proto_roundtrip2() -> LayoutResult<()> {
+    // Proto round-trip, round 2, with some content
+    let mut lib = Library::new("proto_rt2");
+    let mut cell = Cell::new("proto_rt2_cell");
+    cell.layout = Some(Layout::new("proto_rt2_cell", 0, Outline::rect(1, 1)?));
+    cell.abs = Some(Abstract::new("proto_rt2_cell", 0, Outline::rect(1, 1)?));
+    lib.cells.add(cell);
+
+    let plib = ProtoExporter::export(&lib)?;
+    assert_eq!(plib.domain, "proto_rt2");
+    assert_eq!(plib.author, None);
+    assert_eq!(plib.cells.len(), 1);
+    let pcell = &plib.cells[0];
+    let playout = pcell.layout.as_ref().unwrap();
+    assert_eq!(playout.name, "proto_rt2_cell");
+    let playout_outline = playout.outline.as_ref().unwrap();
+    assert_eq!(playout_outline.x, vec![1]);
+    assert_eq!(playout_outline.y, vec![1]);
+    let pabs = pcell.r#abstract.as_ref().unwrap();
+    assert_eq!(pabs.name, "proto_rt2_cell");
+    assert_eq!(pabs.ports.len(), 0);
+    let pabs_outline = pabs.outline.as_ref().unwrap();
+    assert_eq!(pabs_outline.x, vec![1]);
+    assert_eq!(pabs_outline.y, vec![1]);
+    assert_eq!(pabs_outline, playout_outline);
+
+    // Import it back
+    let lib2 = ProtoLibImporter::import(&plib)?;
+    assert_eq!(lib2.name, "proto_rt2");
+    assert_eq!(lib2.rawlibs.len(), 0);
+    assert_eq!(lib2.cells.len(), 1);
+    let cell2 = &lib2.cells[0].read()?;
+    let layout2 = cell2.layout.as_ref().unwrap();
+    assert_eq!(layout2.name, "proto_rt2_cell");
+    assert_eq!(layout2.outline, Outline::rect(1, 1)?);
+    assert_eq!(layout2.metals, 0);
+    assert_eq!(layout2.instances.len(), 0);
+    assert_eq!(layout2.assignments.len(), 0);
+    assert_eq!(layout2.cuts.len(), 0);
+    let abs2 = cell2.abs.as_ref().unwrap();
+    assert_eq!(abs2.name, "proto_rt2_cell");
+    assert_eq!(abs2.ports.len(), 0);
+
+    use layout21utils::SerializationFormat::Yaml;
+    Yaml.save(&plib, "proto_rt2.yaml")?;
+
+    Ok(())
+}
+
+#[test]
+fn proto_yaml1() -> LayoutResult<()> {
+    // Proto export, then YAML export
+    let lib = Library::new("proto_yaml1");
+    let plib = ProtoExporter::export(&lib)?;
+    assert_eq!(plib.domain, "proto_yaml1");
+    assert_eq!(plib.cells, Vec::new());
+    assert_eq!(plib.author, None);
+    use layout21utils::SerializationFormat::Yaml;
+    Yaml.save(&plib, "proto_yaml1.yaml")?;
+    Ok(())
+}
+#[test]
+fn proto_yaml2() -> LayoutResult<()> {
+    // Import from YAML
+    let yaml = r#"
+    ---
+    domain: proto_rt2
+    cells:
+      - name: proto_rt2_cell
+        abstract:
+          name: proto_rt2_cell
+          outline:
+            x: [ 1 ]
+            y: [ 1 ]
+            metals: 0
+          ports: []
+        layout:
+          name: proto_rt2_cell
+          outline:
+            x: [ 1 ]
+            y: [ 1 ]
+            metals: 0
+          instances: []
+          assignments: []
+          cuts: []
+    "#;
+    use layout21utils::SerializationFormat::Yaml;
+    let plib: tproto::Library = Yaml.from_str(yaml)?;
+
+    // let lib = Library::new("proto_yaml1");
+    // let plib = ProtoExporter::export(&lib)?;
+    // assert_eq!(plib.domain, "proto_yaml1");
+    // assert_eq!(plib.cells, Vec::new());
+    // assert_eq!(plib.author, None);
+    // use layout21utils::SerializationFormat::Yaml;
+    // Yaml.save(&plib, "proto_yaml1.yaml")?;
 
     Ok(())
 }

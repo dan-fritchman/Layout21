@@ -11,13 +11,22 @@ use crate::raw::{self, Dir, LayoutError, LayoutResult, Units};
 use crate::stack::{Assign, LayerPeriodData, MetalLayer, PrimitiveLayer, RelZ, Stack};
 use crate::stack::{PrimitiveMode, ViaLayer, ViaTarget};
 use crate::tracks::TrackIntersection;
-use crate::utils::Ptr;
+use crate::utils::{ErrorHelper, Ptr};
 
 /// Helper-function for asserting all sorts of boolean conditions, returning [LayoutResult] and enabling the question-mark operator.
 pub fn assert(b: bool) -> LayoutResult<()> {
     match b {
         true => Ok(()),
-        false => Err(LayoutError::Validation),
+        false => LayoutError::fail("Assertion Failed"),
+    }
+}
+#[derive(Debug)]
+pub struct Validator;
+impl ErrorHelper for Validator {
+    type Error = LayoutError;
+    /// Errors are string-valued [LayoutError::String]s.
+    fn err(&self, msg: impl Into<String>) -> Self::Error {
+        LayoutError::msg(msg)
     }
 }
 
@@ -25,6 +34,7 @@ pub fn assert(b: bool) -> LayoutResult<()> {
 pub struct StackValidator;
 impl StackValidator {
     pub fn validate(stack: Stack) -> LayoutResult<ValidStack> {
+        let this = Validator;
         let Stack {
             units,
             boundary_layer,
@@ -35,8 +45,14 @@ impl StackValidator {
             ..
         } = stack;
         // Validate the primitive layer
-        assert(prim.pitches.x.raw() > 0)?;
-        assert(prim.pitches.y.raw() > 0)?;
+        this.assert(
+            prim.pitches.x.raw() > 0,
+            "Invalid zero or negative Primitive pitch",
+        )?;
+        this.assert(
+            prim.pitches.y.raw() > 0,
+            "Invalid zero or negative Primitive pitch",
+        )?;
 
         // Validate each metal layer
         let mut valid_metals = Vec::new();
@@ -67,6 +83,7 @@ impl StackValidator {
         })
     }
 }
+
 /// Derived data for a [Stack], after it has gone through some validation steps.
 #[derive(Debug)]
 pub struct ValidStack {
@@ -90,7 +107,7 @@ impl ValidStack {
     /// Get Metal-Layer number `idx`. Returns `None` if `idx` is out of bounds.
     pub fn metal(&self, idx: usize) -> LayoutResult<&ValidMetalLayer> {
         if idx >= self.metals.len() {
-            Err(LayoutError::Validation)
+            LayoutError::fail(format!("Invalid metal index {}", idx))
         } else {
             Ok(&self.metals[idx])
         }
@@ -104,12 +121,12 @@ impl ValidStack {
                 }
             }
         }
-        Err(LayoutError::Validation)
+        LayoutError::fail(format!("Requiring undefined via from metal layer {}", idx))
     }
     /// Get Via-Layer number `idx`. Returns an error if `idx` is out of bounds.
     pub fn via(&self, idx: usize) -> LayoutResult<&ViaLayer> {
         if idx >= self.vias.len() {
-            Err(LayoutError::Validation)
+            LayoutError::fail(format!("Invalid via index {}", idx))
         } else {
             Ok(&self.vias[idx])
         }

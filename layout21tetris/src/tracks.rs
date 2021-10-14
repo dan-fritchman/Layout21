@@ -264,7 +264,7 @@ impl<'lib> Track<'lib> {
     /// Set the stop position for our last [TrackSegment] to `stop`
     pub fn stop(&mut self, stop: DbUnits) -> LayoutResult<()> {
         if self.segments.len() == 0 {
-            return Err(LayoutError::msg("Error Stopping Track"));
+            LayoutError::fail("Error Stopping Track")?;
         }
         let idx = self.segments.len() - 1;
         self.segments[idx].stop = stop;

@@ -1,17 +1,15 @@
 //!
 //! # Abstract Layout Module
 //!
-//! Abstract layouts describe a block's outline and interface,
-//! without exposing implementation details.
-//! Cells primarily comprise their outlines and pins.
-//! Outlines follow the same "Tetris-Shapes" as `layout21::tetris` layout cells,
-//! including the requirements for a uniform z-axis.
+//! [Abstract] layouts describe a [Cell]'s outline and physical interface, without exposing implementation details.  
+//! [Cell]-[Abstract]s primarily comprise their outlines and pins.
+//! Outlines follow the same "Tetris-Shapes" as `layout21::tetris` layout cells, including the requirements for a uniform z-axis.  
 //! Internal layers are "fully blocked", in that parent layouts may not route through them.
 //! In legacy layout systems this would be akin to including blockages of the same shape as [Outline] on each layer.
 //!
 //! Sadly the english-spelled name "abstract" is reserved as a potential
 //! [future Rust keyword](https://doc.rust-lang.org/reference/keywords.html#reserved-keywords),
-//! hence the misspelling.
+//! and is hence avoided as an identifier throughout Layout21.  
 //!
 
 // Crates.io

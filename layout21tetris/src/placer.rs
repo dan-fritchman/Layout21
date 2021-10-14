@@ -12,8 +12,9 @@ use crate::bbox::HasBoundBox;
 use crate::{instance::Instance, layout::Layout};
 use crate::coords::{LayerPitches, PrimPitches, UnitSpeced, Xy};
 use crate::library::Library;
+use crate::array::{Array, ArrayInstance, Arrayable};
 use crate::placement::{
-    Align, Array, ArrayInstance, Arrayable, Place, Placeable, RelativePlace, SepBy, Side,
+    Align, Place, Placeable, RelativePlace, SepBy, Side,
 };
 use crate::raw::{Dir, LayoutError, LayoutResult};
 use crate::utils::{DepOrder, DepOrderer, ErrorContext, ErrorHelper, Ptr};

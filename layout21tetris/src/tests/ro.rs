@@ -4,11 +4,12 @@
 
 // Local imports
 use crate::abs;
+use crate::array::{Array, ArrayInstance, Arrayable};
 use crate::cell::{Cell, RawLayoutPtr};
 use crate::coords::{PrimPitches, Xy};
 use crate::library::Library;
 use crate::outline::Outline;
-use crate::placement::{Align, Array, ArrayInstance, Arrayable, Place, RelAssign};
+use crate::placement::{Align, Place, RelAssign};
 use crate::raw::{self, LayoutResult};
 use crate::stack::RelZ;
 use crate::utils::Ptr;

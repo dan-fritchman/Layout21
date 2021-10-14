@@ -54,7 +54,7 @@ impl<'wr> LefWriter<'wr> {
         }
         if let Some(ref v) = lib.names_case_sensitive {
             // Valid for versions <= 5.4
-            if self.session.lef_version > LefDecimal::from_str("5.4")? {
+            if self.session.lef_version > *V5P4 {
                 return Err(LefError::Str(format!(
                     "Invalid: NAMESCASESENSITIVE in Version: {}",
                     self.session.lef_version
@@ -64,7 +64,7 @@ impl<'wr> LefWriter<'wr> {
         }
         if let Some(ref v) = lib.no_wire_extension_at_pin {
             // Valid for versions <= 5.4
-            if self.session.lef_version > LefDecimal::from_str("5.4")? {
+            if self.session.lef_version > *V5P4 {
                 return Err(LefError::Str(format!(
                     "Invalid: NOWIREEXTENSIONATPIN in Version: {}",
                     self.session.lef_version
@@ -153,7 +153,7 @@ impl<'wr> LefWriter<'wr> {
         }
         if let Some(ref v) = mac.source {
             // Valid for versions <= 5.4
-            if self.session.lef_version > LefDecimal::from_str("5.4")? {
+            if self.session.lef_version > *V5P4 {
                 return Err(LefError::Str(format!(
                     "Invalid VERSION for MACRO SOURCE: {}",
                     self.session.lef_version
