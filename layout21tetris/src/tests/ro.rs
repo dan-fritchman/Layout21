@@ -27,7 +27,7 @@ fn abstract_unit() -> LayoutResult<abs::Abstract> {
     let unitsize = (18, 1);
 
     let unit = abs::Abstract {
-        name: "UnitCell".into(),
+        name: "Wrapper".into(),
         metals: 1,
         outline: Outline::rect(unitsize.0, unitsize.1)?,
         ports: vec![
@@ -226,7 +226,7 @@ fn ro_rel(unit: Ptr<Cell>) -> LayoutResult<Cell> {
             let m3track = m1track + x as usize;
             ro.net(format!("dly{}", x))
                 .at(2, m3track, m2track, RelZ::Below);
-            // .at(1, m2track, m1track, RelZ::Below)
+
             if x != 0 {
                 // Cut M3 to the *right* of the input
                 ro.cut(2, m3track, m2track + 1, RelZ::Below);
@@ -236,10 +236,10 @@ fn ro_rel(unit: Ptr<Cell>) -> LayoutResult<Cell> {
             }
             // Assign the output
             let m3track = m1track + ((x + 1) % 3) as usize;
-            // let m1track = (y * 12 + 11) as usize;
+
             ro.net(format!("dly{}", ((x + 1) % 3)))
                 .at(2, m3track, m2track + 2, RelZ::Below);
-            //     .at(1, m2track + 2, m1track, RelZ::Below)
+
             if x != 2 {
                 // Cut M3 to the *left* of the output
                 ro.cut(2, m3track, m2track + 1, RelZ::Below);

@@ -85,15 +85,19 @@ message Assign {
 // # Track Cross
 // Crossing between two `TrackRefs`
 message TrackCross {
-  TrackRef top = 1;
-  TrackRef bot = 2;
+  // "Primary" Track
+  TrackRef track = 1;
+  // Intersection location, on an orthogonal layer
+  TrackRef cross = 2;
 }
 
 // # Track Reference
-// Pointer to a layer-index and track-index 
+// Integer-pair pointer to a layer-index and track-index 
 message TrackRef {
+  // Layer Index
   int64 layer = 1;
-  int64 index = 2;
+  // Track Index
+  int64 track = 2;
 }
 
 // # Cell Outlines
