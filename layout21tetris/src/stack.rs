@@ -30,10 +30,9 @@ pub struct Stack {
     pub boundary_layer: Option<raw::LayerKey>,
 }
 impl Stack {
-    /// Run validation, consuming `self` and creating a `ValidStack`
+    /// Run validation, consuming `self` and creating a [validate::ValidStack]
     pub fn validate(self) -> LayoutResult<validate::ValidStack> {
-        use validate::StackValidator;
-        StackValidator::validate(self)
+        validate::validate_stack(self)
     }
 }
 /// # MetalLayer
@@ -225,7 +224,7 @@ impl<'lib> LayerPeriod<'lib> {
         &mut self,
         start: DbUnits,
         stop: DbUnits,
-        src: &'lib TrackIntersection,
+        src: &'lib TrackCross,
     ) -> TrackResult<()> {
         for t in self.rails.iter_mut() {
             t.cut(start, stop, src)?;
@@ -293,10 +292,11 @@ pub struct Assign {
     /// Net Name
     pub net: String,
     /// Track Intersection Location
-    pub at: TrackIntersection,
+    pub at: TrackCross,
 }
 impl Assign {
-    pub fn new(net: impl Into<String>, at: impl Into<TrackIntersection>) -> Self {
+    /// Create a new [Assign]
+    pub fn new(net: impl Into<String>, at: impl Into<TrackCross>) -> Self {
         Self {
             net: net.into(),
             at: at.into(),

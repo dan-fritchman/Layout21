@@ -5,11 +5,14 @@
 //!
 
 // Local imports
-use crate::instance::Instance;
-use crate::placement::Placeable;
-use crate::stack::{Assign, RelZ};
-use crate::utils::PtrList;
-use crate::{outline, tracks};
+use crate::{
+    instance::Instance,
+    outline,
+    placement::Placeable,
+    stack::{Assign, RelZ},
+    tracks::TrackCross,
+    utils::PtrList,
+};
 
 /// # Layout Cell Implementation
 ///
@@ -33,7 +36,7 @@ pub struct Layout {
     pub assignments: Vec<Assign>,
     /// Track cuts
     #[builder(default)]
-    pub cuts: Vec<tracks::TrackIntersection>,
+    pub cuts: Vec<TrackCross>,
     /// Placeable objects
     #[builder(default)]
     pub places: Vec<Placeable>,
@@ -66,24 +69,13 @@ impl Layout {
         relz: RelZ,
     ) {
         let net = net.into();
-        self.assignments.push(Assign {
-            net,
-            at: tracks::TrackIntersection {
-                layer,
-                track,
-                at,
-                relz,
-            },
-        })
+        let at = TrackCross::from_relz(layer, track, at, relz);
+        self.assignments.push(Assign { net, at })
     }
     /// Add a cut at the specified coordinates.
     pub fn cut(&mut self, layer: usize, track: usize, at: usize, relz: RelZ) {
-        self.cuts.push(tracks::TrackIntersection {
-            layer,
-            track,
-            at,
-            relz,
-        })
+        let cut = TrackCross::from_relz(layer, track, at, relz);
+        self.cuts.push(cut)
     }
     /// Get a temporary handle for net assignments
     pub fn net<'h>(&'h mut self, net: impl Into<String>) -> NetHandle<'h> {
@@ -91,10 +83,13 @@ impl Layout {
         NetHandle { name, parent: self }
     }
 }
+/// # Net Handle
+///
 /// A short-term handle for chaining multiple assignments to a net
 /// Typically used as: `mycell.net("name").at(/* args */).at(/* more args */)`
 /// Takes an exclusive reference to its parent [Layout],
 /// so generally must be dropped quickly to avoid locking it up.
+///
 pub struct NetHandle<'h> {
     name: String,
     parent: &'h mut Layout,

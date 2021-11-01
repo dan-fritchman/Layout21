@@ -19,7 +19,7 @@ use crate::{
     placement::Place,
     raw::{Dir, LayoutError, LayoutResult},
     stack::{Assign, RelZ},
-    tracks::TrackIntersection,
+    tracks::{TrackCross, TrackRef},
     utils::{DepOrder, DepOrderer, ErrorContext, ErrorHelper, Ptr},
 };
 // Proto-crate imports and aliases
@@ -116,7 +116,7 @@ impl<'lib> ProtoExporter<'lib> {
             PortKind::Edge { layer, track, side } => {
                 let track = Some(tproto::TrackRef {
                     layer: i64::try_from(*layer)?,
-                    index: i64::try_from(*track)?,
+                    track: i64::try_from(*track)?,
                 });
                 let side = match side {
                     Side::BottomOrLeft => PortSide::BottomOrLeft,
@@ -134,7 +134,7 @@ impl<'lib> ProtoExporter<'lib> {
                     };
                     Some(tproto::TrackRef {
                         layer: i64::try_from(layer)?,
-                        index: i64::try_from(into.0)?,
+                        track: i64::try_from(into.0)?,
                     })
                 };
                 let side = match side {
@@ -145,7 +145,7 @@ impl<'lib> ProtoExporter<'lib> {
 
                 Kind::ZtopEdge(ZTopEdgePort { track, side, into })
             }
-            PortKind::ZTopInner { locs: _ } => Kind::ZtopInner(ZTopInner { locs: todo!() }),
+            PortKind::ZTopInner { locs: _ } => todo!(),
         };
         pport.kind = Some(kind);
         Ok(pport)
@@ -206,28 +206,18 @@ impl<'lib> ProtoExporter<'lib> {
         passn.at = Some(self.export_track_cross(&assn.at)?);
         Ok(passn)
     }
-    /// Export a [TrackIntersection]
-    fn export_track_cross(
-        &mut self,
-        cross: &TrackIntersection,
-    ) -> LayoutResult<tproto::TrackCross> {
-        let layer = i64::try_from(cross.layer)?;
-        let index = i64::try_from(cross.track)?;
-        let track1 = Some(tproto::TrackRef { layer, index });
-
-        let layer = match cross.relz {
-            RelZ::Above => layer + 1,
-            RelZ::Below => layer - 1,
-        };
-        let index = i64::try_from(cross.at)?;
-        let track2 = Some(tproto::TrackRef { layer, index });
-
-        let (top, bot) = match cross.relz {
-            RelZ::Above => (track2, track1),
-            RelZ::Below => (track1, track2),
-        };
-        let pcross = tproto::TrackCross { top, bot };
+    /// Export a [TrackCross]
+    fn export_track_cross(&mut self, cross: &TrackCross) -> LayoutResult<tproto::TrackCross> {
+        let track = Some(self.export_track_ref(&cross.track)?);
+        let cross = Some(self.export_track_ref(&cross.cross)?);
+        let pcross = tproto::TrackCross { track, cross };
         Ok(pcross)
+    }
+    /// Export a [TrackRef]
+    fn export_track_ref(&mut self, track: &TrackRef) -> LayoutResult<tproto::TrackRef> {
+        let layer = i64::try_from(track.layer)?;
+        let track = i64::try_from(track.track)?;
+        Ok(tproto::TrackRef { layer, track })
     }
     /// Export a list of [HasUnit] dimensioned distance-values to
     fn export_dimensions<T: HasUnits>(&mut self, p: &[T]) -> LayoutResult<Vec<i64>> {
@@ -358,32 +348,23 @@ impl ProtoLibImporter {
         let assn = Assign::new(passn.net.clone(), at);
         Ok(assn)
     }
-    /// Import a [TrackIntersection]
-    fn import_track_cross(
-        &mut self,
-        pcross: &tproto::TrackCross,
-    ) -> LayoutResult<TrackIntersection> {
-        // Create a [TrackIntersection], always using `pcross.top` as the primary track, and `pcross.bot` as its intersection.
-        // First unwrap the not-really-optional `top` and `bot` fields
-        let top = self.unwrap(pcross.top.as_ref(), "Invalid TrackCross missing `top`")?;
-        let bot = self.unwrap(pcross.top.as_ref(), "Invalid TrackCross missing `top`")?;
-
-        // Sort out the relative-z value
-        let relz = if top.layer == bot.layer + 1 {
-            Ok(RelZ::Below)
-        } else if top.layer == bot.layer - 1 {
-            Ok(RelZ::Above)
-        } else {
-            self.fail("TrackCross: top and bottom layers must be adjacent")
-        }?;
+    /// Import a [TrackCross]
+    fn import_track_cross(&mut self, pcross: &tproto::TrackCross) -> LayoutResult<TrackCross> {
+        // Create a [TrackCross], always using `pcross.top` as the primary track, and `pcross.bot` as its intersection.
+        // First unwrap the not-really-optional `track` and `cross` fields
+        let track = self.unwrap(pcross.track.as_ref(), "Invalid TrackCross missing `top`")?;
+        let cross = self.unwrap(pcross.cross.as_ref(), "Invalid TrackCross missing `top`")?;
+        let track = self.import_track_ref(track)?;
+        let cross = self.import_track_ref(cross)?;
         // And create the intersection
-        let cross = TrackIntersection {
-            layer: usize::try_from(top.layer)?,
-            track: usize::try_from(top.index)?,
-            at: usize::try_from(bot.index)?,
-            relz,
-        };
+        let cross = TrackCross::new(track, cross);
         Ok(cross)
+    }
+    /// Import a [TrackRef]
+    fn import_track_ref(&mut self, pref: &tproto::TrackRef) -> LayoutResult<TrackRef> {
+        let layer = usize::try_from(pref.layer)?;
+        let track = usize::try_from(pref.track)?;
+        Ok(TrackRef { layer, track })
     }
     /// Import a [Layout]
     fn import_layout(&mut self, playout: &tproto::Layout) -> LayoutResult<Layout> {
@@ -501,122 +482,124 @@ impl ErrorHelper for ProtoLibImporter {
         }
     }
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::utils::SerializationFormat::Yaml;
 
-#[test]
-fn proto_roundtrip1() -> LayoutResult<()> {
-    // Proto-export
-    let lib = Library::new("proto_rt1");
-    let plib = ProtoExporter::export(&lib)?;
-    assert_eq!(plib.domain, "proto_rt1");
-    assert_eq!(plib.cells, Vec::new());
-    assert_eq!(plib.author, None);
+    #[test]
+    fn proto_roundtrip1() -> LayoutResult<()> {
+        // Proto-export
+        let lib = Library::new("proto_rt1");
+        let plib = ProtoExporter::export(&lib)?;
+        assert_eq!(plib.domain, "proto_rt1");
+        assert_eq!(plib.cells, Vec::new());
+        assert_eq!(plib.author, None);
 
-    // Import it back
-    let lib2 = ProtoLibImporter::import(&plib)?;
-    assert_eq!(lib2.name, "proto_rt1");
-    assert_eq!(lib2.cells.len(), 0);
-    assert_eq!(lib2.rawlibs.len(), 0);
+        // Import it back
+        let lib2 = ProtoLibImporter::import(&plib)?;
+        assert_eq!(lib2.name, "proto_rt1");
+        assert_eq!(lib2.cells.len(), 0);
+        assert_eq!(lib2.rawlibs.len(), 0);
 
-    Ok(())
-}
+        Ok(())
+    }
 
-#[test]
-fn proto_roundtrip2() -> LayoutResult<()> {
-    // Proto round-trip, round 2, with some content
-    let mut lib = Library::new("proto_rt2");
-    let mut cell = Cell::new("proto_rt2_cell");
-    cell.layout = Some(Layout::new("proto_rt2_cell", 0, Outline::rect(1, 1)?));
-    cell.abs = Some(Abstract::new("proto_rt2_cell", 0, Outline::rect(1, 1)?));
-    lib.cells.add(cell);
+    #[test]
+    fn proto_roundtrip2() -> LayoutResult<()> {
+        // Proto round-trip, round 2, with some content
+        let mut lib = Library::new("proto_rt2");
+        let mut cell = Cell::new("proto_rt2_cell");
+        cell.layout = Some(Layout::new("proto_rt2_cell", 0, Outline::rect(1, 1)?));
+        cell.abs = Some(Abstract::new("proto_rt2_cell", 0, Outline::rect(1, 1)?));
+        lib.cells.add(cell);
 
-    let plib = ProtoExporter::export(&lib)?;
-    assert_eq!(plib.domain, "proto_rt2");
-    assert_eq!(plib.author, None);
-    assert_eq!(plib.cells.len(), 1);
-    let pcell = &plib.cells[0];
-    let playout = pcell.layout.as_ref().unwrap();
-    assert_eq!(playout.name, "proto_rt2_cell");
-    let playout_outline = playout.outline.as_ref().unwrap();
-    assert_eq!(playout_outline.x, vec![1]);
-    assert_eq!(playout_outline.y, vec![1]);
-    let pabs = pcell.r#abstract.as_ref().unwrap();
-    assert_eq!(pabs.name, "proto_rt2_cell");
-    assert_eq!(pabs.ports.len(), 0);
-    let pabs_outline = pabs.outline.as_ref().unwrap();
-    assert_eq!(pabs_outline.x, vec![1]);
-    assert_eq!(pabs_outline.y, vec![1]);
-    assert_eq!(pabs_outline, playout_outline);
+        let plib = ProtoExporter::export(&lib)?;
+        assert_eq!(plib.domain, "proto_rt2");
+        assert_eq!(plib.author, None);
+        assert_eq!(plib.cells.len(), 1);
+        let pcell = &plib.cells[0];
+        let playout = pcell.layout.as_ref().unwrap();
+        assert_eq!(playout.name, "proto_rt2_cell");
+        let playout_outline = playout.outline.as_ref().unwrap();
+        assert_eq!(playout_outline.x, vec![1]);
+        assert_eq!(playout_outline.y, vec![1]);
+        let pabs = pcell.r#abstract.as_ref().unwrap();
+        assert_eq!(pabs.name, "proto_rt2_cell");
+        assert_eq!(pabs.ports.len(), 0);
+        let pabs_outline = pabs.outline.as_ref().unwrap();
+        assert_eq!(pabs_outline.x, vec![1]);
+        assert_eq!(pabs_outline.y, vec![1]);
+        assert_eq!(pabs_outline, playout_outline);
 
-    // Import it back
-    let lib2 = ProtoLibImporter::import(&plib)?;
-    assert_eq!(lib2.name, "proto_rt2");
-    assert_eq!(lib2.rawlibs.len(), 0);
-    assert_eq!(lib2.cells.len(), 1);
-    let cell2 = &lib2.cells[0].read()?;
-    let layout2 = cell2.layout.as_ref().unwrap();
-    assert_eq!(layout2.name, "proto_rt2_cell");
-    assert_eq!(layout2.outline, Outline::rect(1, 1)?);
-    assert_eq!(layout2.metals, 0);
-    assert_eq!(layout2.instances.len(), 0);
-    assert_eq!(layout2.assignments.len(), 0);
-    assert_eq!(layout2.cuts.len(), 0);
-    let abs2 = cell2.abs.as_ref().unwrap();
-    assert_eq!(abs2.name, "proto_rt2_cell");
-    assert_eq!(abs2.ports.len(), 0);
+        // Import it back
+        let lib2 = ProtoLibImporter::import(&plib)?;
+        assert_eq!(lib2.name, "proto_rt2");
+        assert_eq!(lib2.rawlibs.len(), 0);
+        assert_eq!(lib2.cells.len(), 1);
+        let cell2 = &lib2.cells[0].read()?;
+        let layout2 = cell2.layout.as_ref().unwrap();
+        assert_eq!(layout2.name, "proto_rt2_cell");
+        assert_eq!(layout2.outline, Outline::rect(1, 1)?);
+        assert_eq!(layout2.metals, 0);
+        assert_eq!(layout2.instances.len(), 0);
+        assert_eq!(layout2.assignments.len(), 0);
+        assert_eq!(layout2.cuts.len(), 0);
+        let abs2 = cell2.abs.as_ref().unwrap();
+        assert_eq!(abs2.name, "proto_rt2_cell");
+        assert_eq!(abs2.ports.len(), 0);
 
-    use layout21utils::SerializationFormat::Yaml;
-    Yaml.save(&plib, "proto_rt2.yaml")?;
+        // Yaml.save(&plib, "proto_rt2.yaml")?;
+        Ok(())
+    }
 
-    Ok(())
-}
+    #[test]
+    fn proto_yaml1() -> LayoutResult<()> {
+        // Proto export, then YAML export
+        let lib = Library::new("proto_yaml1");
+        let plib = ProtoExporter::export(&lib)?;
+        assert_eq!(plib.domain, "proto_yaml1");
+        assert_eq!(plib.cells, Vec::new());
+        assert_eq!(plib.author, None);
 
-#[test]
-fn proto_yaml1() -> LayoutResult<()> {
-    // Proto export, then YAML export
-    let lib = Library::new("proto_yaml1");
-    let plib = ProtoExporter::export(&lib)?;
-    assert_eq!(plib.domain, "proto_yaml1");
-    assert_eq!(plib.cells, Vec::new());
-    assert_eq!(plib.author, None);
-    use layout21utils::SerializationFormat::Yaml;
-    Yaml.save(&plib, "proto_yaml1.yaml")?;
-    Ok(())
-}
-#[test]
-fn proto_yaml2() -> LayoutResult<()> {
-    // Import from YAML
-    let yaml = r#"
-    ---
-    domain: proto_rt2
-    cells:
-      - name: proto_rt2_cell
-        abstract:
-          name: proto_rt2_cell
-          outline:
-            x: [ 1 ]
-            y: [ 1 ]
-            metals: 0
-          ports: []
-        layout:
-          name: proto_rt2_cell
-          outline:
-            x: [ 1 ]
-            y: [ 1 ]
-            metals: 0
-          instances: []
-          assignments: []
-          cuts: []
-    "#;
-    use layout21utils::SerializationFormat::Yaml;
-    let plib: tproto::Library = Yaml.from_str(yaml)?;
+        // Yaml.save(&plib, "proto_yaml1.yaml")?;
+        Ok(())
+    }
+    #[test]
+    fn proto_yaml2() -> LayoutResult<()> {
+        // Import from YAML
+        let yaml = r#"
+---
+domain: proto_rt2
+cells:
+  - name: proto_rt2_cell
+    abstract:
+      name: proto_rt2_cell
+      outline:
+        x: [ 1 ]
+        y: [ 1 ]
+        metals: 0
+      ports: []
+    layout:
+      name: proto_rt2_cell
+      outline:
+        x: [ 1 ]
+        y: [ 1 ]
+        metals: 0
+      instances: []
+      assignments: []
+      cuts: []
+"#;
+        let plib: tproto::Library = Yaml.from_str(yaml)?;
+        let lib = ProtoLibImporter::import(&plib)?;
 
-    // let lib = Library::new("proto_yaml1");
-    // let plib = ProtoExporter::export(&lib)?;
-    // assert_eq!(plib.domain, "proto_yaml1");
-    // assert_eq!(plib.cells, Vec::new());
-    // assert_eq!(plib.author, None);
-    // use layout21utils::SerializationFormat::Yaml;
-    // Yaml.save(&plib, "proto_yaml1.yaml")?;
+        // let lib = Library::new("proto_yaml1");
+        // let plib = ProtoExporter::export(&lib)?;
+        // assert_eq!(plib.domain, "proto_yaml1");
+        // assert_eq!(plib.cells, Vec::new());
+        // assert_eq!(plib.author, None);
 
-    Ok(())
+        // Yaml.save(&plib, "proto_yaml2.yaml")?;
+        Ok(())
+    }
 }

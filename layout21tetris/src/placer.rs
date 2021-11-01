@@ -21,7 +21,7 @@ use crate::utils::{DepOrder, DepOrderer, ErrorContext, ErrorHelper, Ptr};
 use crate::validate::ValidStack;
 use crate::{
     abs, stack,
-    tracks::{TrackIntersection, TrackRef},
+    tracks::{TrackCross, TrackRef},
 };
 
 /// # Placer
@@ -98,7 +98,7 @@ impl Placer {
                 }
                 Placeable::Assign(ref ptr) => {
                     let assn = ptr.read()?;
-                    let abs: TrackIntersection = self.resolve_assign_place(&assn.loc)?;
+                    let abs: TrackCross = self.resolve_assign_place(&assn.loc)?;
                     let new_assn = stack::Assign {
                         net: assn.net.clone(),
                         at: abs,
@@ -323,7 +323,7 @@ impl Placer {
         Ok(res)
     }
     /// Resolve the location of a track-crossing at `rel`
-    fn resolve_assign_place(&mut self, rel: &RelativePlace) -> LayoutResult<TrackIntersection> {
+    fn resolve_assign_place(&mut self, rel: &RelativePlace) -> LayoutResult<TrackCross> {
         let port_loc = match &rel.to {
             Placeable::Port { inst, port } => self.locate_instance_port(&*inst.read()?, port)?,
             Placeable::Instance(_) => unimplemented!(),
@@ -380,30 +380,14 @@ impl Placer {
             } else if newlayer_dir == self.stack.metal(ref_cross.1.layer)?.spec.dir {
                 (ref_cross.1, ref_cross.0)
             } else {
-                unreachable!()
+                return self.fail("Invalid non-crossing TrackCross");
             }
         };
 
         // Get the track on `newlayer` closest to `par`
         let new_track: TrackRef = self.convert_track_layer(&par, newlayer)?;
-
-        // And get the above/below indicator required for `TrackIntersection`
-        let relz = if cross.layer == new_track.layer + 1 {
-            Ok(stack::RelZ::Above)
-        } else if cross.layer == new_track.layer - 1 {
-            Ok(stack::RelZ::Below)
-        } else {
-            self.fail(format!(
-                "Invalid track crossing {:?} x {:?}",
-                new_track, cross
-            ))
-        }?;
-        let rv = TrackIntersection {
-            layer: new_track.layer,
-            track: new_track.track,
-            at: cross.track,
-            relz,
-        };
+        // And turn the combination into our result [TrackCross]
+        let rv = TrackCross::new(new_track, cross);
         Ok(rv)
     }
     /// Resolve a location of [Instance] `inst` relative to its [RelativePlace] `rel`.
@@ -957,10 +941,10 @@ mod tests {
             assert_eq!(parent_layout.assignments.len(), 1);
             let assn = &parent_layout.assignments[0];
             assert_eq!(assn.net, "NETPPP");
-            assert_eq!(assn.at.layer, 2);
-            assert_eq!(assn.at.track, 0);
-            assert_eq!(assn.at.at, 1);
-            assert_eq!(assn.at.relz, stack::RelZ::Below);
+            assert_eq!(assn.at.track.layer, 2);
+            assert_eq!(assn.at.track.track, 0);
+            assert_eq!(assn.at.cross.layer, 1);
+            assert_eq!(assn.at.cross.track, 1);
         }
         exports(lib, stack)
     }
