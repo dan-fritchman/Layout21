@@ -1117,7 +1117,6 @@ impl From<&str> for GdsError {
 pub fn roundtrip(lib: &GdsLibrary) -> GdsResult<()> {
     use tempfile::tempfile;
 
-    // Read given GDS into internal model.
     // Write to a temporary file
     let mut file = tempfile()?;
     lib.write(&mut file)?;

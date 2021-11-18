@@ -26,7 +26,7 @@ fn main() {
 
     let input_gds_path = Path::new(&options.gds);
     let mut gds_file = match File::open(&input_gds_path) {
-        Err(why) => panic!("Couldn't open file {}: {}", input_gds_path.display(), why),
+        Err(err) => panic!("Couldn't open file {}: {}", input_gds_path.display(), err),
         Ok(file) => file,
     };
 
@@ -39,7 +39,7 @@ fn main() {
     }
 
     let gds_library = match gds21::GdsLibrary::from_bytes(gds_bytes) {
-        Err(why) => panic!("Couldn't interpret GDS data: {}", why),
+        Err(err) => panic!("Couldn't interpret GDS data: {}", err),
         Ok(lib) => lib,
     };
 
@@ -63,7 +63,7 @@ fn main() {
 
     let output_proto_path = Path::new(&options.proto);
     let mut proto_file = match File::create(&output_proto_path) {
-        Err(why) => panic!("Couldn't open file {}: {}", output_proto_path.display(), why),
+        Err(err) => panic!("Couldn't open file {}: {}", output_proto_path.display(), err),
         Ok(file) => file,
     };
 

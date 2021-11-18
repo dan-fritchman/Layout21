@@ -18,9 +18,3 @@ clap = "3.0.0-beta.5"
 prost = "0.8.0"
 prost-types = "0.6.1"
 prost-build = "0.6.1"
-
-#[[bin]]
-#name = "gds2proto"
-#path = "src/main.rs"
-#test = false
-#bench = false
