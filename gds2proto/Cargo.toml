@@ -1,0 +1,26 @@
+[package]
+description = "Converts GDS files to protocol buffer descriptions, using Layout21, and Gds21."
+name = "gds2proto"
+authors = ["Dan Fritchman <dan@fritch.mn>", "Arya Reais-Parsi <aryap@berkeley.edu>"]
+# Necessary for shit to not spontaneously break
+edition = "2018"
+license = "BSD-3-Clause"
+repository = "https://github.com/dan-fritchman/Layout21"
+version = "0.0.1"
+workspace = "../"
+
+[dependencies]
+# Command line arguments to bin
+gds21 = {path = "../gds21"}
+layout21protos = {path = "../layout21protos"}
+layout21raw = {path = "../layout21raw"}
+clap = "3.0.0-beta.5"
+prost = "0.8.0"
+prost-types = "0.6.1"
+prost-build = "0.6.1"
+
+#[[bin]]
+#name = "gds2proto"
+#path = "src/main.rs"
+#test = false
+#bench = false

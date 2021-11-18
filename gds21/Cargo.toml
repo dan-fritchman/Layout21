@@ -29,9 +29,3 @@ tempfile = {version = "3"}
 
 [features]
 selftest = ["tempfile"]
-
-[[bin]]
-name = "gds2proto"
-path = "src/main.rs"
-test = false
-bench = false
