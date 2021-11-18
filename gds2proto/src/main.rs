@@ -5,11 +5,8 @@ use std::path::Path;
 
 use prost::Message;
 
-use gds21::GdsLibrary;
 use layout21raw::gds::GdsImporter;
 use layout21raw::proto::ProtoExporter;
-use layout21raw::LayoutResult;
-use layout21protos::Library;
 
 #[derive(Parser)]
 struct ProgramOptions {
