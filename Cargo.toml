@@ -2,7 +2,6 @@
 
 members = [
   "gds21",
-  "gds2proto",
   "lef21",
   "layout21protos",
   "layout21raw",
