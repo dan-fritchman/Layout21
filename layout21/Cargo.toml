@@ -9,10 +9,17 @@ repository = "https://github.com/dan-fritchman/Layout21"
 version = "0.2.0"
 workspace = "../"
 
+[[example]]
+name = "gds2proto"
+path = "examples/gds2proto.rs"
+
 [dependencies]
-gds21 = {path = "../gds21", features = ["selftest"]}
-layout21protos = {path = "../layout21protos"}
-layout21raw = {path = "../layout21raw"}
-layout21tetris = {path = "../layout21tetris"}
-layout21utils = {path = "../layout21utils"}
-lef21 = {path = "../lef21"}
+gds21 = { path = "../gds21", features = ["selftest"] }
+layout21protos = { path = "../layout21protos" }
+layout21raw = { path = "../layout21raw" }
+layout21tetris = { path = "../layout21tetris" }
+layout21utils = { path = "../layout21utils" }
+lef21 = { path = "../lef21" }
+
+[dev-dependencies]
+structopt = "0.3.25"
