@@ -110,6 +110,8 @@ use rust_decimal::prelude::*;
 use serde::{Deserialize, Serialize};
 #[macro_use]
 extern crate derive_builder;
+#[macro_use]
+extern crate fstrings;
 
 // Local modules & re-exports
 mod read;
@@ -776,10 +778,10 @@ enumstr!(
     }
 );
 enumstr!(
-    /// # Lef Pin-Usage 
-    /// 
-    /// Specifies the usage-intent for a [LefPin]. 
-    /// Note this is the noun form of "use", pronounced with the hard "s" - 
+    /// # Lef Pin-Usage
+    ///
+    /// Specifies the usage-intent for a [LefPin].
+    /// Note this is the noun form of "use", pronounced with the hard "s" -
     /// not the verb form pronounced like the New Jersey second-person plural "yous".
     LefPinUse {
         Signal: "SIGNAL",
