@@ -8,9 +8,8 @@
 
 // Std-Lib
 use std::collections::{HashMap, HashSet};
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryInto;
 use std::hash::Hash;
-use std::ops::Not;
 
 // Crates.io
 use serde::{Deserialize, Serialize};
@@ -20,6 +19,8 @@ use slotmap::{new_key_type, SlotMap};
 pub use layout21utils as utils;
 use utils::ErrorContext;
 use utils::{Ptr, PtrList};
+pub mod geom;
+pub use geom::{Dir, Point, Shape, Transform};
 
 // Optional-feature modules
 #[cfg(feature = "gds")]
@@ -226,69 +227,6 @@ impl SiUnits {
             Zetta => 21,
             Yotta => 24,
         }
-    }
-}
-
-/// # Point in two-dimensional layout-space
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Point {
-    pub x: isize,
-    pub y: isize,
-}
-impl Point {
-    /// Create a new [Point] from (x,y) coordinates
-    pub fn new(x: isize, y: isize) -> Self {
-        Self { x, y }
-    }
-    /// Create a new [Point] which serves as an offset in direction `dir`
-    pub fn offset(val: isize, dir: Dir) -> Self {
-        match dir {
-            Dir::Horiz => Self { x: val, y: 0 },
-            Dir::Vert => Self { x: 0, y: val },
-        }
-    }
-    /// Create a new point shifted by `x` in the x-dimension and by `y` in the y-dimension
-    pub fn shift(&self, p: &Point) -> Point {
-        Point {
-            x: p.x + self.x,
-            y: p.y + self.y,
-        }
-    }
-    /// Create a new point scaled by `p.x` in the x-dimension and by `p.y` in the y-dimension
-    pub fn scale(&self, p: &Point) -> Point {
-        Point {
-            x: p.x * self.x,
-            y: p.y * self.y,
-        }
-    }
-    /// Get the coordinate associated with direction `dir`
-    pub fn coord(&self, dir: Dir) -> isize {
-        match dir {
-            Dir::Horiz => self.x,
-            Dir::Vert => self.y,
-        }
-    }
-}
-/// Direction Enumeration
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub enum Dir {
-    Horiz,
-    Vert,
-}
-impl Dir {
-    /// Whichever direction we are, return the other one.
-    pub fn other(self) -> Self {
-        match self {
-            Self::Horiz => Self::Vert,
-            Self::Vert => Self::Horiz,
-        }
-    }
-}
-impl Not for Dir {
-    type Output = Self;
-    /// Exclamation Operator returns the opposite direction
-    fn not(self) -> Self::Output {
-        Self::other(self)
     }
 }
 
@@ -677,7 +615,11 @@ impl From<Layout> for Cell {
     }
 }
 
-/// Raw-Layout Implementation
+/// # Raw-Layout Implementation
+///
+/// The geometric-level layout-definition of a [Cell].
+/// Comprised of geometric [Element]s and instances of other [Cell] [Layout]s.
+///
 #[derive(Debug, Clone, Default)]
 pub struct Layout {
     /// Cell Name
@@ -689,6 +631,48 @@ pub struct Layout {
     /// Text Annotations
     pub annotations: Vec<TextElement>,
 }
+impl Layout {
+    /// Flatten a [Layout], particularly its hierarchical instances, to a vector of [Element]s
+    pub fn flatten(&self) -> LayoutResult<Vec<Element>> {
+        // Kick off recursive calls, with the identity-transform applied for the top-level `layout`
+        let mut elems = Vec::new();
+        flatten_helper(self, &Transform::identity(), &mut elems)?;
+        Ok(elems)
+    }
+}
+/// Internal helper and core logic for [Layout::flatten].
+fn flatten_helper(
+    layout: &Layout,
+    trans: &Transform,
+    elems: &mut Vec<Element>,
+) -> LayoutResult<()> {
+    // Translate each geometric element
+    for elem in layout.elems.iter() {
+        // Clone all other data (layer, net, etc.)
+        // FIXME: hierarchy flattening of net labels
+        let mut new_elem = elem.clone();
+        // And translate the inner shape by `trans`
+        new_elem.inner = elem.inner.transform(trans);
+        elems.push(new_elem);
+    }
+    // Note text-valued "annotations" are ignored
+
+    // Visit all of `layout`'s instances, recursively getting their elements
+    for inst in &layout.insts {
+        // Get the cell's layout-definition, or fail
+        let cell = inst.cell.read()?;
+        let layout = cell.layout.as_ref().unwrap();
+
+        // Create a new [Transform], cascading the parent's and instance's
+        let inst_trans = Transform::from_instance(&inst.loc, inst.reflect_vert, inst.angle);
+        let trans = Transform::cascade(&trans, &inst_trans);
+
+        // And recursively add its elements
+        flatten_helper(&layout, &trans, elems)?;
+    }
+    Ok(())
+}
+
 /// # Text Annotation
 ///
 /// Note [layout21::raw::TextElement]s are "layer-less",
@@ -704,6 +688,11 @@ pub struct TextElement {
     pub loc: Point,
 }
 /// # Primitive Geometric Element
+///
+/// Primary unit of [Layout] definition.
+/// Combines a geometric [Shape] with a z-axis [Layer],
+/// and optional net connectivity annotation.
+///
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Element {
     /// Net Name
@@ -715,113 +704,30 @@ pub struct Element {
     /// Shape
     pub inner: Shape,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum Shape {
-    Rect { p0: Point, p1: Point },
-    Poly { pts: Vec<Point> },
-    Path { width: usize, pts: Vec<Point> },
+
+/// Location, orientation, and angular rotation for an [Instance]
+/// Note these fields exist "flat" in [Instance] as well,
+/// and are grouped here for convenience.
+pub struct InstancePlace {
+    /// Location of `cell` origin
+    /// regardless of rotation or reflection
+    pub loc: Point,
+    /// Vertical reflection,
+    /// applied *before* rotation
+    pub reflect_vert: bool,
+    /// Angle of rotation (degrees),
+    /// Clockwise and applied *after* reflection
+    pub angle: Option<f64>,
 }
-impl Shape {
-    /// Retrieve our "origin", or first [Point]
-    pub fn point0(&self) -> &Point {
-        match *self {
-            Shape::Rect { ref p0, p1: _ } => p0,
-            Shape::Poly { ref pts } => &pts[0],
-            Shape::Path { ref pts, .. } => &pts[0],
-        }
-    }
-    /// Calculate our center-point
-    pub fn center(&self) -> Point {
-        match *self {
-            Shape::Rect { ref p0, ref p1 } => Point::new((p0.x + p1.x) / 2, (p0.y + p1.y) / 2),
-            Shape::Path { ref pts, .. } => {
-                // Place on the center of the first segment
-                let p0 = &pts[0];
-                let p1 = &pts[1];
-                Point::new((p0.x + p1.x) / 2, (p0.y + p1.y) / 2)
-            }
-            Shape::Poly { .. } => {
-                unimplemented!("Shape::Poly/Path::center");
-            }
-        }
-    }
-    /// Indicate whether this shape is (more or less) horizontal or vertical
-    /// Primarily used for orienting label-text
-    pub fn orientation(&self) -> Dir {
-        match *self {
-            Shape::Rect { ref p0, ref p1 } => {
-                if (p1.x - p0.x).abs() < (p1.y - p0.y).abs() {
-                    return Dir::Vert;
-                }
-                Dir::Horiz
-            }
-            // Polygon and Path elements always horizontal, at least for now
-            Shape::Poly { .. } | Shape::Path { .. } => Dir::Horiz,
-        }
-    }
-    /// Shift coordinates by the (x,y) values specified in `pt`
-    pub fn shift(&mut self, pt: &Point) {
-        match *self {
-            Shape::Rect {
-                ref mut p0,
-                ref mut p1,
-            } => {
-                p0.x += pt.x;
-                p0.y += pt.y;
-                p1.x += pt.x;
-                p1.y += pt.y;
-            }
-            Shape::Poly { ref mut pts } => {
-                for p in pts.iter_mut() {
-                    p.x += pt.x;
-                    p.y += pt.y;
-                }
-            }
-            Shape::Path { ref mut pts, .. } => {
-                for p in pts.iter_mut() {
-                    p.x += pt.x;
-                    p.y += pt.y;
-                }
-            }
-        }
-    }
-    /// Boolean indication of whether we contain point `pt`
-    pub fn contains(&self, pt: &Point) -> bool {
-        match self {
-            Shape::Rect { ref p0, ref p1 } => {
-                p0.x.min(p1.x) <= pt.x
-                    && p0.x.max(p1.x) >= pt.x
-                    && p0.y.min(p1.y) <= pt.y
-                    && p0.y.max(p1.y) >= pt.y
-            }
-            Shape::Poly { .. } => false, // FIXME! todo!(),
-            Shape::Path { ref width, ref pts } => {
-                // Break into segments, and check for intersection with each
-                // Probably not the most efficient way to do this, but a start.
-                // Only "Manhattan paths", i.e. those with segments solely running vertically or horizontally, are supported.
-                // FIXME: even with this method, there are some small pieces at corners which we'll miss.
-                // Whether these are relevant in real life, tbd.
-                let width = isize::try_from(*width).unwrap(); // FIXME: probably store these signed, check them on creation
-                for k in 0..pts.len() - 1 {
-                    let rect = if pts[k].x == pts[k + 1].x {
-                        Shape::Rect {
-                            p0: Point::new(pts[k].x - width / 2, pts[k].y),
-                            p1: Point::new(pts[k].x + width / 2, pts[k + 1].y),
-                        }
-                    } else if pts[k].y == pts[k + 1].y {
-                        Shape::Rect {
-                            p0: Point::new(pts[k].x, pts[k].y - width / 2),
-                            p1: Point::new(pts[k + 1].x, pts[k].y + width / 2),
-                        }
-                    } else {
-                        unimplemented!("Unsupported Non-Manhattan Path")
-                    };
-                    if rect.contains(pt) {
-                        return true;
-                    }
-                }
-                false
-            }
-        }
-    }
-}
+
+// pub struct Flatten<'l> {
+//     lib: &'l Library,
+//     top: &'l Layout,
+// }
+
+// impl Iterator for Flatten {
+//     type Item = Element;
+//     fn next(&mut self) -> Option<Self::Item> {
+//         unimplemented!()
+//     }
+// }
