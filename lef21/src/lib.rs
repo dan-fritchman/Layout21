@@ -117,7 +117,7 @@ extern crate fstrings;
 mod read;
 mod write;
 use layout21utils as utils;
-pub use utils::{SerdeFile, SerializationFormat};
+pub use utils::{enumstr, EnumStr, SerdeFile, SerializationFormat};
 
 // Unit tests
 #[cfg(test)]
@@ -613,62 +613,6 @@ pub struct LefSite {
 #[derive(Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Unsupported;
 
-/// # Lef String-Enumeration Trait
-///
-/// Defines two central methods:
-/// * `to_str(&self) -> &'static str` converts the enum to its Lef-String values.
-/// * `from_str(&str) -> Option<Self>` does the opposite, returning an [Option] indicator of success or failure.
-///
-trait LefEnum: std::marker::Sized {
-    fn to_str(&self) -> &'static str;
-    fn from_str(txt: &str) -> Option<Self>;
-}
-/// Macro for creating `enum`s which:
-/// * (a) Have paired string-values, as commonly arrive in enumerated LEF fields such as "ON" / "OFF", "CLASS", etc, and
-/// * (b) Automatically implement the [LefEnum] trait for conversions to and from these strings.
-/// * (c) Automatically implement [std::fmt::Display] writing the string-values
-/// All variants are fieldless, and include derived implementations of common traits notably including `serde::{Serialize,Deserialize}`.
-macro_rules! enumstr {
-    (   $(#[$meta: meta])*
-        $enum_name: ident {
-        $( $variant: ident : $strval: literal ),* $(,)?
-    }) => {
-        $(#[$meta])*
-        #[allow(dead_code)]
-        #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
-        pub enum $enum_name {
-            $( #[doc=$strval]
-                $variant ),*
-        }
-        impl LefEnum for $enum_name {
-            /// Convert a [$enum_name] to the (static) string-keyword used in the Lef format
-            #[allow(dead_code)]
-            fn to_str(&self) -> &'static str {
-                match self {
-                    $( Self::$variant => $strval),*,
-                }
-            }
-            /// Create a [$enum_name] from one of the string-values specified in the Lef format.
-            /// Returns `None` if input `txt` does not match one of [$enum_name]'s variants.
-            /// Note `from_str` is case *sensitive*, i.e. uses a native string comparison.
-            /// Conversion to case-insensitive matching generall requires re-casing outside `from_str`.
-            fn from_str(txt: &str) -> Option<Self> {
-                match txt {
-                    $( $strval => Some(Self::$variant)),*,
-                    _ => None,
-                }
-            }
-        }
-        impl ::std::fmt::Display for $enum_name {
-            fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-                let s = match self {
-                    $( Self::$variant => $strval),*,
-                };
-                write!(f, "{}", s)
-            }
-        }
-    }
-}
 enumstr!(
     /// # Lef Key(Word)s
     ///
@@ -925,7 +869,7 @@ impl From<&str> for LefError {
         Self::Str(e.into())
     }
 }
-// One of these days, this way is gonna way, and we'll delete all these specific error-types above.
+// One of these days, this way is gonna WORK, and we'll delete all these specific error-types above.
 // impl<E: std::error::Error> From<E> for LefError {
 //     /// Wrap External Errors
 //     fn from(e: E) -> Self {

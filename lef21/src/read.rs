@@ -1028,7 +1028,7 @@ impl<'src> LefParser<'src> {
         Ok(String::from(txt))
     }
     /// Parse an enumerated string-value of type <T>
-    fn parse_enum<T: LefEnum>(&mut self) -> LefResult<T> {
+    fn parse_enum<T: EnumStr>(&mut self) -> LefResult<T> {
         let txt = self.get_name()?;
         match T::from_str(&txt.to_ascii_uppercase()) {
             Some(t) => Ok(t),
