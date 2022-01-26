@@ -113,11 +113,10 @@ macro_rules! enumstr {
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use serde::{Deserialize, Serialize};
 
     #[test]
     fn test_enumstr() {
-        use super::*;
-
         enumstr!(
             /// # Light-Switch States: ON and OFF
             LightSwitch {
