@@ -11,7 +11,7 @@ use std::convert::{TryFrom, TryInto};
 // Local imports
 use crate::utils::{ErrorContext, ErrorHelper, Ptr};
 use crate::{
-    Abstract, AbstractPort, Cell, Element, Layer, LayerKey, LayerPurpose, Layers, LayoutError,
+    Abstract, AbstractPort, Cell, Element, Int, Layer, LayerKey, LayerPurpose, Layers, LayoutError,
     LayoutResult, Library, Point, Shape, Units,
 };
 use lef21;
@@ -428,7 +428,7 @@ impl LefImporter {
         ))
     }
     /// Import a distance coordinate, converting between units
-    fn import_dist(&mut self, lefdec: &lef21::LefDecimal) -> LayoutResult<isize> {
+    fn import_dist(&mut self, lefdec: &lef21::LefDecimal) -> LayoutResult<Int> {
         let scaled = lefdec * lef21::LefDecimal::from(self.dist_scale);
         if !scaled.fract().is_zero() {
             self.fail(format!(

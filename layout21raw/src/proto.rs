@@ -14,14 +14,24 @@ use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 
 // Local imports
-use crate::utils::Ptr;
-use crate::utils::{ErrorContext, ErrorHelper};
 use crate::{
-    Abstract, AbstractPort, Cell, DepOrder, Element, Instance, LayerKey, LayerPurpose, Layers,
+    utils::{ErrorContext, ErrorHelper, Ptr},
+    Abstract, AbstractPort, Cell, DepOrder, Element, Instance, Int, LayerKey, LayerPurpose, Layers,
     Layout, LayoutError, LayoutResult, Library, Point, Shape, TextElement, Units,
 };
 pub use layout21protos as proto;
 
+/// Additional [Library] methods for converting to/from proto-format
+impl Library {
+    /// Convert to ProtoBuf
+    pub fn to_proto(&self) -> LayoutResult<proto::Library> {
+        ProtoExporter::export(&self)
+    }
+    /// Create from ProtoBuf
+    pub fn from_proto(plib: proto::Library, layers: Option<Ptr<Layers>>) -> LayoutResult<Library> {
+        ProtoImporter::import(&plib, layers)
+    }
+}
 /// # ProtoBuf Exporter
 #[derive(Debug)]
 pub struct ProtoExporter<'lib> {
@@ -485,8 +495,8 @@ impl ProtoImporter {
             Some(ref p) => self.import_point(p),
             None => self.fail("Invalid proto::Rectangle with no location"),
         }?;
-        let width = isize::try_from(prect.width)?;
-        let height = isize::try_from(prect.height)?;
+        let width = Int::try_from(prect.width)?;
+        let height = Int::try_from(prect.height)?;
         let p1 = Point::new(p0.x + width, p0.y + height);
         Ok(Shape::Rect { p0, p1 })
     }

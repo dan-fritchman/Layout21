@@ -13,13 +13,27 @@ use std::hash::Hash;
 use slotmap::{new_key_type, SlotMap};
 
 // Local imports
-use crate::utils::{ErrorContext, ErrorHelper, Ptr};
-use crate::{Abstract, AbstractPort, LayerKey, TextElement};
 use crate::{
-    Cell, Dir, Element, Instance, LayerPurpose, Layers, Layout, Library, Point, Shape, Units,
+    utils::{ErrorContext, ErrorHelper, Ptr},
+    Abstract, AbstractPort, Cell, Dir, Element, Instance, Int, LayerKey, LayerPurpose, Layers,
+    Layout, LayoutError, LayoutResult, Library, Point, Shape, TextElement, Units,
 };
-use crate::{LayoutError, LayoutResult};
 pub use gds21;
+
+/// Additional [Library] methods for GDSII conversion
+impl Library {
+    /// Convert to a GDSII Library
+    pub fn to_gds(&self) -> LayoutResult<gds21::GdsLibrary> {
+        GdsExporter::export(&self)
+    }
+    /// Create from GDSII
+    pub fn from_gds(
+        gdslib: &gds21::GdsLibrary,
+        layers: Option<Ptr<Layers>>,
+    ) -> LayoutResult<Library> {
+        GdsImporter::import(&gdslib, layers)
+    }
+}
 
 new_key_type! {
     /// Keys for [Element] entries
@@ -759,8 +773,8 @@ impl GdsImporter {
             self.fail("Unsupported Non-Rectangular GDS Array")?;
         }
         // Sort out the inter-element spacing
-        let mut xstep = (p1.x - p0.x) / isize::from(aref.cols);
-        let mut ystep = (p2.y - p0.y) / isize::from(aref.rows);
+        let mut xstep = (p1.x - p0.x) / Int::from(aref.cols);
+        let mut ystep = (p2.y - p0.y) / Int::from(aref.rows);
 
         // Incorporate the reflection/ rotation settings
         let mut angle = None;
@@ -780,8 +794,8 @@ impl GdsImporter {
                 let prev_xy = (i32::try_from(xstep)?, i32::try_from(ystep)?);
                 let prev_xy = (f64::from(prev_xy.0), f64::from(prev_xy.1));
                 let a = a.to_radians(); // Rust `sin` and `cos` take radians, convert first
-                xstep = (prev_xy.0 * a.cos() - prev_xy.1 * a.sin()) as isize;
-                ystep = (prev_xy.0 * a.sin() + prev_xy.1 * a.cos()) as isize;
+                xstep = (prev_xy.0 * a.cos() - prev_xy.1 * a.sin()) as Int;
+                ystep = (prev_xy.0 * a.sin() + prev_xy.1 * a.cos()) as Int;
 
                 // Set the same angle to each generated Instance
                 angle = Some(a);
@@ -791,9 +805,9 @@ impl GdsImporter {
         }
         // Create the Instances
         let mut insts = Vec::with_capacity((aref.rows * aref.cols) as usize);
-        for ix in 0..isize::from(aref.cols) {
+        for ix in 0..Int::from(aref.cols) {
             let x = p0.x + ix * xstep;
-            for iy in 0..isize::from(aref.rows) {
+            for iy in 0..Int::from(aref.rows) {
                 let y = p0.y + iy * ystep;
                 insts.push(Instance {
                     inst_name: format!("{}[{}][{}]", cname, ix, iy), // `{array.name}[{col}][{row}]`

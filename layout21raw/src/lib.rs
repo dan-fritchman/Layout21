@@ -8,7 +8,6 @@
 
 // Std-Lib
 use std::collections::{HashMap, HashSet};
-use std::convert::TryInto;
 use std::hash::Hash;
 
 // Crates.io
@@ -17,10 +16,11 @@ use slotmap::{new_key_type, SlotMap};
 
 // Internal modules & re-exports
 pub use layout21utils as utils;
-use utils::ErrorContext;
-use utils::{Ptr, PtrList};
+use utils::{ErrorContext, Ptr, PtrList};
 pub mod geom;
 pub use geom::{Dir, Point, Shape, Transform};
+pub mod bbox;
+pub use bbox::{BoundBox, BoundBoxTrait};
 
 // Optional-feature modules
 #[cfg(feature = "gds")]
@@ -32,6 +32,13 @@ pub mod proto;
 // Unit tests
 #[cfg(test)]
 mod tests;
+
+/// # Location Integer Type-Alias
+///
+/// Used for all layout spatial coordinates.
+/// Designed for quickly swapping to other integer types, if we so desire.
+///
+pub type Int = isize;
 
 // Create key-types for each internal type stored in [SlotMap]s
 new_key_type! {
@@ -502,40 +509,6 @@ impl Library {
             ..Default::default()
         }
     }
-    /// Convert to a GDSII Library
-    #[cfg(feature = "gds")]
-    pub fn to_gds(&self) -> LayoutResult<gds::gds21::GdsLibrary> {
-        gds::GdsExporter::export(&self)
-    }
-    /// Create from GDSII
-    #[cfg(feature = "gds")]
-    pub fn from_gds(
-        gdslib: &gds::gds21::GdsLibrary,
-        layers: Option<Ptr<Layers>>,
-    ) -> LayoutResult<Library> {
-        gds::GdsImporter::import(&gdslib, layers)
-    }
-    /// Convert to ProtoBuf
-    #[cfg(feature = "proto")]
-    pub fn to_proto(&self) -> LayoutResult<proto::proto::Library> {
-        proto::ProtoExporter::export(&self)
-    }
-    /// Create from ProtoBuf, or anything convertible into a Proto Library
-    #[cfg(feature = "proto")]
-    pub fn from_proto<T>(plib: T, layers: Option<Ptr<Layers>>) -> LayoutResult<Library>
-    where
-        // These trait bounds aren't pretty, but more or less say:
-        // * T is convertible into [proto::proto::Library]
-        // * Its conversion's error-type is convertible into [LayoutError]
-        // The "Into" form of the second condition would be something like:
-        // `<T as TryInto<proto::proto::Library>::Error>: Into<LayoutError>`
-        // but doesn't quite work, whereas "constraining" [LayoutError] does.
-        T: TryInto<proto::proto::Library>,
-        LayoutError: From<<T as TryInto<proto::proto::Library>>::Error>,
-    {
-        let plib = plib.try_into()?;
-        proto::ProtoImporter::import(&plib, layers)
-    }
 }
 
 /// # Dependency-Orderer
@@ -632,6 +605,14 @@ pub struct Layout {
     pub annotations: Vec<TextElement>,
 }
 impl Layout {
+    /// Create a rectangular [BoundBox] surrounding all elements in the [Layout].
+    pub fn bbox(&self) -> BoundBox {
+        let mut bbox = BoundBox::empty();
+        for elem in &self.elems {
+            bbox = elem.inner.union(&bbox);
+        }
+        bbox
+    }
     /// Flatten a [Layout], particularly its hierarchical instances, to a vector of [Element]s
     pub fn flatten(&self) -> LayoutResult<Vec<Element>> {
         // Kick off recursive calls, with the identity-transform applied for the top-level `layout`

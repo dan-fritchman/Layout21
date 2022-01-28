@@ -6,24 +6,27 @@
 //!
 
 // Std-Lib
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryFrom;
 
 // Crates.io
 use serde::{Deserialize, Serialize};
 
+// Local imports
+use crate::Int;
+
 /// # Point in two-dimensional layout-space
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Point {
-    pub x: isize,
-    pub y: isize,
+    pub x: Int,
+    pub y: Int,
 }
 impl Point {
     /// Create a new [Point] from (x,y) coordinates
-    pub fn new(x: isize, y: isize) -> Self {
+    pub fn new(x: Int, y: Int) -> Self {
         Self { x, y }
     }
     /// Create a new [Point] which serves as an offset in direction `dir`
-    pub fn offset(val: isize, dir: Dir) -> Self {
+    pub fn offset(val: Int, dir: Dir) -> Self {
         match dir {
             Dir::Horiz => Self { x: val, y: 0 },
             Dir::Vert => Self { x: 0, y: val },
@@ -44,7 +47,7 @@ impl Point {
         }
     }
     /// Get the coordinate associated with direction `dir`
-    pub fn coord(&self, dir: Dir) -> isize {
+    pub fn coord(&self, dir: Dir) -> Int {
         match dir {
             Dir::Horiz => self.x,
             Dir::Vert => self.y,
@@ -59,8 +62,8 @@ impl Point {
         let x = trans.a[0][0] * xf + trans.a[0][1] * yf + trans.b[0];
         let y = trans.a[1][0] * xf + trans.a[1][1] * yf + trans.b[1];
         Self {
-            x: x.round() as isize,
-            y: y.round() as isize,
+            x: x.round() as Int,
+            y: y.round() as Int,
         }
     }
 }
@@ -87,6 +90,11 @@ impl std::ops::Not for Dir {
     }
 }
 
+/// # Shape 
+/// 
+/// The primary geometric primitive comprising raw layout. 
+/// Variants include [Rect], [Polygon], and [Path]. 
+/// 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Shape {
     Rect { p0: Point, p1: Point },
@@ -190,7 +198,7 @@ impl Shape {
                 // Only "Manhattan paths", i.e. those with segments solely running vertically or horizontally, are supported.
                 // FIXME: even with this method, there are some small pieces at corners which we'll miss.
                 // Whether these are relevant in real life, tbd.
-                let width = isize::try_from(*width).unwrap(); // FIXME: probably store these signed, check them on creation
+                let width = Int::try_from(*width).unwrap(); // FIXME: probably store these signed, check them on creation
                 for k in 0..pts.len() - 1 {
                     let rect = if pts[k].x == pts[k + 1].x {
                         Shape::Rect {
