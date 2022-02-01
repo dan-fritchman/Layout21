@@ -30,14 +30,14 @@ impl BoundBox {
     }
     /// Create a new [BoundBox] from a single [Point].
     /// The resultant [BoundBox] comprises solely the point, having zero area.
-    pub fn from_point(pt: Point) -> Self {
+    pub fn from_point(pt: &Point) -> Self {
         Self {
             p0: pt.clone(),
             p1: pt.clone(),
         }
     }
     /// Create a new [BoundBox] from two points
-    pub fn from_points(p0: Point, p1: Point) -> Self {
+    pub fn from_points(p0: &Point, p1: &Point) -> Self {
         Self {
             p0: Point::new(p0.x.min(p1.x), p0.y.min(p1.y)),
             p1: Point::new(p0.x.max(p1.x), p0.y.max(p1.y)),
@@ -114,7 +114,7 @@ impl BoundBoxTrait for Point {
         if !bbox.contains(self) {
             return BoundBox::empty();
         }
-        BoundBox::from_point(self.clone())
+        BoundBox::from_point(self)
     }
     fn union(&self, bbox: &BoundBox) -> BoundBox {
         BoundBox::new(
@@ -123,7 +123,7 @@ impl BoundBoxTrait for Point {
         )
     }
     fn bbox(&self) -> BoundBox {
-        BoundBox::from_point(self.clone())
+        BoundBox::from_point(self)
     }
 }
 
@@ -136,7 +136,7 @@ impl BoundBoxTrait for Shape {
     }
     fn bbox(&self) -> BoundBox {
         match self {
-            Shape::Rect { ref p0, ref p1 } => BoundBox::from_points(p0.clone(), p1.clone()),
+            Shape::Rect { ref p0, ref p1 } => BoundBox::from_points(p0, p1),
             Shape::Poly { ref pts } => {
                 let mut bbox = BoundBox::empty();
                 for pt in pts {
