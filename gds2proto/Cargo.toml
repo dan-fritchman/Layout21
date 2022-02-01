@@ -14,7 +14,7 @@ workspace = "../"
 gds21 = {path = "../gds21"}
 layout21protos = {path = "../layout21protos"}
 layout21raw = {path = "../layout21raw"}
-clap = "3.0.0-beta.5"
+clap = { version = "3.0.0-beta.5", features = ["derive"] }
 prost = "0.8.0"
 prost-types = "0.6.1"
 prost-build = "0.6.1"
