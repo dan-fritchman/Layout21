@@ -140,12 +140,14 @@ pub trait ShapeTrait {
     fn point0(&self) -> &Point;
     /// Calculate our center-point
     fn center(&self) -> Point;
-    /// Indicate whether this shape is (more or less) horizontal or vertical
-    /// Primarily used for orienting label-text
+    /// Indicate whether this shape is (more or less) horizontal or vertical. 
+    /// Primarily used for orienting label-text. 
     fn orientation(&self) -> Dir;
     /// Shift coordinates by the (x,y) values specified in `pt`
     fn shift(&mut self, pt: &Point);
-    /// Boolean indication of whether we contain point `pt`
+    /// Boolean indication of whether the [Shape] contains [Point] `pt`.
+    /// Containment is *inclusive* for all [Shape] types.
+    /// [Point]s on their boundary, which generally include all points specifying the shape itself, are regarded throughout as "inside" the shape.
     fn contains(&self, pt: &Point) -> bool;
     /// Convert to a [Polygon], our most general of shapes
     fn to_poly(&self) -> Polygon;
@@ -160,8 +162,8 @@ impl ShapeTrait for Rect {
         let (p0, p1) = (&self.p0, &self.p1);
         Point::new((p0.x + p1.x) / 2, (p0.y + p1.y) / 2)
     }
-    /// Indicate whether this shape is (more or less) horizontal or vertical
-    /// Primarily used for orienting label-text
+    /// Indicate whether this shape is (more or less) horizontal or vertical. 
+    /// Primarily used for orienting label-text. 
     fn orientation(&self) -> Dir {
         let (p0, p1) = (&self.p0, &self.p1);
         if (p1.x - p0.x).abs() < (p1.y - p0.y).abs() {
@@ -176,7 +178,9 @@ impl ShapeTrait for Rect {
         self.p1.x += pt.x;
         self.p1.y += pt.y;
     }
-    /// Boolean indication of whether we contain point `pt`
+    /// Boolean indication of whether the [Shape] contains [Point] `pt`.
+    /// Containment is *inclusive* for all [Shape] types.
+    /// [Point]s on their boundary, which generally include all points specifying the shape itself, are regarded throughout as "inside" the shape.
     fn contains(&self, pt: &Point) -> bool {
         let (p0, p1) = (&self.p0, &self.p1);
         p0.x.min(p1.x) <= pt.x
@@ -205,8 +209,8 @@ impl ShapeTrait for Polygon {
     fn center(&self) -> Point {
         unimplemented!("Poly::center");
     }
-    /// Indicate whether this shape is (more or less) horizontal or vertical
-    /// Primarily used for orienting label-text
+    /// Indicate whether this shape is (more or less) horizontal or vertical. 
+    /// Primarily used for orienting label-text. 
     fn orientation(&self) -> Dir {
         // FIXME: always horizontal, at least for now
         Dir::Horiz
@@ -218,40 +222,56 @@ impl ShapeTrait for Polygon {
             p.y += pt.y;
         }
     }
-    /// Boolean indication of whether we contain point `pt`
+    /// Boolean indication of whether the [Shape] contains [Point] `pt`.
+    /// Containment is *inclusive* for all [Shape] types.
+    /// [Point]s on their boundary, which generally include all points specifying the shape itself, are regarded throughout as "inside" the shape.
     fn contains(&self, pt: &Point) -> bool {
         // First check for the fast way out: if the point is outside the bounding box, it can't be in the polygon.
         if !self.points.bbox().contains(pt) {
             return false;
         }
-        // Not quite so lucky this time. Now do some real work.
-        // Using the "winding number" algorithm, which works for all (real) layout-polygons.
+
+        // Not quite so lucky this time. Now do some real work. Using the "winding number" algorithm, which works for all (realistically useful) layout-polygons.
         let mut winding_num: isize = 0;
-        // FIXME: clone and close the polygon
-        let mut points = self.points.clone();
-        points.push(points[0].clone());
-        let mut past = &self.points[0];
-        for next in &points[1..points.len()] {
-            // First check whether the segment is in y-range
+        for idx in 0..self.points.len() {
+            // Grab the segment's start and end points.
+            // Note these accesses go one past `points.len`, closing the polygon back at its first point.
+            let (past, next) = (
+                &self.points[idx],
+                &self.points[(idx + 1) % self.points.len()],
+            );
+
+            // First check whether the point is anywhere in the y-range of this segment
             if past.y.min(next.y) <= pt.y && past.y.max(next.y) >= pt.y {
                 // May have a hit here. Sort out whether the semi-infinite horizontal line at `y=pt.y` intersects the edge.
-                let xsolve = (next.x - past.x) * (pt.y - past.y) / (next.y - past.y) + past.x;
+                if next.y == past.y {
+                    // This is a horizontal segment, and we're on the same y-level as the point.
+                    // If its x-coordinate also lies within range, no need for further checks, we've got a hit.
+                    if past.x.min(next.x) <= pt.x && past.x.max(next.x) >= pt.x {
+                        return true;
+                    }
+                    // Otherwise "hits" against these horizontal segments are not counted in `winding_num`.
+                    // (FIXME: double-check this.)
+                } else {
+                    // This is a non-horizontal segment. Check for intersection.
+                    let xsolve = (next.x - past.x) * (pt.y - past.y) / (next.y - past.y) + past.x;
 
-                if xsolve >= pt.x {
-                    // We've got a hit on the semi-infinite horizontal line through `pt`.
-                    // Either increment or decrement the winding number.
-                    // FIXME: sort out handling for horizontal edges, i.e. `past.y == next.y`
-                    if next.y > past.y {
-                        winding_num += 1;
-                    } else {
-                        winding_num -= 1;
+                    if xsolve == pt.x {
+                        // This segment runs straight through the point. No need to check further.
+                        return true;
+                    } else if xsolve > pt.x {
+                        // We've got a hit on the semi-infinite horizontal line through `pt`.
+                        // Either increment or decrement the winding number.
+                        if next.y > past.y {
+                            winding_num += 1;
+                        } else {
+                            winding_num -= 1;
+                        }
                     }
                 }
             }
-            // And update the prior-point
-            past = next;
         }
-        // Trick is: if the winding number is non-zero, we're inside the polygon.
+        // Trick is: if the winding number is non-zero, we're inside the polygon. And if it's zero, we're outside.
         winding_num != 0
     }
     fn to_poly(&self) -> Polygon {
@@ -270,8 +290,8 @@ impl ShapeTrait for Path {
         let p1 = &self.points[1];
         Point::new((p0.x + p1.x) / 2, (p0.y + p1.y) / 2)
     }
-    /// Indicate whether this shape is (more or less) horizontal or vertical
-    /// Primarily used for orienting label-text
+    /// Indicate whether this shape is (more or less) horizontal or vertical. 
+    /// Primarily used for orienting label-text. 
     fn orientation(&self) -> Dir {
         // FIXME: always horizontal, at least for now
         Dir::Horiz
@@ -283,7 +303,9 @@ impl ShapeTrait for Path {
             p.y += pt.y;
         }
     }
-    /// Boolean indication of whether we contain point `pt`
+    /// Boolean indication of whether the [Shape] contains [Point] `pt`.
+    /// Containment is *inclusive* for all [Shape] types.
+    /// [Point]s on their boundary, which generally include all points specifying the shape itself, are regarded throughout as "inside" the shape.
     fn contains(&self, pt: &Point) -> bool {
         // Break into segments, and check for intersection with each
         // Probably not the most efficient way to do this, but a start.
@@ -526,9 +548,66 @@ pub mod tests {
         assert_eq!(pc1, Point::new(2, 0));
     }
     #[test]
-    #[ignore]
-    fn test_shapes_contain() {
-        // Test shape-point containment of several flavors
-        todo!(); // FIXME! 
+    fn test_polygon_contains() {
+        // Test polygon-point containment of several flavors
+
+        // Create a right triangle at the origin
+        let triangle = Polygon {
+            points: vec![Point::new(0, 0), Point::new(2, 0), Point::new(0, 2)],
+        };
+        assert!(triangle.contains(&Point::new(0, 0)));
+        assert!(triangle.contains(&Point::new(1, 0)));
+        assert!(triangle.contains(&Point::new(2, 0)));
+        assert!(triangle.contains(&Point::new(0, 1)));
+        assert!(triangle.contains(&Point::new(1, 1)));
+        assert!(!triangle.contains(&Point::new(2, 2)));
+
+        // Create a 2:1 tall-ish diamond-shape
+        let diamond = Polygon {
+            points: vec![
+                Point::new(1, 0),
+                Point::new(2, 2),
+                Point::new(1, 4),
+                Point::new(0, 2),
+            ],
+        };
+        assert!(!diamond.contains(&Point::new(0, 0)));
+        assert!(!diamond.contains(&Point::new(100, 100)));
+        // Check a few points through its vertical center
+        assert!(diamond.contains(&Point::new(1, 0)));
+        assert!(diamond.contains(&Point::new(1, 1)));
+        assert!(diamond.contains(&Point::new(1, 2)));
+        assert!(diamond.contains(&Point::new(1, 3)));
+        assert!(diamond.contains(&Point::new(1, 4)));
+        // And its horizontal center
+        assert!(diamond.contains(&Point::new(0, 2)));
+        assert!(diamond.contains(&Point::new(1, 2)));
+        assert!(diamond.contains(&Point::new(2, 2)));
+
+        // More fun: create a U-shaped polygon, inside a 10x10 square
+        let u = Polygon {
+            points: vec![
+                Point::new(0, 0),
+                Point::new(0, 10),
+                Point::new(2, 10),
+                Point::new(2, 2),
+                Point::new(8, 2),
+                Point::new(8, 10),
+                Point::new(10, 10),
+                Point::new(10, 0),
+            ],
+        };
+        for pt in &u.points {
+            assert!(u.contains(pt));
+        }
+        assert!(u.contains(&Point::new(1, 1)));
+        assert!(u.contains(&Point::new(1, 9)));
+        assert!(u.contains(&Point::new(9, 9)));
+        assert!(u.contains(&Point::new(9, 1)));
+        // Points "inside" the u-part, i.e. "outside" the polygon
+        assert!(!u.contains(&Point::new(3, 3)));
+        assert!(!u.contains(&Point::new(3, 9)));
+        assert!(!u.contains(&Point::new(7, 3)));
+        assert!(!u.contains(&Point::new(7, 9)));
     }
 }
