@@ -12,7 +12,7 @@ use std::convert::TryFrom;
 use serde::{Deserialize, Serialize};
 
 // Local imports
-use crate::Int;
+use crate::{bbox::BoundBoxTrait, Int};
 
 /// # Point in two-dimensional layout-space
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -90,136 +90,230 @@ impl std::ops::Not for Dir {
     }
 }
 
-/// # Shape 
-/// 
-/// The primary geometric primitive comprising raw layout. 
-/// Variants include [Rect], [Polygon], and [Path]. 
-/// 
+/// # Path
+///
+/// Open-ended geometric path with non-zero width.
+/// Primarily consists of a series of ordered [Point]s.
+///
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum Shape {
-    Rect { p0: Point, p1: Point },
-    Poly { pts: Vec<Point> },
-    Path { width: usize, pts: Vec<Point> },
+pub struct Path {
+    pub points: Vec<Point>,
+    pub width: usize,
 }
-impl Shape {
+/// # Polygon
+///
+/// Closed n-sided polygon with arbitrary number of vertices.
+/// Primarily consists of a series of ordered [Point]s.
+///
+/// Closure from the last point back to the first is implied;
+/// the initial point need not be repeated at the end.
+///
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Polygon {
+    pub points: Vec<Point>,
+}
+/// # Rectangle
+///
+/// Axis-aligned rectangle, specified by two opposite corners.
+///
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Rect {
+    pub p0: Point,
+    pub p1: Point,
+}
+
+/// # Shape
+///
+/// The primary geometric primitive comprising raw layout.
+/// Variants include [Rect], [Polygon], and [Path].
+///
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[enum_dispatch(ShapeTrait)]
+pub enum Shape {
+    Rect(Rect),
+    Polygon(Polygon),
+    Path(Path),
+}
+#[enum_dispatch]
+pub trait ShapeTrait {
     /// Retrieve our "origin", or first [Point]
-    pub fn point0(&self) -> &Point {
-        match *self {
-            Shape::Rect { ref p0, p1: _ } => p0,
-            Shape::Poly { ref pts } => &pts[0],
-            Shape::Path { ref pts, .. } => &pts[0],
-        }
+    fn point0(&self) -> &Point;
+    /// Calculate our center-point
+    fn center(&self) -> Point;
+    /// Indicate whether this shape is (more or less) horizontal or vertical
+    /// Primarily used for orienting label-text
+    fn orientation(&self) -> Dir;
+    /// Shift coordinates by the (x,y) values specified in `pt`
+    fn shift(&mut self, pt: &Point);
+    /// Boolean indication of whether we contain point `pt`
+    fn contains(&self, pt: &Point) -> bool;
+    /// Convert to a [Polygon], our most general of shapes
+    fn to_poly(&self) -> Polygon;
+}
+impl ShapeTrait for Rect {
+    /// Retrieve our "origin", or first [Point]
+    fn point0(&self) -> &Point {
+        &self.p0
     }
     /// Calculate our center-point
-    pub fn center(&self) -> Point {
-        match *self {
-            Shape::Rect { ref p0, ref p1 } => Point::new((p0.x + p1.x) / 2, (p0.y + p1.y) / 2),
-            Shape::Path { ref pts, .. } => {
-                // Place on the center of the first segment
-                let p0 = &pts[0];
-                let p1 = &pts[1];
-                Point::new((p0.x + p1.x) / 2, (p0.y + p1.y) / 2)
-            }
-            Shape::Poly { .. } => {
-                unimplemented!("Shape::Poly/Path::center");
-            }
-        }
+    fn center(&self) -> Point {
+        let (p0, p1) = (&self.p0, &self.p1);
+        Point::new((p0.x + p1.x) / 2, (p0.y + p1.y) / 2)
     }
     /// Indicate whether this shape is (more or less) horizontal or vertical
     /// Primarily used for orienting label-text
-    pub fn orientation(&self) -> Dir {
-        match *self {
-            Shape::Rect { ref p0, ref p1 } => {
-                if (p1.x - p0.x).abs() < (p1.y - p0.y).abs() {
-                    return Dir::Vert;
-                }
-                Dir::Horiz
-            }
-            // Polygon and Path elements always horizontal, at least for now
-            Shape::Poly { .. } | Shape::Path { .. } => Dir::Horiz,
+    fn orientation(&self) -> Dir {
+        let (p0, p1) = (&self.p0, &self.p1);
+        if (p1.x - p0.x).abs() < (p1.y - p0.y).abs() {
+            return Dir::Vert;
         }
-    }
-    /// Apply matrix-vector [Tranform] `trans`.
-    /// Creates a new shape at a location equal to the transformation of our own.
-    pub fn transform(&self, trans: &Transform) -> Shape {
-        match *self {
-            Shape::Rect { ref p0, ref p1 } => Shape::Rect {
-                p0: p0.transform(trans),
-                p1: p1.transform(trans),
-            },
-            Shape::Poly { ref pts } => Shape::Poly {
-                pts: pts.iter().map(|p| p.transform(trans)).collect(),
-            },
-            Shape::Path { ref pts, ref width } => Shape::Path {
-                pts: pts.iter().map(|p| p.transform(trans)).collect(),
-                width: *width,
-            },
-        }
+        Dir::Horiz
     }
     /// Shift coordinates by the (x,y) values specified in `pt`
-    pub fn shift(&mut self, pt: &Point) {
-        match *self {
-            Shape::Rect {
-                ref mut p0,
-                ref mut p1,
-            } => {
-                p0.x += pt.x;
-                p0.y += pt.y;
-                p1.x += pt.x;
-                p1.y += pt.y;
-            }
-            Shape::Poly { ref mut pts } => {
-                for p in pts.iter_mut() {
-                    p.x += pt.x;
-                    p.y += pt.y;
-                }
-            }
-            Shape::Path { ref mut pts, .. } => {
-                for p in pts.iter_mut() {
-                    p.x += pt.x;
-                    p.y += pt.y;
-                }
-            }
+    fn shift(&mut self, pt: &Point) {
+        self.p0.x += pt.x;
+        self.p0.y += pt.y;
+        self.p1.x += pt.x;
+        self.p1.y += pt.y;
+    }
+    /// Boolean indication of whether we contain point `pt`
+    fn contains(&self, pt: &Point) -> bool {
+        let (p0, p1) = (&self.p0, &self.p1);
+        p0.x.min(p1.x) <= pt.x
+            && p0.x.max(p1.x) >= pt.x
+            && p0.y.min(p1.y) <= pt.y
+            && p0.y.max(p1.y) >= pt.y
+    }
+    fn to_poly(&self) -> Polygon {
+        let (p0, p1) = (&self.p0, &self.p1);
+        Polygon {
+            points: vec![
+                p0.clone(),
+                Point::new(p1.x, p0.y),
+                p1.clone(),
+                Point::new(p0.x, p1.y),
+            ],
+        }
+    }
+}
+impl ShapeTrait for Polygon {
+    /// Retrieve our "origin", or first [Point]
+    fn point0(&self) -> &Point {
+        &self.points[0]
+    }
+    /// Calculate our center-point
+    fn center(&self) -> Point {
+        unimplemented!("Poly::center");
+    }
+    /// Indicate whether this shape is (more or less) horizontal or vertical
+    /// Primarily used for orienting label-text
+    fn orientation(&self) -> Dir {
+        // FIXME: always horizontal, at least for now
+        Dir::Horiz
+    }
+    /// Shift coordinates by the (x,y) values specified in `pt`
+    fn shift(&mut self, pt: &Point) {
+        for p in self.points.iter_mut() {
+            p.x += pt.x;
+            p.y += pt.y;
         }
     }
     /// Boolean indication of whether we contain point `pt`
-    pub fn contains(&self, pt: &Point) -> bool {
-        match self {
-            Shape::Rect { ref p0, ref p1 } => {
-                p0.x.min(p1.x) <= pt.x
-                    && p0.x.max(p1.x) >= pt.x
-                    && p0.y.min(p1.y) <= pt.y
-                    && p0.y.max(p1.y) >= pt.y
-            }
-            Shape::Poly { .. } => false, // FIXME! todo!(),
-            Shape::Path { ref width, ref pts } => {
-                // Break into segments, and check for intersection with each
-                // Probably not the most efficient way to do this, but a start.
-                // Only "Manhattan paths", i.e. those with segments solely running vertically or horizontally, are supported.
-                // FIXME: even with this method, there are some small pieces at corners which we'll miss.
-                // Whether these are relevant in real life, tbd.
-                let width = Int::try_from(*width).unwrap(); // FIXME: probably store these signed, check them on creation
-                for k in 0..pts.len() - 1 {
-                    let rect = if pts[k].x == pts[k + 1].x {
-                        Shape::Rect {
-                            p0: Point::new(pts[k].x - width / 2, pts[k].y),
-                            p1: Point::new(pts[k].x + width / 2, pts[k + 1].y),
-                        }
-                    } else if pts[k].y == pts[k + 1].y {
-                        Shape::Rect {
-                            p0: Point::new(pts[k].x, pts[k].y - width / 2),
-                            p1: Point::new(pts[k + 1].x, pts[k].y + width / 2),
-                        }
+    fn contains(&self, pt: &Point) -> bool {
+        // First check for the fast way out: if the point is outside the bounding box, it can't be in the polygon.
+        if !self.points.bbox().contains(pt) {
+            return false;
+        }
+        // Not quite so lucky this time. Now do some real work.
+        // Using the "winding number" algorithm, which works for all (real) layout-polygons.
+        let mut winding_num: isize = 0;
+        // FIXME: clone and close the polygon
+        let mut points = self.points.clone();
+        points.push(points[0].clone());
+        let mut past = &self.points[0];
+        for next in &points[1..points.len()] {
+            // First check whether the segment is in y-range
+            if past.y.min(next.y) <= pt.y && past.y.max(next.y) >= pt.y {
+                // May have a hit here. Sort out whether the semi-infinite horizontal line at `y=pt.y` intersects the edge.
+                let xsolve = (next.x - past.x) * (pt.y - past.y) / (next.y - past.y) + past.x;
+
+                if xsolve >= pt.x {
+                    // We've got a hit on the semi-infinite horizontal line through `pt`.
+                    // Either increment or decrement the winding number.
+                    // FIXME: sort out handling for horizontal edges, i.e. `past.y == next.y`
+                    if next.y > past.y {
+                        winding_num += 1;
                     } else {
-                        unimplemented!("Unsupported Non-Manhattan Path")
-                    };
-                    if rect.contains(pt) {
-                        return true;
+                        winding_num -= 1;
                     }
                 }
-                false
+            }
+            // And update the prior-point
+            past = next;
+        }
+        // Trick is: if the winding number is non-zero, we're inside the polygon.
+        winding_num != 0
+    }
+    fn to_poly(&self) -> Polygon {
+        self.clone()
+    }
+}
+impl ShapeTrait for Path {
+    /// Retrieve our "origin", or first [Point]
+    fn point0(&self) -> &Point {
+        &self.points[0]
+    }
+    /// Calculate our center-point
+    fn center(&self) -> Point {
+        // Place on the center of the first segment
+        let p0 = &self.points[0];
+        let p1 = &self.points[1];
+        Point::new((p0.x + p1.x) / 2, (p0.y + p1.y) / 2)
+    }
+    /// Indicate whether this shape is (more or less) horizontal or vertical
+    /// Primarily used for orienting label-text
+    fn orientation(&self) -> Dir {
+        // FIXME: always horizontal, at least for now
+        Dir::Horiz
+    }
+    /// Shift coordinates by the (x,y) values specified in `pt`
+    fn shift(&mut self, pt: &Point) {
+        for p in self.points.iter_mut() {
+            p.x += pt.x;
+            p.y += pt.y;
+        }
+    }
+    /// Boolean indication of whether we contain point `pt`
+    fn contains(&self, pt: &Point) -> bool {
+        // Break into segments, and check for intersection with each
+        // Probably not the most efficient way to do this, but a start.
+        // Only "Manhattan paths", i.e. those with segments solely running vertically or horizontally, are supported.
+        // FIXME: even with this method, there are some small pieces at corners which we'll miss.
+        // Whether these are relevant in real life, tbd.
+        let (points, width) = (&self.points, self.width);
+        let width = Int::try_from(width).unwrap(); // FIXME: probably store these signed, check them on creation
+        for k in 0..points.len() - 1 {
+            let rect = if points[k].x == points[k + 1].x {
+                Rect {
+                    p0: Point::new(points[k].x - width / 2, points[k].y),
+                    p1: Point::new(points[k].x + width / 2, points[k + 1].y),
+                }
+            } else if points[k].y == points[k + 1].y {
+                Rect {
+                    p0: Point::new(points[k].x, points[k].y - width / 2),
+                    p1: Point::new(points[k + 1].x, points[k].y + width / 2),
+                }
+            } else {
+                unimplemented!("Unsupported Non-Manhattan Path")
+            };
+            if rect.contains(pt) {
+                return true;
             }
         }
+        false
+    }
+    fn to_poly(&self) -> Polygon {
+        unimplemented!("Path::to_poly")
     }
 }
 
@@ -323,50 +417,96 @@ fn matvec(a: &[[f64; 2]; 2], b: &[f64; 2]) -> [f64; 2] {
         a[1][0] * b[0] + a[1][1] * b[1],
     ]
 }
+pub trait TransformTrait {
+    /// Apply matrix-vector [Tranform] `trans`.
+    /// Creates a new shape at a location equal to the transformation of our own.
+    fn transform(&self, trans: &Transform) -> Self;
+}
+impl TransformTrait for Shape {
+    /// Apply matrix-vector [Tranform] `trans`.
+    /// Creates a new shape at a location equal to the transformation of our own.
+    fn transform(&self, trans: &Transform) -> Self {
+        match self {
+            Shape::Rect(r) => Shape::Rect(r.transform(trans)),
+            Shape::Polygon(p) => Shape::Polygon(p.transform(trans)),
+            Shape::Path(p) => Shape::Path(p.transform(trans)),
+        }
+    }
+}
+impl TransformTrait for Rect {
+    /// Apply matrix-vector [Tranform] `trans`.
+    /// Creates a new shape at a location equal to the transformation of our own.
+    fn transform(&self, trans: &Transform) -> Self {
+        let (p0, p1) = (&self.p0, &self.p1);
+        Rect {
+            p0: p0.transform(trans),
+            p1: p1.transform(trans),
+        }
+    }
+}
+impl TransformTrait for Polygon {
+    /// Apply matrix-vector [Tranform] `trans`.
+    /// Creates a new shape at a location equal to the transformation of our own.
+    fn transform(&self, trans: &Transform) -> Self {
+        Polygon {
+            points: self.points.iter().map(|p| p.transform(trans)).collect(),
+        }
+    }
+}
+impl TransformTrait for Path {
+    /// Apply matrix-vector [Tranform] `trans`.
+    /// Creates a new shape at a location equal to the transformation of our own.
+    fn transform(&self, trans: &Transform) -> Self {
+        Path {
+            points: self.points.iter().map(|p| p.transform(trans)).collect(),
+            width: self.width,
+        }
+    }
+}
 
 #[cfg(test)]
 pub mod tests {
     use super::*;
     #[test]
     fn transform_identity() {
-        let shape1 = Shape::Rect {
+        let shape1 = Shape::Rect(Rect {
             p0: Point::new(0, 0),
             p1: Point::new(1, 1),
-        };
+        });
         let trans = Transform::identity();
         let shape2 = shape1.transform(&trans);
         assert_eq!(shape2, shape1);
     }
     #[test]
     fn transform_rotate() {
-        let shape1 = Shape::Rect {
+        let shape1 = Shape::Rect(Rect {
             p0: Point::new(0, 0),
             p1: Point::new(1, 1),
-        };
+        });
         let trans = Transform::rotate(90.);
         let shape2 = shape1.transform(&trans);
         assert_eq!(
             shape2,
-            Shape::Rect {
+            Shape::Rect(Rect {
                 p0: Point::new(0, 0),
                 p1: Point::new(-1, 1),
-            }
+            })
         );
         let shape3 = shape2.transform(&trans);
         assert_eq!(
             shape3,
-            Shape::Rect {
+            Shape::Rect(Rect {
                 p0: Point::new(0, 0),
                 p1: Point::new(-1, -1),
-            }
+            })
         );
         let shape4 = shape3.transform(&trans);
         assert_eq!(
             shape4,
-            Shape::Rect {
+            Shape::Rect(Rect {
                 p0: Point::new(0, 0),
                 p1: Point::new(1, -1),
-            }
+            })
         );
         let shape0 = shape4.transform(&trans);
         assert_eq!(shape0, shape1);
@@ -384,5 +524,11 @@ pub mod tests {
         let cascade2 = Transform::cascade(&trans2, &trans1);
         let pc1 = p.transform(&cascade2);
         assert_eq!(pc1, Point::new(2, 0));
+    }
+    #[test]
+    #[ignore]
+    fn test_shapes_contain() {
+        // Test shape-point containment of several flavors
+        todo!(); // FIXME! 
     }
 }

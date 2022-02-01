@@ -6,6 +6,10 @@
 //! much akin to nearly any legacy layout system.
 //!
 
+// Crates.io dependencies, at crate-level for their macros 
+#[macro_use]
+extern crate enum_dispatch;
+
 // Internal modules
 pub mod bbox;
 pub mod data;

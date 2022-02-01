@@ -381,7 +381,7 @@ impl<'lib> RawExporter {
                 net: Some(assn.src.net.clone()),
                 layer: via_layer.raw.unwrap(),
                 purpose: raw::LayerPurpose::Drawing,
-                inner: raw::Shape::Rect {
+                inner: raw::Shape::Rect(raw::Rect {
                     p0: self.export_point(
                         assn_loc.x - via_layer.size.x / 2,
                         assn_loc.y - via_layer.size.y / 2,
@@ -390,7 +390,7 @@ impl<'lib> RawExporter {
                         assn_loc.x + via_layer.size.x / 2,
                         assn_loc.y + via_layer.size.y / 2,
                     ),
-                },
+                }),
             };
             elems.push(e);
         }
@@ -495,10 +495,10 @@ impl<'lib> RawExporter {
                 }
                 (
                     self.stack.metal(*layer_index)?.raw.unwrap(),
-                    raw::Shape::Rect {
+                    raw::Shape::Rect(raw::Rect {
                         p0: self.export_xy(&pts[0]),
                         p1: self.export_xy(&pts[1]),
-                    },
+                    }),
                 )
             }
             ZTopEdge { track, side, into } => {
@@ -534,10 +534,10 @@ impl<'lib> RawExporter {
                 }
                 (
                     self.stack.metal(top_metal)?.raw.unwrap(),
-                    raw::Shape::Rect {
+                    raw::Shape::Rect(raw::Rect {
                         p0: self.export_xy(&pts[0]),
                         p1: self.export_xy(&pts[1]),
-                    },
+                    }),
                 )
             }
             ZTopInner { .. } => todo!(),
@@ -585,7 +585,7 @@ impl<'lib> RawExporter {
         }
         // Add the final implied Point at (x, y[-1])
         pts.push(Point::new(0, yp));
-        Ok(raw::Shape::Poly { pts })
+        Ok(raw::Shape::Polygon(raw::Polygon { points: pts }))
     }
     /// Convert an [Outline] to a [raw::Element] polygon
     pub fn export_outline(&self, outline: &Outline) -> LayoutResult<raw::Element> {
@@ -616,14 +616,14 @@ impl<'lib> RawExporter {
             };
             // Convert the inner shape
             let inner = match track.data.dir {
-                Dir::Horiz => raw::Shape::Rect {
+                Dir::Horiz => raw::Shape::Rect(raw::Rect {
                     p0: self.export_point(seg.start, track.data.start),
                     p1: self.export_point(seg.stop, track.data.start + track.data.width),
-                },
-                Dir::Vert => raw::Shape::Rect {
+                }),
+                Dir::Vert => raw::Shape::Rect(raw::Rect {
                     p0: self.export_point(track.data.start, seg.start),
                     p1: self.export_point(track.data.start + track.data.width, seg.stop),
-                },
+                }),
             };
             // And pack it up as a [raw::Element]
             let e = raw::Element {

@@ -16,7 +16,8 @@ use slotmap::{new_key_type, SlotMap};
 use crate::{
     utils::{ErrorContext, ErrorHelper, Ptr},
     Abstract, AbstractPort, Cell, Dir, Element, Instance, Int, LayerKey, LayerPurpose, Layers,
-    Layout, LayoutError, LayoutResult, Library, Point, Shape, TextElement, Units,
+    Layout, LayoutError, LayoutResult, Library, Path, Point, Polygon, Rect, Shape, ShapeTrait,
+    TextElement, Units,
 };
 pub use gds21;
 
@@ -248,7 +249,8 @@ impl<'lib> GdsExporter<'lib> {
         layerspec: &gds21::GdsLayerSpec,
     ) -> LayoutResult<gds21::GdsElement> {
         let elem = match shape {
-            Shape::Rect { p0, p1 } => {
+            Shape::Rect(r) => {
+                let (p0, p1) = (&r.p0, &r.p1);
                 let x0 = p0.x.try_into()?;
                 let y0 = p0.y.try_into()?;
                 let x1 = p1.x.try_into()?;
@@ -263,14 +265,15 @@ impl<'lib> GdsExporter<'lib> {
                 }
                 .into()
             }
-            Shape::Poly { pts } => {
+            Shape::Polygon(poly) => {
                 // Flatten our points-vec, converting to 32-bit along the way
-                let mut xy = pts
+                let mut xy = poly
+                    .points
                     .iter()
                     .map(|p| self.export_point(p))
                     .collect::<Result<Vec<_>, _>>()?;
                 // Add the origin a second time, to "close" the polygon
-                xy.push(self.export_point(&pts[0])?);
+                xy.push(self.export_point(&poly.points[0])?);
                 gds21::GdsBoundary {
                     layer: layerspec.layer,
                     datatype: layerspec.xtype,
@@ -279,18 +282,18 @@ impl<'lib> GdsExporter<'lib> {
                 }
                 .into()
             }
-            Shape::Path { pts, width } => {
+            Shape::Path(path) => {
                 // Flatten our points-vec, converting to 32-bit along the way
                 let mut xy = Vec::new();
-                for p in pts.iter() {
+                for p in path.points.iter() {
                     xy.push(self.export_point(p)?);
                 }
                 // Add the origin a second time, to "close" the polygon
-                xy.push(self.export_point(&pts[0])?);
+                xy.push(self.export_point(&path.points[0])?);
                 gds21::GdsPath {
                     layer: layerspec.layer,
                     datatype: layerspec.xtype,
-                    width: Some(i32::try_from(*width)?),
+                    width: Some(i32::try_from(path.width)?),
                     xy,
                     ..Default::default()
                 }
@@ -631,13 +634,13 @@ impl GdsImporter {
                     && pts[3].x == pts[0].x))
         {
             // That makes this a Rectangle.
-            Shape::Rect {
+            Shape::Rect(Rect {
                 p0: pts[0].clone(),
                 p1: pts[2].clone(),
-            }
+            })
         } else {
             // Otherwise, it's a polygon
-            Shape::Poly { pts }
+            Shape::Polygon(Polygon { points: pts })
         };
 
         // Grab (or create) its [Layer]
@@ -660,10 +663,10 @@ impl GdsImporter {
         // This does not check fox "box validity", and imports the
         // first and third of those five coordinates,
         // which are by necessity for a valid [GdsBox] located at opposite corners.
-        let inner = Shape::Rect {
+        let inner = Shape::Rect(Rect {
             p0: self.import_point(&x.xy[0])?,
             p1: self.import_point(&x.xy[2])?,
-        };
+        });
 
         // Grab (or create) its [Layer]
         let (layer, purpose) = self.import_element_layer(x)?;
@@ -688,7 +691,7 @@ impl GdsImporter {
             return self.fail("Invalid nonspecifed GDS Path width ");
         };
         // Create the shape
-        let inner = Shape::Path { width, pts };
+        let inner = Shape::Path(Path { width, points: pts });
 
         // Grab (or create) its [Layer]
         let (layer, purpose) = self.import_element_layer(x)?;

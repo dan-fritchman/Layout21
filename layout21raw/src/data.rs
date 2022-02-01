@@ -17,7 +17,7 @@ use slotmap::{new_key_type, SlotMap};
 use crate::{
     bbox::{BoundBox, BoundBoxTrait},
     error::{LayoutError, LayoutResult},
-    geom::{Point, Shape, Transform},
+    geom::{Point, Shape,  Transform, TransformTrait},
     utils::{Ptr, PtrList},
 };
 

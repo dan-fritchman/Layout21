@@ -11,7 +11,7 @@ use crate::{
     Int,
 };
 
-/// # Rectangular Bounding Box
+/// # Axis-Aligned Rectangular Bounding Box
 ///
 /// Points `p0` and `p1` represent opposite corners of a bounding rectangle.
 /// `p0` is always closest to negative-infinity, in both x and y,
@@ -79,37 +79,50 @@ impl BoundBox {
 /// enable geometric transformations such as union and intersection.  
 ///
 pub trait BoundBoxTrait {
-    /// Compute the intersection with rectangular bounding box `bbox`.
-    /// Creates and returns a new [BoundBox].
-    fn intersection(&self, bbox: &BoundBox) -> BoundBox;
-    /// Compute the union with rectangular bounding box `bbox`.
-    /// Creates and returns a new [BoundBox].
-    fn union(&self, bbox: &BoundBox) -> BoundBox;
     /// Compute a rectangular bounding box around the implementing type.
     fn bbox(&self) -> BoundBox;
+    /// Compute the intersection with rectangular bounding box `bbox`.
+    /// Creates and returns a new [BoundBox].
+    /// Default implementation is to return the intersection of `self.bbox()` and `bbox`.
+    fn intersection(&self, bbox: &BoundBox) -> BoundBox {
+        self.bbox().intersection(&bbox)
+    }
+    /// Compute the union with rectangular bounding box `bbox`.
+    /// Creates and returns a new [BoundBox].
+    /// Default implementation is to return the union of `self.bbox()` and `bbox`.
+    fn union(&self, bbox: &BoundBox) -> BoundBox {
+        self.bbox().union(&bbox)
+    }
 }
-
 impl BoundBoxTrait for BoundBox {
+    fn bbox(&self) -> BoundBox {
+        // We're great as we are, as a [BoundBox] already.
+        // Create a clone to adhere to our "new bbox" return-type. 
+        self.clone() 
+    }
     fn intersection(&self, bbox: &BoundBox) -> BoundBox {
         let pmin = Point::new(self.p0.x.max(bbox.p0.x), self.p0.y.max(bbox.p0.y));
         let pmax = Point::new(self.p1.x.min(bbox.p1.x), self.p1.y.min(bbox.p1.y));
+        
+        // Check for empty intersection, and return an empty box if so
         if pmin.x > pmax.x || pmin.y > pmax.y {
             return BoundBox::empty();
         }
+        // Otherwise return the intersection
         BoundBox::new(pmin, pmax)
     }
     fn union(&self, bbox: &BoundBox) -> BoundBox {
+        // Take the minimum and maximum of the two bounding boxes
         BoundBox::new(
             Point::new(self.p0.x.min(bbox.p0.x), self.p0.y.min(bbox.p0.y)),
             Point::new(self.p1.x.max(bbox.p1.x), self.p1.y.max(bbox.p1.y)),
         )
     }
-    fn bbox(&self) -> BoundBox {
-        self.clone()
-    }
 }
-
 impl BoundBoxTrait for Point {
+    fn bbox(&self) -> BoundBox {
+        BoundBox::from_point(self)
+    }
     fn intersection(&self, bbox: &BoundBox) -> BoundBox {
         if !bbox.contains(self) {
             return BoundBox::empty();
@@ -122,36 +135,24 @@ impl BoundBoxTrait for Point {
             Point::new(self.x.max(bbox.p1.x), self.y.max(bbox.p1.y)),
         )
     }
+}
+impl BoundBoxTrait for Shape {
     fn bbox(&self) -> BoundBox {
-        BoundBox::from_point(self)
+        // Dispatch based on shape-type, either two-Point or multi-Point form. 
+        match self {
+            Shape::Rect(ref r) => BoundBox::from_points(&r.p0, &r.p1),
+            Shape::Polygon(ref p) => (&p.points).bbox(),
+            Shape::Path(ref p) => (&p.points).bbox(),
+        }
     }
 }
-
-impl BoundBoxTrait for Shape {
-    fn intersection(&self, bbox: &BoundBox) -> BoundBox {
-        self.bbox().intersection(&bbox)
-    }
-    fn union(&self, bbox: &BoundBox) -> BoundBox {
-        self.bbox().union(&bbox)
-    }
+impl BoundBoxTrait for Vec<Point> {
     fn bbox(&self) -> BoundBox {
-        match self {
-            Shape::Rect { ref p0, ref p1 } => BoundBox::from_points(p0, p1),
-            Shape::Poly { ref pts } => {
-                let mut bbox = BoundBox::empty();
-                for pt in pts {
-                    bbox = bbox.union(&pt.bbox());
-                }
-                bbox
-            }
-            Shape::Path { ref pts, ref width } => {
-                let mut bbox = BoundBox::empty();
-                for pt in pts {
-                    bbox = bbox.union(&pt.bbox());
-                }
-                bbox.expand(*width as Int);
-                bbox
-            }
+        // Take the union of all points in the vector
+        let mut bbox = BoundBox::empty();
+        for pt in self {
+            bbox = bbox.union(&pt.bbox());
         }
+        bbox
     }
 }
