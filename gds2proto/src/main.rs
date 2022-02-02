@@ -57,6 +57,10 @@ mod tests {
 
     #[test]
     fn roundtrip_to_golden_file() {
+        // The golden file was created by running the program:
+        // $ cargo run -- \
+        //      -i resources/sky130_fd_sc_hd__dfxtp_1.gds \
+        //      -o resources/sky130_fd_sc_hd__dfxtp_1.pb
         let golden_input_path = resource("sky130_fd_sc_hd__dfxtp_1.gds");
         let golden_output_path = resource("sky130_fd_sc_hd__dfxtp_1.pb");
         let golden_bytes = match std::fs::read(&golden_output_path) {
