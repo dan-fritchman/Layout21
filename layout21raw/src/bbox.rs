@@ -69,6 +69,10 @@ impl BoundBox {
     pub fn size(&self) -> (Int, Int) {
         (self.p1.x - self.p0.x, self.p1.y - self.p0.y)
     }
+    /// Get the box's center
+    pub fn center(&self) -> Point {
+        Point::new((self.p0.x + self.p1.x) / 2, (self.p0.y + self.p1.y) / 2)
+    }
 }
 
 ///
@@ -97,13 +101,12 @@ pub trait BoundBoxTrait {
 impl BoundBoxTrait for BoundBox {
     fn bbox(&self) -> BoundBox {
         // We're great as we are, as a [BoundBox] already.
-        // Create a clone to adhere to our "new bbox" return-type. 
-        self.clone() 
+        // Create a clone to adhere to our "new bbox" return-type.
+        self.clone()
     }
     fn intersection(&self, bbox: &BoundBox) -> BoundBox {
         let pmin = Point::new(self.p0.x.max(bbox.p0.x), self.p0.y.max(bbox.p0.y));
         let pmax = Point::new(self.p1.x.min(bbox.p1.x), self.p1.y.min(bbox.p1.y));
-        
         // Check for empty intersection, and return an empty box if so
         if pmin.x > pmax.x || pmin.y > pmax.y {
             return BoundBox::empty();
@@ -127,7 +130,7 @@ impl BoundBoxTrait for Point {
         if !bbox.contains(self) {
             return BoundBox::empty();
         }
-        BoundBox::from_point(self)
+        bbox.intersection(&BoundBox::from_point(self)) 
     }
     fn union(&self, bbox: &BoundBox) -> BoundBox {
         BoundBox::new(
@@ -138,7 +141,7 @@ impl BoundBoxTrait for Point {
 }
 impl BoundBoxTrait for Shape {
     fn bbox(&self) -> BoundBox {
-        // Dispatch based on shape-type, either two-Point or multi-Point form. 
+        // Dispatch based on shape-type, either two-Point or multi-Point form.
         match self {
             Shape::Rect(ref r) => BoundBox::from_points(&r.p0, &r.p1),
             Shape::Polygon(ref p) => (&p.points).bbox(),

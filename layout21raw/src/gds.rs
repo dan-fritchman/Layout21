@@ -14,10 +14,12 @@ use slotmap::{new_key_type, SlotMap};
 
 // Local imports
 use crate::{
+    bbox::BoundBoxTrait,
+    error::{LayoutError, LayoutResult},
+    geom::{Path, Point, Polygon, Rect, Shape, ShapeTrait},
     utils::{ErrorContext, ErrorHelper, Ptr},
     Abstract, AbstractPort, Cell, Dir, Element, Instance, Int, LayerKey, LayerPurpose, Layers,
-    Layout, LayoutError, LayoutResult, Library, Path, Point, Polygon, Rect, Shape, ShapeTrait,
-    TextElement, Units,
+    Layout, Library, TextElement, Units,
 };
 pub use gds21;
 
@@ -309,8 +311,9 @@ impl<'lib> GdsExporter<'lib> {
         shape: &Shape,
         layerspec: &gds21::GdsLayerSpec,
     ) -> LayoutResult<gds21::GdsElement> {
-        // Text is placed in the shape's (at least rough) center
-        let loc = shape.center();
+        // Sort out a location to place the text
+        let loc = shape.label_location()?;
+
         // Rotate that text 90 degrees for mostly-vertical shapes
         let strans = match shape.orientation() {
             Dir::Horiz => None,
@@ -344,6 +347,77 @@ impl ErrorHelper for GdsExporter<'_> {
             message: msg.into(),
             stack: self.ctx.clone(),
         }
+    }
+}
+
+/// # PlaceLabels
+///
+/// Trait for calculating the location of text-labels, generally per [Shape].
+///
+/// Sole function `label_location` calculates an appropriate location, 
+/// or returns a [LayoutError] if one cannot be found. 
+/// 
+/// While Layout21 formats do not include "placed text", GDSII relies on it for connectivity annotations.
+/// How to place these labels varies by shape type.
+///
+trait PlaceLabels {
+    fn label_location(&self) -> LayoutResult<Point>;
+}
+impl PlaceLabels for Shape {
+    fn label_location(&self) -> LayoutResult<Point> {
+        // Dispatch based on shape-type
+        match self {
+            Shape::Rect(ref r) => r.label_location(),
+            Shape::Polygon(ref p) => p.label_location(),
+            Shape::Path(ref p) => p.label_location(),
+        }
+    }
+}
+impl PlaceLabels for Rect {
+    fn label_location(&self) -> LayoutResult<Point> {
+        // Place rectangle-labels in the center of the rectangle
+        Ok(self.center())
+    }
+}
+impl PlaceLabels for Path {
+    fn label_location(&self) -> LayoutResult<Point> {
+        // Place on the center of the first segment
+        let p0 = &self.points[0];
+        let p1 = &self.points[1];
+        Ok(Point::new((p0.x + p1.x) / 2, (p0.y + p1.y) / 2))
+    }
+}
+impl PlaceLabels for Polygon {
+    fn label_location(&self) -> LayoutResult<Point> {
+        // Where, oh where, to place a label on an arbitrary polygon? Let us count the ways.
+
+        // Priority 1: if the center of our bounding box lies within the polygon, use that.
+        // In simple-polygon cases, this is most likely our best choice.
+        // In many other cases, e.g. for "U-shaped" polygons, this will fall outside the polygon and be invalid.
+        let bbox_center = self.points.bbox().center();
+        if self.contains(&bbox_center) {
+            return Ok(bbox_center);
+        }
+
+        // Priority 2: try the four coordinates immediately above, below, left, and right of the polygon's first point.
+        // At least one must lie within the polygon for it to be a valid layout shape.
+        // If none are, fail.
+        let pt0 = self.point0();
+        let candidates = vec![
+            Point::new(pt0.x, pt0.y - 1),
+            Point::new(pt0.x - 1, pt0.y),
+            Point::new(pt0.x, pt0.y + 1),
+            Point::new(pt0.x + 1, pt0.y),
+        ];
+        for pt in candidates {
+            if self.contains(&pt) {
+                return Ok(pt);
+            }
+        }
+        Err(LayoutError::msg(format!(
+            "No valid label location found for polygon {:?}",
+            self,
+        )))
     }
 }
 

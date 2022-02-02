@@ -12,7 +12,10 @@ use std::convert::TryFrom;
 use serde::{Deserialize, Serialize};
 
 // Local imports
-use crate::{bbox::BoundBoxTrait, Int};
+use crate::{
+    bbox::BoundBoxTrait,
+    Int,
+};
 
 /// # Point in two-dimensional layout-space
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -121,6 +124,12 @@ pub struct Rect {
     pub p0: Point,
     pub p1: Point,
 }
+impl Rect {
+    /// Calculate our center-point
+    pub fn center(&self) -> Point {
+        Point::new((self.p0.x + self.p1.x) / 2, (self.p0.y + self.p1.y) / 2)
+    }
+}
 
 /// # Shape
 ///
@@ -134,14 +143,16 @@ pub enum Shape {
     Polygon(Polygon),
     Path(Path),
 }
+/// # ShapeTrait
+///
+/// Common shape operations, dispatched from the [Shape] enum to its variants by [enum_dispatch].
+///
 #[enum_dispatch]
 pub trait ShapeTrait {
     /// Retrieve our "origin", or first [Point]
     fn point0(&self) -> &Point;
-    /// Calculate our center-point
-    fn center(&self) -> Point;
-    /// Indicate whether this shape is (more or less) horizontal or vertical. 
-    /// Primarily used for orienting label-text. 
+    /// Indicate whether this shape is (more or less) horizontal or vertical.
+    /// Primarily used for orienting label-text.
     fn orientation(&self) -> Dir;
     /// Shift coordinates by the (x,y) values specified in `pt`
     fn shift(&mut self, pt: &Point);
@@ -157,13 +168,9 @@ impl ShapeTrait for Rect {
     fn point0(&self) -> &Point {
         &self.p0
     }
-    /// Calculate our center-point
-    fn center(&self) -> Point {
-        let (p0, p1) = (&self.p0, &self.p1);
-        Point::new((p0.x + p1.x) / 2, (p0.y + p1.y) / 2)
-    }
-    /// Indicate whether this shape is (more or less) horizontal or vertical. 
-    /// Primarily used for orienting label-text. 
+
+    /// Indicate whether this shape is (more or less) horizontal or vertical.
+    /// Primarily used for orienting label-text.
     fn orientation(&self) -> Dir {
         let (p0, p1) = (&self.p0, &self.p1);
         if (p1.x - p0.x).abs() < (p1.y - p0.y).abs() {
@@ -189,13 +196,13 @@ impl ShapeTrait for Rect {
             && p0.y.max(p1.y) >= pt.y
     }
     fn to_poly(&self) -> Polygon {
-        let (p0, p1) = (&self.p0, &self.p1);
+        // Create a four-sided polygon, cloning our corners
         Polygon {
             points: vec![
-                p0.clone(),
-                Point::new(p1.x, p0.y),
-                p1.clone(),
-                Point::new(p0.x, p1.y),
+                self.p0.clone(),
+                Point::new(self.p1.x, self.p0.y),
+                self.p1.clone(),
+                Point::new(self.p0.x, self.p1.y),
             ],
         }
     }
@@ -205,12 +212,8 @@ impl ShapeTrait for Polygon {
     fn point0(&self) -> &Point {
         &self.points[0]
     }
-    /// Calculate our center-point
-    fn center(&self) -> Point {
-        unimplemented!("Poly::center");
-    }
-    /// Indicate whether this shape is (more or less) horizontal or vertical. 
-    /// Primarily used for orienting label-text. 
+    /// Indicate whether this shape is (more or less) horizontal or vertical.
+    /// Primarily used for orienting label-text.
     fn orientation(&self) -> Dir {
         // FIXME: always horizontal, at least for now
         Dir::Horiz
@@ -283,15 +286,8 @@ impl ShapeTrait for Path {
     fn point0(&self) -> &Point {
         &self.points[0]
     }
-    /// Calculate our center-point
-    fn center(&self) -> Point {
-        // Place on the center of the first segment
-        let p0 = &self.points[0];
-        let p1 = &self.points[1];
-        Point::new((p0.x + p1.x) / 2, (p0.y + p1.y) / 2)
-    }
-    /// Indicate whether this shape is (more or less) horizontal or vertical. 
-    /// Primarily used for orienting label-text. 
+    /// Indicate whether this shape is (more or less) horizontal or vertical.
+    /// Primarily used for orienting label-text.
     fn orientation(&self) -> Dir {
         // FIXME: always horizontal, at least for now
         Dir::Horiz
