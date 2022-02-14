@@ -12,10 +12,7 @@ use std::convert::TryFrom;
 use serde::{Deserialize, Serialize};
 
 // Local imports
-use crate::{
-    bbox::BoundBoxTrait,
-    Int,
-};
+use crate::{bbox::BoundBoxTrait, Int};
 
 /// # Point in two-dimensional layout-space
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -143,6 +140,13 @@ pub enum Shape {
     Polygon(Polygon),
     Path(Path),
 }
+impl Shape {
+    /// Boolean indication of whether we intersect with [Shape] `other`.
+    pub fn intersects(&self, other: &Shape) -> bool {
+        todo!() // FIXME!
+    }
+}
+
 /// # ShapeTrait
 ///
 /// Common shape operations, dispatched from the [Shape] enum to its variants by [enum_dispatch].
@@ -163,6 +167,7 @@ pub trait ShapeTrait {
     /// Convert to a [Polygon], our most general of shapes
     fn to_poly(&self) -> Polygon;
 }
+
 impl ShapeTrait for Rect {
     /// Retrieve our "origin", or first [Point]
     fn point0(&self) -> &Point {
