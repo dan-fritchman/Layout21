@@ -10,8 +10,14 @@ use std::io::Read;
 use std::path::Path;
 use std::str::Chars;
 
+// Crates.io Imports
+#[allow(unused_imports)]
+use rust_decimal::prelude::*;
+use serde::{Deserialize, Serialize};
+
 // Local imports
-use super::*;
+use super::data::*;
+use super::utils::EnumStr;
 
 /// Parse LEF content from file `fname`
 pub fn parse_file(fname: impl AsRef<Path>) -> LefResult<LefLibrary> {
@@ -1028,7 +1034,7 @@ impl<'src> LefParser<'src> {
         Ok(String::from(txt))
     }
     /// Parse an enumerated string-value of type <T>
-    fn parse_enum<T: LefEnum>(&mut self) -> LefResult<T> {
+    fn parse_enum<T: EnumStr>(&mut self) -> LefResult<T> {
         let txt = self.get_name()?;
         match T::from_str(&txt.to_ascii_uppercase()) {
             Some(t) => Ok(t),

@@ -54,7 +54,7 @@ fn stats() -> GdsResult<()> {
 #[test]
 fn scan() -> GdsResult<()> {
     // Test first-pass scanning
-    let fname = resource("has_properties.gds");
+    let fname = resource("sample1.gds");
     let _scan = GdsScanner::scan(&fname)?;
     Ok(())
 }
