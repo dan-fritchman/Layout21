@@ -10,11 +10,5 @@ version = "0.2.1"
 workspace = "../"
 
 [dependencies]
-prost = "0.8.0"
-prost-types = "0.6.1"
-serde = {version = "1.0", features = ["derive"]}
-serde_derive = "1.0.88"
+vlsir = "0.2.1"
 
-[build-dependencies]
-prost-build = "0.6.1"
-serde_derive = "1.0.88"
