@@ -832,7 +832,7 @@ cells:
                   y: 995
                 - x: 6935
                   y: 995
-            - net: ""
+            - net: q
               vertices:
                 - x: 7275
                   y: 1575
