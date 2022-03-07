@@ -20,9 +20,7 @@ import "circuit.proto";
 // 
 message Library {
   // Library Name / Domain 
-  string domain = 1;
-  // Distance Units
-  vlsir.raw.Units units = 2;
+  string domain = 1; 
 
   // Cell Definitions
   repeated Cell cells = 10; 
@@ -87,15 +85,19 @@ message Assign {
 // # Track Cross
 // Crossing between two `TrackRefs`
 message TrackCross {
-  TrackRef top = 1;
-  TrackRef bot = 2;
+  // "Primary" Track
+  TrackRef track = 1;
+  // Intersection location, on an orthogonal layer
+  TrackRef cross = 2;
 }
 
 // # Track Reference
-// Pointer to a layer-index and track-index 
+// Integer-pair pointer to a layer-index and track-index 
 message TrackRef {
+  // Layer Index
   int64 layer = 1;
-  int64 index = 2;
+  // Track Index
+  int64 track = 2;
 }
 
 // # Cell Outlines
@@ -120,9 +122,9 @@ message TrackRef {
 //
 message Outline {
   // X Coordinates
-  repeated vlsir.raw.Point x = 1;
+  repeated int64 x = 1;
   // Y Coordinates
-  repeated vlsir.raw.Point y = 2;
+  repeated int64 y = 2;
   // Number of metal layers used 
   int64 metals = 3;
 }
@@ -145,6 +147,7 @@ message Abstract {
 message AbstractPort {
   // Port Name
   string net = 1;
+
   // Enumerated port types
   oneof kind {
     // Edge 
@@ -154,39 +157,39 @@ message AbstractPort {
     // Z-Top, inside Outline 
     ZTopInner ztop_inner = 12;
   }
-}
-
-// # Edge Port
-// On a layer less than `top_layer`. Only connectable on its `track` and `side`.
-message EdgePort { 
-  TrackRef track = 1;
-  PortSide side = 2;
-}
-// # Z-Top, on Edge Port
-// Can be connected from either `top_layer+1`, or the edge on `top_layer`. 
-message ZTopEdgePort { 
-  // Track index
-  int64 track = 1;
-  // Side
-  PortSide side = 2;
-  // Extent into the cell. 
-  // Must be a location which intersects with (track, Side) inside the Outline.
-  TrackCross into = 3;
-}
-// # Z-Top, inside Outline Port
-message ZTopInner { 
-  // Locations. All must be on layers adjacent to the top-layer.
-  repeated TrackCross locs = 1;
-}
-
-// # Abstract Port Side 
-// 
-// A two-value enum, as each layer either runs horizontally or vertically. 
-// Ports on the nearer-origin (bottom or left) sides use variant `BOTTOM_OR_LEFT`, 
-// while ports on the opposite sides use `TOP_OR_RIGHT`. 
-enum PortSide {
-  BOTTOM_OR_LEFT = 0;
-  TOP_OR_RIGHT = 1;
+  
+  // # Edge Port
+  // On a layer less than `top_layer`. Only connectable on its `track` and `side`.
+  message EdgePort { 
+    TrackRef track = 1;
+    PortSide side = 2;
+  }
+  // # Z-Top, on Edge Port
+  // Can be connected from either `top_layer+1`, or the edge on `top_layer`. 
+  message ZTopEdgePort { 
+    // Track index
+    int64 track = 1;
+    // Side
+    PortSide side = 2;
+    // Extent into the cell. 
+    // Must be a location which intersects with (track, Side) inside the Outline.
+    TrackRef into = 3;
+  }
+  // # Z-Top, inside Outline Port
+  message ZTopInner { 
+    // Locations. All must be on layers adjacent to the top-layer.
+    repeated TrackCross locs = 1;
+  }
+  
+  // # Abstract Port Side 
+  // 
+  // A two-value enum, as each layer either runs horizontally or vertically. 
+  // Ports on the nearer-origin (bottom or left) sides use variant `BOTTOM_OR_LEFT`, 
+  // while ports on the opposite sides use `TOP_OR_RIGHT`. 
+  enum PortSide {
+    BOTTOM_OR_LEFT = 0;
+    TOP_OR_RIGHT = 1;
+  }
 }
 
 // # Cell Instance

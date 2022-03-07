@@ -8,7 +8,6 @@ use std::fmt::Debug;
 
 // Crates.io
 use derive_more::{Add, AddAssign, DivAssign, From, MulAssign, Sub, SubAssign, Sum};
-use enum_dispatch::enum_dispatch;
 use serde::{Deserialize, Serialize};
 
 // Local imports
@@ -22,22 +21,44 @@ use crate::raw::Dir;
 /// Unsigned integers ([usize]) are generally used for indices, such as where the [Index] trait accepts them.
 pub type Int = isize;
 
+/// # Unit-Specified Distances Enumeration
+///
 /// Much of the confusion in a multi-coordinate system such as this
 /// lies in keeping track of which numbers are in which units.
+///
 /// There are three generally useful units of measure here:
 /// * DB Units generally correspond to physical length quantities, e.g. nanometers
 /// * Primitive pitches
 /// * Per-layer pitches, parameterized by a metal-layer index
-#[enum_dispatch]
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+///
+#[derive(From, Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum UnitSpeced {
+    /// Database Units, e.g. nanometers
     DbUnits(DbUnits),
+    /// Primitive Pitches, parameterized by direction
     PrimPitches(PrimPitches),
+    /// Per-Layer Pitches, parameterized by a metal-layer index
     LayerPitches(LayerPitches),
 }
-/// Empty trait, largely for auto-generation of [From] and [Into] implementations.
-#[enum_dispatch(UnitSpeced)]
-pub trait HasUnits: Clone + Copy {}
+/// # HasUnits
+///
+/// A trait for types that have a unit-speced value.
+/// Largely synonymous with being a variant of [UnitSpeced].
+///
+pub trait HasUnits: Clone + Copy {
+    /// Retrieve the raw number being spec'ed. Used sparingly, e.g. for exports.
+    fn raw(&self) -> Int;
+}
+impl HasUnits for UnitSpeced {
+    /// Dispatch the `raw` method to each variant
+    fn raw(&self) -> Int {
+        match self {
+            UnitSpeced::DbUnits(x) => x.raw(),
+            UnitSpeced::PrimPitches(x) => x.raw(),
+            UnitSpeced::LayerPitches(x) => x.raw(),
+        }
+    }
+}
 
 /// A Scalar Value in Database Units
 #[derive(
@@ -61,14 +82,13 @@ pub trait HasUnits: Clone + Copy {}
     Ord,
 )]
 pub struct DbUnits(pub Int);
-impl DbUnits {
+impl HasUnits for DbUnits {
     /// Every so often we need the raw number, fine. Use sparingly.
     #[inline(always)]
-    pub(crate) fn raw(&self) -> Int {
+    fn raw(&self) -> Int {
         self.0
     }
 }
-impl HasUnits for DbUnits {}
 impl std::ops::Div<DbUnits> for DbUnits {
     type Output = Int;
     fn div(self, rhs: DbUnits) -> Self::Output {
@@ -124,7 +144,13 @@ impl PrimPitches {
         Self::new(self.dir, -self.num)
     }
 }
-impl HasUnits for PrimPitches {}
+impl HasUnits for PrimPitches {
+    /// Every so often we need the raw number, fine. Use sparingly.
+    #[inline(always)]
+    fn raw(&self) -> Int {
+        self.num
+    }
+}
 /// Numeric operations between primitive-pitch values.
 /// Generally panic if operating on two [PrimPitches] with different directions.
 impl std::ops::Add<PrimPitches> for PrimPitches {
@@ -207,7 +233,13 @@ impl LayerPitches {
         (self.layer, self.num)
     }
 }
-impl HasUnits for LayerPitches {}
+impl HasUnits for LayerPitches {
+    /// Every so often we need the raw number, fine. Use sparingly.
+    #[inline(always)]
+    fn raw(&self) -> Int {
+        self.num
+    }
+}
 /// Numeric operations between pitch-values and regular numerics.
 impl std::ops::Mul<Int> for LayerPitches {
     type Output = Self;
@@ -260,21 +292,15 @@ pub enum UnitType {
     DivAssign,
     Sum,
 )]
-pub struct Xy<T: HasUnits> {
+/// X-Y Cartesian Pair
+pub struct Xy<T> {
     pub x: T,
     pub y: T,
 }
-impl<T: HasUnits> Xy<T> {
+impl<T> Xy<T> {
     /// Create a new [Xy].
     pub fn new(x: T, y: T) -> Xy<T> {
         Self { x, y }
-    }
-    /// Create a new [Xy] with transposed coordinates.
-    pub fn transpose(&self) -> Xy<T> {
-        Self {
-            y: self.x,
-            x: self.y,
-        }
     }
     /// Get the dimension in direction `dir`
     /// Also available via the [Index] trait.
@@ -283,6 +309,21 @@ impl<T: HasUnits> Xy<T> {
             Dir::Horiz => &self.x,
             Dir::Vert => &self.y,
         }
+    }
+}
+impl<T: Clone> Xy<T> {
+    /// Create a new [Xy] with transposed coordinates.
+    pub fn transpose(&self) -> Xy<T> {
+        Self {
+            y: self.x.clone(),
+            x: self.y.clone(),
+        }
+    }
+}
+impl<T: HasUnits> Xy<T> {
+    /// Get a non-unit-spec'ed raw integer [Xy]
+    pub fn raw(&self) -> Xy<Int> {
+        Xy::new(self.x.raw(), self.y.raw())
     }
 }
 impl<T: HasUnits> std::ops::Index<Dir> for Xy<T> {

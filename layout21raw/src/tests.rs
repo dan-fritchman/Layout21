@@ -60,20 +60,21 @@ fn test_layers() -> LayoutResult<()> {
 
     Ok(())
 }
-/// Grab the full path of resource-file `fname`
-fn resource(rname: &str) -> String {
-    format!("{}/resources/{}", env!("CARGO_MANIFEST_DIR"), rname)
-}
+
 /// Take a trip through GDSII -> Layout21::Raw -> ProtoBuf
 #[cfg(all(feature = "gds", feature = "proto"))]
 #[test]
 fn test_gds_to_proto1() -> LayoutResult<()> {
+    use crate::{
+        gds::gds21::GdsLibrary,
+        proto::proto::{Library as ProtoLibrary, ProtoFile},
+    };
     // Read a GDS file
     let samp = resource("dff1_lib.golden.gds");
-    let gds = gds::gds21::GdsLibrary::load(&samp)?;
+    let gds = GdsLibrary::load(&samp)?;
 
     // Convert to Layout21::Raw
-    let lib = gds::GdsImporter::import(&gds, None)?;
+    let lib = Library::from_gds(&gds, None)?;
     assert_eq!(lib.name, "dff1_lib");
     assert_eq!(lib.cells.len(), 1);
 
@@ -83,11 +84,15 @@ fn test_gds_to_proto1() -> LayoutResult<()> {
     assert_eq!(cell.name, "dff1");
 
     // Convert to ProtoBuf
-    let p = proto::ProtoExporter::export(&lib)?;
-    assert_eq!(p.domain, "dff1_lib");
+    let plib: ProtoLibrary = lib.to_proto()?;
+    assert_eq!(plib.domain, "dff1_lib");
 
     // And compare against the golden version
-    let p2 = proto::proto::open(&resource("dff1_lib.golden.vlsir.bin")).unwrap();
-    assert_eq!(p, p2);
+    let plib2 = ProtoLibrary::open(&resource("dff1_lib.golden.vlsir.bin")).unwrap();
+    assert_eq!(plib, plib2);
     Ok(())
+}
+/// Grab the full path of resource-file `fname`
+fn resource(rname: &str) -> String {
+    format!("{}/resources/{}", env!("CARGO_MANIFEST_DIR"), rname)
 }

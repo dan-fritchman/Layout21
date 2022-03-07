@@ -6,15 +6,16 @@ authors = ["Dan Fritchman <dan@fritch.mn>"]
 edition = "2018"
 license = "BSD-3-Clause"
 repository = "https://github.com/dan-fritchman/Layout21"
-version = "0.2.0"
+version = "0.2.1"
 workspace = "../"
+exclude = ["resources",]
 
 [dependencies]
 # Local workspace dependencies
-gds21 = {path = "../gds21", optional = true}
-layout21protos = {path = "../layout21protos", optional = true}
-layout21utils = {path = "../layout21utils"}
-lef21 = {path = "../lef21", optional = true}
+gds21 = {path = "../gds21", version = "0.2.1", optional = true}
+layout21protos = {path = "../layout21protos", version = "0.2.1", optional = true}
+layout21utils = {path = "../layout21utils", version = "0.2.1"}
+lef21 = {path = "../lef21", version = "0.2.1", optional = true}
 # Crates.io 
 enum_dispatch = "0.3.7"
 num-integer = "0.1"

@@ -11,16 +11,19 @@ use std::fmt::Debug;
 use slotmap::{new_key_type, SlotMap};
 
 // Local imports
-use crate::cell::{Instance, Layout};
-use crate::coords::{DbUnits, HasUnits, PrimPitches, UnitSpeced, Xy};
-use crate::library::Library;
-use crate::outline::Outline;
-use crate::raw::{self, Dir, LayoutError, LayoutResult, Point};
-use crate::stack::{LayerPeriod, RelZ};
-use crate::tracks::{Track, TrackSegmentType};
-use crate::utils::{ErrorContext, ErrorHelper};
-use crate::utils::{Ptr, PtrList};
-use crate::{abs, cell, validate};
+use crate::{
+    abs, cell,
+    coords::{DbUnits, HasUnits, PrimPitches, UnitSpeced, Xy},
+    instance::Instance,
+    layout::Layout,
+    library::Library,
+    outline::Outline,
+    raw::{self, Dir, LayoutError, LayoutResult, Point},
+    stack::{LayerPeriod, RelZ},
+    tracks::{Track, TrackCross, TrackSegmentType},
+    utils::{ErrorContext, ErrorHelper, Ptr, PtrList},
+    validate,
+};
 
 // Create key-types for each internal type stored in [SlotMap]s
 new_key_type! {
@@ -37,9 +40,9 @@ struct TempCell<'lib> {
     /// Instances and references to their definitions
     instances: PtrList<Instance>,
     /// Cuts, arranged by Layer
-    cuts: Vec<Vec<validate::ValidCut<'lib>>>,
+    cuts: Vec<Vec<&'lib TrackCross>>,
     /// Validated Assignments
-    assignments: SlotMap<AssignKey, validate::ValidAssign<'lib>>,
+    assignments: SlotMap<AssignKey, validate::ValidAssign>,
     /// Assignments, arranged by Layer
     top_assns: Vec<Vec<AssignKey>>,
     /// Assignments, arranged by Layer
@@ -71,7 +74,7 @@ struct TempPeriod<'lib> {
     layer: &'lib TempCellLayer<'lib>,
     /// Instance Blockages
     blockages: Vec<(PrimPitches, PrimPitches, Ptr<Instance>)>,
-    cuts: Vec<&'lib validate::ValidCut<'lib>>,
+    cuts: Vec<&'lib TrackCross>,
     top_assns: Vec<AssignKey>,
     bot_assns: Vec<AssignKey>,
 }
@@ -92,13 +95,12 @@ impl<'lib> RawExporter {
     /// Convert the combination of a [Library] `lib` and [Stack] `stack` to a [raw::Library].
     /// Both `lib` and `stack` are consumed in the process.
     pub fn convert(lib: Library, stack: validate::ValidStack) -> LayoutResult<Ptr<raw::Library>> {
-        // First perform validation of the stack
-        // FIXME: validate the library too
-        // let stack = validate::StackValidator::validate(stack)?;
-
         // Put the combination through absolute-placement
         use crate::placer::Placer;
         let (lib, stack) = Placer::place(lib, stack)?;
+
+        // Run the [Library] through validation
+        validate::LibValidator::new(&stack).validate_lib(&lib)?;
 
         let mut myself = Self {
             lib,
@@ -274,25 +276,28 @@ impl<'lib> RawExporter {
         // Collect references to its instances
         let instances = layout.instances.clone();
         // Validate `cuts`, and arrange them by layer
-        let mut cuts: Vec<Vec<validate::ValidCut>> = vec![vec![]; layout.metals];
+        let mut cuts: Vec<Vec<&TrackCross>> = vec![vec![]; layout.metals];
         for cut in layout.cuts.iter() {
-            let c = validate::ValidCut::validate(cut, &self.stack)?;
-            cuts[c.layer].push(c);
+            validate::LibValidator::new(&self.stack).validate_track_cross(cut)?;
+            cuts[cut.track.layer].push(&cut);
             // FIXME: cell validation should also check that this lies within our outline. probably do this earlier
         }
+
         // Validate all the cell's assignments, and arrange references by layer
-        //
-        // FIXME!
-        // This is where "assignments outside the cell's top metal layer" errors currently generally land,
-        // and it's ugly. Gotta get some validation on these first.
-        //
         let mut bot_assns = vec![vec![]; layout.metals];
         let mut top_assns = vec![vec![]; layout.metals];
         let mut assignments = SlotMap::with_key();
         for assn in layout.assignments.iter() {
-            let v = validate::ValidAssign::validate(assn, &self.stack)?;
-            let bot = v.loc.bot.layer;
-            let top = v.loc.top.layer;
+            // Validate the assignment
+            let v = validate::LibValidator::new(&self.stack).validate_assign(assn)?;
+            let bot = v.bot.layer;
+            let top = v.top.layer;
+
+            // Check both layers exist in our stack
+            // (This also returns the layer, which we ignore.)
+            self.stack.metal(bot)?;
+            self.stack.metal(top)?;
+
             let k = assignments.insert(v);
             bot_assns[bot].push(k);
             top_assns[top].push(k);
@@ -340,12 +345,13 @@ impl<'lib> RawExporter {
         let nsig = layer_period.signals.len();
         for cut in temp_period.cuts.iter() {
             // Cut the assigned track
-            let track = &mut layer_period.signals[cut.track % nsig];
-            let dist = cut.xy[layer.spec.dir];
+            let track = &mut layer_period.signals[cut.track.track % nsig];
+            let cut_loc = self.track_cross_xy(cut)?;
+            let dist = cut_loc[layer.spec.dir];
             let res = track.cut(
                 dist - layer.spec.cutsize / 2, // start
                 dist + layer.spec.cutsize / 2, // stop
-                cut.src,                       // src
+                cut,                           // src
             );
             self.ok(
                 res,
@@ -369,22 +375,22 @@ impl<'lib> RawExporter {
                 "Internal error: invalid assignment",
             )?;
             self.assign_track(layer, &mut layer_period, assn, false)?;
-
+            let assn_loc = self.track_cross_xy(&assn.src.at)?;
             // Create the via element
             let e = raw::Element {
-                net: Some(assn.net.clone()),
+                net: Some(assn.src.net.clone()),
                 layer: via_layer.raw.unwrap(),
                 purpose: raw::LayerPurpose::Drawing,
-                inner: raw::Shape::Rect {
+                inner: raw::Shape::Rect(raw::Rect {
                     p0: self.export_point(
-                        assn.loc.xy.x - via_layer.size.x / 2,
-                        assn.loc.xy.y - via_layer.size.y / 2,
+                        assn_loc.x - via_layer.size.x / 2,
+                        assn_loc.y - via_layer.size.y / 2,
                     ),
                     p1: self.export_point(
-                        assn.loc.xy.x + via_layer.size.x / 2,
-                        assn.loc.xy.y + via_layer.size.y / 2,
+                        assn_loc.x + via_layer.size.x / 2,
+                        assn_loc.y + via_layer.size.y / 2,
                     ),
-                },
+                }),
             };
             elems.push(e);
         }
@@ -415,19 +421,16 @@ impl<'lib> RawExporter {
         &self,
         layer: &'f validate::ValidMetalLayer,
         layer_period: &'f mut LayerPeriod<'lib>,
-        assn: &'f validate::ValidAssign<'lib>,
+        assn: &'lib validate::ValidAssign,
         top: bool, // Boolean indication of whether to assign `top` or `bot`. FIXME: not our favorite.
     ) -> LayoutResult<()> {
         // Grab a (mutable) reference to the assigned track
         let nsig = layer_period.signals.len();
-        let track = if top {
-            assn.loc.top.track
-        } else {
-            assn.loc.bot.track
-        };
+        let track = if top { assn.top.track } else { assn.bot.track };
         let track = &mut layer_period.signals[track % nsig];
         // And set the net at the assignment's location
-        let res = track.set_net(assn.loc.xy[layer.spec.dir], &assn.src);
+        let assn_loc = self.track_cross_xy(&assn.src.at)?;
+        let res = track.set_net(assn_loc[layer.spec.dir], &assn.src);
         self.ok(res, "Error Assigning Track")?;
         Ok(())
     }
@@ -492,10 +495,10 @@ impl<'lib> RawExporter {
                 }
                 (
                     self.stack.metal(*layer_index)?.raw.unwrap(),
-                    raw::Shape::Rect {
+                    raw::Shape::Rect(raw::Rect {
                         p0: self.export_xy(&pts[0]),
                         p1: self.export_xy(&pts[1]),
-                    },
+                    }),
                 )
             }
             ZTopEdge { track, side, into } => {
@@ -531,10 +534,10 @@ impl<'lib> RawExporter {
                 }
                 (
                     self.stack.metal(top_metal)?.raw.unwrap(),
-                    raw::Shape::Rect {
+                    raw::Shape::Rect(raw::Rect {
                         p0: self.export_xy(&pts[0]),
                         p1: self.export_xy(&pts[1]),
-                    },
+                    }),
                 )
             }
             ZTopInner { .. } => todo!(),
@@ -582,7 +585,7 @@ impl<'lib> RawExporter {
         }
         // Add the final implied Point at (x, y[-1])
         pts.push(Point::new(0, yp));
-        Ok(raw::Shape::Poly { pts })
+        Ok(raw::Shape::Polygon(raw::Polygon { points: pts }))
     }
     /// Convert an [Outline] to a [raw::Element] polygon
     pub fn export_outline(&self, outline: &Outline) -> LayoutResult<raw::Element> {
@@ -613,14 +616,14 @@ impl<'lib> RawExporter {
             };
             // Convert the inner shape
             let inner = match track.data.dir {
-                Dir::Horiz => raw::Shape::Rect {
+                Dir::Horiz => raw::Shape::Rect(raw::Rect {
                     p0: self.export_point(seg.start, track.data.start),
                     p1: self.export_point(seg.stop, track.data.start + track.data.width),
-                },
-                Dir::Vert => raw::Shape::Rect {
+                }),
+                Dir::Vert => raw::Shape::Rect(raw::Rect {
                     p0: self.export_point(track.data.start, seg.start),
                     p1: self.export_point(track.data.start + track.data.width, seg.stop),
-                },
+                }),
             };
             // And pack it up as a [raw::Element]
             let e = raw::Element {
@@ -706,9 +709,12 @@ impl<'lib> RawExporter {
         let nsig = temp_layer.layer.period_data.signals.len();
         let relevant_track_nums = (periodnum * nsig, (periodnum + 1) * nsig);
         // Filter cuts down to those in this period
-        let cuts: Vec<&validate::ValidCut> = cell.cuts[temp_layer.layer.index]
+        let cuts: Vec<&TrackCross> = cell.cuts[temp_layer.layer.index]
             .iter()
-            .filter(|cut| cut.track >= relevant_track_nums.0 && cut.track < relevant_track_nums.1)
+            .filter(|cut| {
+                cut.track.track >= relevant_track_nums.0 && cut.track.track < relevant_track_nums.1
+            })
+            .map(|r| *r)
             .collect();
         // Filter assignments down to those in this period
         let top_assns = cell.top_assns[temp_layer.layer.index]
@@ -719,8 +725,7 @@ impl<'lib> RawExporter {
                     .get(**id)
                     .ok_or(LayoutError::from("Internal error: invalid assignment"))
                     .unwrap();
-                assn.loc.top.track >= relevant_track_nums.0
-                    && assn.loc.top.track < relevant_track_nums.1
+                assn.top.track >= relevant_track_nums.0 && assn.top.track < relevant_track_nums.1
             })
             .copied()
             .collect();
@@ -732,8 +737,7 @@ impl<'lib> RawExporter {
                     .get(**id)
                     .ok_or(LayoutError::from("Internal error: invalid assignment"))
                     .unwrap();
-                assn.loc.bot.track >= relevant_track_nums.0
-                    && assn.loc.bot.track < relevant_track_nums.1
+                assn.bot.track >= relevant_track_nums.0 && assn.bot.track < relevant_track_nums.1
             })
             .copied()
             .collect();
@@ -804,6 +808,19 @@ impl<'lib> RawExporter {
     /// Convert a two-tuple of [DbUnits] into a [raw::Point]
     fn export_point(&self, x: DbUnits, y: DbUnits) -> raw::Point {
         raw::Point::new(x.0, y.0)
+    }
+    /// Convert a [TrackCross] into an (x,y) ([Xy]) coordinate in [DbUnits]
+    fn track_cross_xy(&self, i: &TrackCross) -> LayoutResult<Xy<DbUnits>> {
+        // Find the (x,y) center of our track, initially assuming it runs vertically
+        let x = self.stack.metal(i.track.layer)?.center(i.track.track)?;
+        let y = self.stack.metal(i.cross.layer)?.center(i.cross.track)?;
+
+        // And transpose if it's actually horizontal
+        let mut xy = Xy::new(x, y);
+        if self.stack.metal(i.track.layer)?.spec.dir == Dir::Horiz {
+            xy = xy.transpose();
+        }
+        Ok(xy)
     }
 }
 impl ErrorHelper for RawExporter {

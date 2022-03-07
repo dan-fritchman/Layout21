@@ -5,8 +5,8 @@ use std::fmt::Debug;
 use serde::{Deserialize, Serialize};
 
 // Local imports
-use crate::cell::Instance;
 use crate::coords::DbUnits;
+use crate::instance::Instance;
 use crate::raw::{Dir, LayoutError, LayoutResult};
 use crate::stack::{Assign, RelZ};
 use crate::utils::Ptr;
@@ -108,13 +108,6 @@ impl Repeat {
             nrep,
         }
     }
-}
-#[derive(Debug, Clone)]
-pub struct TrackRef {
-    /// Layer Index
-    pub layer: usize,
-    /// Track Index
-    pub track: usize,
 }
 #[derive(Debug, Clone)]
 pub struct TrackData {
@@ -257,14 +250,14 @@ impl<'lib> Track<'lib> {
         &mut self,
         start: DbUnits,
         stop: DbUnits,
-        src: &'lib TrackIntersection,
+        src: &'lib TrackCross,
     ) -> TrackResult<()> {
         self.cut_or_block(start, stop, TrackSegmentType::Cut { src })
     }
     /// Set the stop position for our last [TrackSegment] to `stop`
     pub fn stop(&mut self, stop: DbUnits) -> LayoutResult<()> {
         if self.segments.len() == 0 {
-            return Err(LayoutError::msg("Error Stopping Track"));
+            LayoutError::fail("Error Stopping Track")?;
         }
         let idx = self.segments.len() - 1;
         self.segments[idx].stop = stop;
@@ -283,42 +276,69 @@ pub struct TrackSegment<'lib> {
 }
 #[derive(Debug, Clone)]
 pub enum TrackSegmentType<'lib> {
-    Cut { src: &'lib TrackIntersection },
+    Cut { src: &'lib TrackCross },
     Blockage { src: Ptr<Instance> },
     Wire { src: Option<&'lib Assign> },
     Rail(RailKind),
 }
-/// Intersection Between Adjacent Layers in [Track]-Space
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TrackIntersection {
+/// # Track Reference
+///
+/// Integer-pair representing a pointer to a [Layer] and track-index.
+///
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct TrackRef {
     /// Layer Index
     pub layer: usize,
     /// Track Index
     pub track: usize,
-    /// Intersecting Track Index
-    pub at: usize,
-    /// Whether `at` refers to the track-indices above or below
-    pub relz: RelZ,
 }
-impl TrackIntersection {
-    pub(crate) fn transpose(&self) -> Self {
-        let layer = match self.relz {
-            RelZ::Above => self.layer + 1,
-            RelZ::Below => self.layer - 1,
-        };
+impl TrackRef {
+    /// Create a new [TrackRef]
+    pub fn new(layer: usize, track: usize) -> Self {
+        Self { layer, track }
+    }
+}
+/// # Track Crossing
+///
+/// Located intersection between opposite-direction [Layer]s in [Track]-Space
+///
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct TrackCross {
+    /// "Primary" [Track] being referred to
+    pub track: TrackRef,
+    /// Intersecting "secondary" track
+    pub cross: TrackRef,
+}
+impl TrackCross {
+    pub fn new(track: TrackRef, cross: TrackRef) -> Self {
+        Self { track, cross }
+    }
+    /// Create from four [usize], representing the two (layer-index, track-index) pairs.
+    pub fn from_parts(layer1: usize, index1: usize, layer2: usize, index2: usize) -> Self {
         Self {
-            layer,
-            track: self.at,
-            at: self.track,
-            relz: self.relz.other(),
+            track: TrackRef::new(layer1, index1),
+            cross: TrackRef::new(layer2, index2),
         }
+    }
+    /// Create from a (layer-index, track-index) pair and a [RelZ]
+    pub fn from_relz(layer: usize, track: usize, at: usize, relz: RelZ) -> Self {
+        let layer2 = match relz {
+            RelZ::Above => layer + 1,
+            RelZ::Below => layer - 1,
+        };
+        let track = TrackRef { layer, track };
+        let cross = TrackRef {
+            layer: layer2,
+            track: at,
+        };
+        Self::new(track, cross)
     }
 }
 
 #[derive(Debug, Clone)]
 pub enum TrackConflict {
     Assign(Assign),
-    Cut(TrackIntersection),
+    Cut(TrackCross),
     Blockage(Ptr<Instance>),
 }
 impl std::fmt::Display for TrackConflict {
@@ -345,7 +365,7 @@ pub enum TrackError {
     OutOfBounds(DbUnits),
     Overlap(DbUnits, DbUnits),
     Conflict(TrackConflict, TrackConflict),
-    CutConflict(TrackConflict, TrackIntersection),
+    CutConflict(TrackConflict, TrackCross),
     BlockageConflict(TrackConflict, Ptr<Instance>),
 }
 pub type TrackResult<T> = Result<T, TrackError>;

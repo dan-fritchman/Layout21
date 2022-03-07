@@ -6,13 +6,13 @@ authors = ["Dan Fritchman <dan@fritch.mn>"]
 edition = "2018"
 license = "BSD-3-Clause"
 repository = "https://github.com/dan-fritchman/Layout21"
-version = "0.2.0"
+version = "0.2.1"
 workspace = "../"
 
 [dependencies]
-gds21 = {path = "../gds21", features = ["selftest"]}
-layout21protos = {path = "../layout21protos"}
-layout21raw = {path = "../layout21raw"}
-layout21tetris = {path = "../layout21tetris"}
-layout21utils = {path = "../layout21utils"}
-lef21 = {path = "../lef21"}
+gds21 = {path = "../gds21", version = "0.2.1", features = ["selftest"]}
+layout21protos = {path = "../layout21protos", version = "0.2.1"}
+layout21raw = {path = "../layout21raw", version = "0.2.1"}
+layout21tetris = {path = "../layout21tetris", version = "0.2.1"}
+layout21utils = {path = "../layout21utils", version = "0.2.1"}
+lef21 = {path = "../lef21", version = "0.2.1"}

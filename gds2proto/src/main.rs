@@ -1,13 +1,24 @@
+//! # gds2proto
+//!
+//! GDSII to VLSIR protobuf schema converter
+//!
+
 use clap::Parser;
 use layout21raw as raw;
 use std::error::Error;
 
+// => The doc-comment on `ProgramOptions` here is displayed by the `clap`-generated help docs => 
+
+/// GDSII to VLSIR Protobuf Schema Converter
 #[derive(Parser)]
 struct ProgramOptions {
+    /// GDS Input File
     #[clap(short = 'i', long, default_value = "")]
     gds: String,
+    /// Protobuf Output File
     #[clap(short = 'o', long, default_value = "")]
     proto: String,
+    /// Verbose Output Mode
     #[clap(short, long)]
     verbose: bool,
 }
@@ -53,7 +64,6 @@ fn _main(options: &ProgramOptions) -> Result<(), Box<dyn Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::tempdir;
 
     #[test]
     fn roundtrip_to_golden_file() {
@@ -67,15 +77,7 @@ mod tests {
             Ok(bytes) => bytes,
             Err(_err) => panic!("Could not read golden output file"),
         };
-
-        let output_dir = tempdir().expect("Could not create temp dir");
-        // jfc
-        let output_path = output_dir
-            .path()
-            .join("gds2proto_test_output.pb")
-            .into_os_string()
-            .into_string()
-            .unwrap();
+        let output_path = resource("gds2proto_test_output.pb");
 
         let options = ProgramOptions {
             gds: golden_input_path,
@@ -83,13 +85,31 @@ mod tests {
             verbose: true,
         };
 
-        assert_eq!((), _main(&options).unwrap());
+        // Run the main function, producing file `output_path`
+        let result = _main(&options);
 
+        // Closure to over-write the golden content. Un-comment to update the golden file.
+        // let write_golden = || {
+        //     // Read back the newly-written data
+        //     use layout21protos::ProtoFile;
+        //     let conv_lib = layout21protos::Library::open(&output_path).unwrap();
+
+        //     // Save it to disk in proto-binary format
+        //     conv_lib.save(&golden_output_path).unwrap();
+
+        //     // And store a YAML version of it for a bit easier reading & comparison
+        //     use layout21utils::SerializationFormat::Yaml;
+        //     Yaml.save(&conv_lib, &resource("sky130_fd_sc_hd__dfxtp_1.pb.yaml"))
+        //         .unwrap();
+        // };
+        // write_golden();
+
+        // Check that `_main` succeeded, and compare the binary data it wrote to disk.
+        assert!(result.is_ok());
         let bytes = match std::fs::read(&output_path) {
             Ok(bytes) => bytes,
             Err(_err) => panic!("Could not read test output file"),
         };
-
         assert_eq!(golden_bytes, bytes);
     }
 

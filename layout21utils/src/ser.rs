@@ -12,8 +12,9 @@ use std::path::Path;
 // Crates.io Imports
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use textwrap::dedent;
 
-/// Enumerated, Supported Serialization Formats
+/// # Enumerated First-Class-Supported Serialization Formats
 pub enum SerializationFormat {
     Json,
     Yaml,
@@ -26,6 +27,15 @@ impl SerializationFormat {
             Self::Json => Ok(serde_json::to_string(data)?),
             Self::Yaml => Ok(serde_yaml::to_string(data)?),
             Self::Toml => Ok(toml::to_string(data)?),
+        }
+    }
+    /// Parse string `s`
+    pub fn from_str<T: DeserializeOwned>(&self, s: &str) -> Result<T, Error> {
+        let s = dedent(s);
+        match *self {
+            Self::Json => Ok(serde_json::from_str(&s)?),
+            Self::Yaml => Ok(serde_yaml::from_str(&s)?),
+            Self::Toml => Ok(toml::from_str(&s)?),
         }
     }
     /// Save `data` to file `fname`

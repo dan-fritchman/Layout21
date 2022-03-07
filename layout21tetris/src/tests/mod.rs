@@ -3,17 +3,13 @@
 //!
 
 // Local imports
-use super::cell::{self, Instance, Layout};
-use super::library::Library;
-use super::outline::Outline;
-use super::raw::LayoutResult;
-use super::stack::*;
-use super::tracks::*;
-use super::{abs, rawconv, validate::ValidStack};
-
-use crate::utils::PtrList;
+use crate::{
+    abs, cell::Cell, conv, instance::Instance, layout::Layout, library::Library, outline::Outline,
+    raw::LayoutResult, stack::*, tracks::*, utils::PtrList, validate::ValidStack,
+};
 
 // Modules
+pub mod demos;
 pub mod ro;
 pub mod stacks;
 use stacks::SampleStacks;
@@ -31,7 +27,7 @@ fn empty_cell() -> LayoutResult<()> {
         places: Vec::new(),
     };
     let mut lib = Library::new("EmptyCellLib");
-    let _c2 = lib.cells.insert(cell::Cell::from(c));
+    let _c2 = lib.cells.insert(Cell::from(c));
     exports(lib, SampleStacks::pdka()?)
 }
 /// Create a layout-implementation
@@ -44,12 +40,7 @@ fn create_layout() -> LayoutResult<()> {
         instances: PtrList::new(),
         assignments: vec![Assign {
             net: "clk".into(),
-            at: TrackIntersection {
-                layer: 1,
-                track: 0,
-                at: 1,
-                relz: RelZ::Above,
-            },
+            at: TrackCross::from_relz(1, 0, 1, RelZ::Above),
         }],
         cuts: Vec::new(),
         places: Vec::new(),
@@ -68,50 +59,15 @@ fn create_lib1() -> LayoutResult<()> {
         instances: PtrList::new(),
         assignments: vec![Assign {
             net: "clk".into(),
-            at: TrackIntersection {
-                layer: 1,
-                track: 4,
-                at: 2,
-                relz: RelZ::Below,
-            },
+            at: TrackCross::from_relz(1, 4, 2, RelZ::Below),
         }],
         cuts: vec![
-            TrackIntersection {
-                layer: 0,
-                track: 1,
-                at: 1,
-                relz: RelZ::Above,
-            },
-            TrackIntersection {
-                layer: 0,
-                track: 1,
-                at: 3,
-                relz: RelZ::Above,
-            },
-            TrackIntersection {
-                layer: 0,
-                track: 1,
-                at: 5,
-                relz: RelZ::Above,
-            },
-            TrackIntersection {
-                layer: 1,
-                track: 1,
-                at: 1,
-                relz: RelZ::Below,
-            },
-            TrackIntersection {
-                layer: 1,
-                track: 1,
-                at: 3,
-                relz: RelZ::Below,
-            },
-            TrackIntersection {
-                layer: 1,
-                track: 1,
-                at: 5,
-                relz: RelZ::Below,
-            },
+            TrackCross::from_relz(0, 1, 1, RelZ::Above),
+            TrackCross::from_relz(0, 1, 3, RelZ::Above),
+            TrackCross::from_relz(0, 1, 5, RelZ::Above),
+            TrackCross::from_relz(1, 1, 1, RelZ::Below),
+            TrackCross::from_relz(1, 1, 3, RelZ::Below),
+            TrackCross::from_relz(1, 1, 5, RelZ::Below),
         ],
         places: Vec::new(),
     });
@@ -138,12 +94,7 @@ fn create_lib2() -> LayoutResult<()> {
         .into(),
         assignments: vec![Assign {
             net: "clk".into(),
-            at: TrackIntersection {
-                layer: 1,
-                track: 1,
-                at: 1,
-                relz: RelZ::Above,
-            },
+            at: TrackCross::from_relz(1, 1, 1, RelZ::Above),
         }],
         cuts: Vec::new(),
         places: Vec::new(),
@@ -249,7 +200,7 @@ pub fn exports(lib: Library, stack: ValidStack) -> LayoutResult<()> {
     // Serializable formats will generally be written as YAML.
     use crate::utils::SerializationFormat::Yaml;
 
-    let rawlib = rawconv::RawExporter::convert(lib, stack)?;
+    let rawlib = conv::raw::RawExporter::convert(lib, stack)?;
     let rawlib = rawlib.read()?;
 
     // Export to ProtoBuf, save as YAML and binary
