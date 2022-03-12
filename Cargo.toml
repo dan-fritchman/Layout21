@@ -1,6 +1,7 @@
 [workspace]
 
 members = [
+  "rules21",
   "gds21",
   "gds2proto",
   "lef21",
