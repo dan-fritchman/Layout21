@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 // Local imports
 use crate::{
     geom::{Point, Shape},
-    Int,
+    Int, Rect,
 };
 
 /// # Axis-Aligned Rectangular Bounding Box
@@ -17,7 +17,7 @@ use crate::{
 /// `p0` is always closest to negative-infinity, in both x and y,
 /// and `p1` is always closest to positive-infinity.
 ///
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Default, Copy, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct BoundBox {
     pub p0: Point,
     pub p1: Point,
@@ -130,7 +130,7 @@ impl BoundBoxTrait for Point {
         if !bbox.contains(self) {
             return BoundBox::empty();
         }
-        bbox.intersection(&BoundBox::from_point(self)) 
+        bbox.intersection(&BoundBox::from_point(self))
     }
     fn union(&self, bbox: &BoundBox) -> BoundBox {
         BoundBox::new(
@@ -149,6 +149,13 @@ impl BoundBoxTrait for Shape {
         }
     }
 }
+
+impl BoundBoxTrait for Rect {
+    fn bbox(&self) -> BoundBox {
+        BoundBox::from_points(&self.p0, &self.p1)
+    }
+}
+
 impl BoundBoxTrait for Vec<Point> {
     fn bbox(&self) -> BoundBox {
         // Take the union of all points in the vector
