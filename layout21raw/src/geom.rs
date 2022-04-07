@@ -67,6 +67,11 @@ impl Point {
         }
     }
 }
+impl From<(Int, Int)> for Point {
+    fn from(vals: (Int, Int)) -> Self {
+        Self::new(vals.0, vals.1)
+    }
+}
 /// Direction Enumeration
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Dir {
@@ -100,6 +105,11 @@ pub struct Path {
     pub points: Vec<Point>,
     pub width: usize,
 }
+impl Path {
+    pub fn new(points: Vec<Point>, width: usize) -> Self {
+        Self { points, width }
+    }
+}
 /// # Polygon
 ///
 /// Closed n-sided polygon with arbitrary number of vertices.
@@ -112,6 +122,50 @@ pub struct Path {
 pub struct Polygon {
     pub points: Vec<Point>,
 }
+impl Polygon {
+    pub fn new(points: Vec<Point>) -> Self {
+        Self { points }
+    }
+}
+/// Polygon Builder
+///
+/// Exposes a `move_by` interface for relative polygon construction.
+/// The `build` method consumes each [PolygonBuilder]
+/// and returns a [Polygon] in its place.
+///
+/// FIXME: add a similar `PathBuilder`.
+///
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PolygonBuilder {
+    points: Vec<Point>,
+}
+impl PolygonBuilder {
+    /// Create a new [PolygonBuilder] from the origin.
+    pub fn new() -> Self {
+        Self {
+            points: vec![Point::new(0, 0)],
+        }
+    }
+    /// Create a new [PolygonBuilder] from a starting [Point].
+    pub fn start_at(start: impl Into<Point>) -> Self {
+        Self {
+            points: vec![start.into()],
+        }
+    }
+    /// Move the "current point" by (x,y).
+    /// Adds a [Point] to the eventual [Polygon].
+    pub fn move_by(&mut self, x: Int, y: Int) {
+        let last = self.points.last().unwrap();
+        let new = last.shift(&Point::new(x, y));
+        self.points.push(new);
+    }
+    /// Build to a [Polygon]. Consumes `self`.
+    pub fn build(self) -> Polygon {
+        Polygon {
+            points: self.points,
+        }
+    }
+}
 /// # Rectangle
 ///
 /// Axis-aligned rectangle, specified by two opposite corners.
@@ -122,6 +176,13 @@ pub struct Rect {
     pub p1: Point,
 }
 impl Rect {
+    /// Create a new [Rect] from two opposite corners
+    pub fn new(p0: impl Into<Point>, p1: impl Into<Point>) -> Self {
+        Self {
+            p0: p0.into(),
+            p1: p1.into(),
+        }
+    }
     /// Calculate our center-point
     pub fn center(&self) -> Point {
         Point::new((self.p0.x + self.p1.x) / 2, (self.p0.y + self.p1.y) / 2)
@@ -166,6 +227,8 @@ pub trait ShapeTrait {
     fn contains(&self, pt: &Point) -> bool;
     /// Convert to a [Polygon], our most general of shapes
     fn to_poly(&self) -> Polygon;
+    /// Convert to a [Shape] enum, consuming `self` in the process
+    fn to_shape(self) -> Shape;
 }
 
 impl ShapeTrait for Rect {
@@ -210,6 +273,10 @@ impl ShapeTrait for Rect {
                 Point::new(self.p0.x, self.p1.y),
             ],
         }
+    }
+    /// Convert to a [Shape] enum, consuming `self` in the process
+    fn to_shape(self) -> Shape {
+        Shape::Rect(self)
     }
 }
 impl ShapeTrait for Polygon {
@@ -285,6 +352,10 @@ impl ShapeTrait for Polygon {
     fn to_poly(&self) -> Polygon {
         self.clone()
     }
+    /// Convert to a [Shape] enum, consuming `self` in the process
+    fn to_shape(self) -> Shape {
+        Shape::Polygon(self)
+    }
 }
 impl ShapeTrait for Path {
     /// Retrieve our "origin", or first [Point]
@@ -337,6 +408,10 @@ impl ShapeTrait for Path {
     }
     fn to_poly(&self) -> Polygon {
         unimplemented!("Path::to_poly")
+    }
+    /// Convert to a [Shape] enum, consuming `self` in the process
+    fn to_shape(self) -> Shape {
+        Shape::Path(self)
     }
 }
 

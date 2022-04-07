@@ -131,8 +131,11 @@ impl<'lib> RawExporter {
         // Get our starter raw-lib, either anew or from any we've imported
         let rawlibptr = if self.lib.rawlibs.len() == 0 {
             // Create a new [raw::Library]
-            let mut rawlib = raw::Library::new(&self.lib.name, self.stack.units);
-            rawlib.layers = Ptr::clone(self.stack.rawlayers.as_ref().unwrap());
+            let mut rawlib = raw::Library::new(
+                &self.lib.name,
+                self.stack.units,
+                Some(Ptr::clone(self.stack.rawlayers.as_ref().unwrap())),
+            );
             Ok(Ptr::new(rawlib))
         } else if self.lib.rawlibs.len() == 1 {
             // Pop the sole raw-library, and use it as a starting point
