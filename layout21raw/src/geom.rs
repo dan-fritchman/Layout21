@@ -140,6 +140,13 @@ pub enum Shape {
     Polygon(Polygon),
     Path(Path),
 }
+
+impl Default for Shape {
+    fn default() -> Self {
+        Self::Rect(Rect::default())
+    }
+}
+
 impl Shape {
     /// Boolean indication of whether we intersect with [Shape] `other`.
     pub fn intersects(&self, other: &Shape) -> bool {
