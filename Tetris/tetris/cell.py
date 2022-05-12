@@ -17,8 +17,8 @@ from .coords import PrimPitches, Xy
 from .layout import Layout
 from .outline import Outline
 from .error import LayoutError
-# from .bundle import Bundle
-# from .abstract import Abstract
+from .bundle import Bundle
+from .abstract import Abstract
 
 # "Pointer" to a raw (lib, cell) combination.
 # Wraps with basic [Outline] and `metals` information to enable bounded placement.
@@ -39,7 +39,7 @@ class RawLayoutPtr:
 # # Cell View Enumeration
 # All of the ways in which a Cell is represented
 CellView = Union[
-    "Bundle", "Abstract", Layout, RawLayoutPtr,
+    Bundle, Abstract, Layout, RawLayoutPtr,
 ]
 
 # Collection of the Views describing a Cell
@@ -48,9 +48,9 @@ class Cell:
     # Cell Name
     name: str
     # Interface
-    interface: Optional["Bundle"] = None
+    interface: Optional[Bundle] = None
     # Layout Abstract
-    abs: Optional["Abstract"] = None
+    abs: Optional[Abstract] = None
     # Layout Implementation
     layout: Optional[Layout] = None
 

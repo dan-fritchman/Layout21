@@ -15,14 +15,14 @@ from .relz import RelZ
 from .track_spec import TrackCross
 from .instance import Instance
 
-# from .placeable import Placeable
 
-# # Layout Cell Implementation
-#
-# A combination of lower-level cell instances and net-assignments to tracks.
-#
 @dataclass
 class Layout:
+    """
+    # Layout Cell Implementation
+    A combination of hierarchical instances and net-assignments to tracks.
+    """
+
     # Cell Name
     name: str
     # Number of Metal Layers Used
@@ -30,19 +30,17 @@ class Layout:
     # Outline shape counted in x and y pitches of `stack`
     outline: Outline
 
-    # Layout Instances
+    # Instances of other layout objects (cells, arrays, etc.)
     instances: List[Instance] = field(default_factory=list)
     # Net-to-track assignments
     assignments: List[Assign] = field(default_factory=list)
     # Track cuts
     cuts: List[TrackCross] = field(default_factory=list)
-    # Placeable objects
-    places: List["Placeable"] = field(default_factory=list)
 
     # Assign a net at the given coordinates.
     def assign(
         self, net: str, layer: int, track: int, at: int, relz: RelZ,
-    ):
+    ) -> None:
         at = TrackCross.from_relz(layer, track, at, relz)
         self.assignments.append(Assign(net, at))
 

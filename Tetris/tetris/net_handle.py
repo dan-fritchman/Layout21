@@ -1,5 +1,6 @@
-
 from pydantic.dataclasses import dataclass
+
+# Local imports
 from .layout import Layout
 from .relz import RelZ
 
@@ -17,9 +18,6 @@ class NetHandle:
 
     # Assign our net at the given coordinates.
     # Consumes and returns `self` to enable chaining.
-    def at(self, layer: int, track: int, at: int, relz: RelZ) -> "NetHandle" {
-        self.parent.assign(&self.name, layer, track, at, relz);
+    def at(self, layer: int, track: int, at: int, relz: RelZ) -> "NetHandle":
+        self.parent.assign(self.name, layer, track, at, relz)
         return self
-    }
-}
-

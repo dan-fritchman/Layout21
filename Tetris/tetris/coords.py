@@ -8,8 +8,9 @@ from typing import List, Dict, Optional, Union, TypeVar, Tuple, Generic
 from pydantic.generics import GenericModel
 from pydantic.dataclasses import dataclass
 
-# Local Imports 
-from .index import Index 
+# Local Imports
+from .index import Index
+
 
 class Dir(Enum):
     """ Enumerated 2-D Directions """
@@ -156,6 +157,7 @@ class PrimPitches:
 # }
 
 
+@dataclass
 class LayerPitches:
     """ Distance in Pitches on a Particular Layer """
 

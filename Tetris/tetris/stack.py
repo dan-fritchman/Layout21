@@ -5,14 +5,10 @@ from dataclasses import dataclass
 from pydantic.dataclasses import dataclass
 
 # Local imports
-from .index import Index 
+from .index import Index
+from .units import Units
 from .coords import DbUnits, Xy, Dir
 from .track_spec import TrackCross, TrackSpec, TrackEntry, Repeat
-
-
-@dataclass
-class Units:
-    ...  # FIXME!
 
 
 # # Via Targets

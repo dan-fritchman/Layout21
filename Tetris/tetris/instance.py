@@ -8,56 +8,76 @@ from pydantic.dataclasses import dataclass
 
 # Local imports
 from .coords import PrimPitches, Xy, Dir
-from .error import LayoutError
+from .bbox import BoundBox
 
-# from .cell import Cell
-# from .place import Place
+# from .placement import Place
+# from .instantiable import Instantiable
 
-# Instance of another Cell
+
+@dataclass
+class Reflection:
+    """ Reflection-State of an instance """
+
+    # Horizontal Reflection State
+    horiz: bool
+    # Vertical Reflection State
+    vert: bool
+
+    def reflected(self, dir_: Dir) -> bool:
+        """ Boolean indication of whether reflected in direction `dir`. """
+        if dir_ == Dir.Horiz:
+            return self.horiz
+        if dir_ == Dir.Vert:
+            return self.vert
+        raise ValueError
+
+    def __getitem__(self, dir_: Dir) -> bool:
+        """ Square bracket access. Boolean indication of whether reflected in direction `dir`. """
+        return self.reflected(dir_)
+
+
 @dataclass
 class Instance:
+    """ Instance of another Cell, Group, or Array"""
+
     # Instance Name
     inst_name: str
-    # Cell Definition Reference
-    cell: "Cell"
+
+    # Target `Cell`, `Group`, `Array`, or other `Instantiable`
+    of: "Instantiable"
+
     # Location of the Instance origin
     # This origin-position holds regardless of either `reflect` field.
     # If specified in absolute coordinates location-units are [PrimPitches].
-    loc: "Place[Xy[PrimPitches]]"
-    # Horizontal Reflection
-    reflect_horiz: bool
-    # Vertical Reflection
-    reflect_vert: bool
+    loc: "Place"
+
+    # Reflection
+    reflect: Reflection
 
     # Boolean indication of whether this Instance is reflected in direction `dir`
     def reflected(self, dir_: Dir) -> bool:
-        if dir_ == Dir.Horiz:
-            return self.reflect_horiz
-        if dir_ == Dir.Vert:
-            return self.reflect_vert
-        raise ValueError
+        return self.reflect.reflected(dir_)
 
     # Size of the Instance's rectangular `boundbox`, i.e. the zero-origin `boundbox` of its `cell`.
     def boundbox_size(self) -> "Xy[PrimPitches]":
-        return self.cell.boundbox_size()
+        return self.of.boundbox_size()
 
     def __repr__(self):
-        return f"Instance(name=:self.inst_name, cell=:self.cell.name, loc=:self.loc)"
+        return f"Instance(name=:self.inst_name, cell=:self.of.name, loc=:self.loc)"
 
     # Retrieve this Instance's bounding rectangle, specified in [PrimPitches].
     # Instance location must be resolved to absolute coordinates, or this method will fail.
-    def boundbox(self) -> "BoundBox[PrimPitches]":
-        from .bbox import BoundBox
+    def boundbox(self) -> BoundBox[PrimPitches]:
 
         loc = self.loc.abs()
-        outline = self.cell.outline()
+        outline = self.of.outline()
 
-        if self.reflect_horiz:
+        if self.reflect.horiz:
             (x0, x1) = ((loc.x - outline.xmax(), loc.x),)
         else:
             (x0, x1) = ((loc.x, loc.x + outline.xmax()),)
 
-        if self.reflect_vert:
+        if self.reflect.vert:
             (y0, y1) = ((loc.y - outline.ymax(), loc.y),)
         else:
             (y0, y1) = ((loc.y, loc.y + outline.ymax()),)
