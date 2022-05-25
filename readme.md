@@ -1,6 +1,8 @@
 
 # Layout21 
 
+This repository is copied from [dan-fritchman/Layout21](https://github.com/dan-fritchman/Layout21).
+
 Custom integrated circuit layout.  
 
 [![test](https://github.com/dan-fritchman/Layout21/actions/workflows/test.yml/badge.svg)](https://github.com/dan-fritchman/Layout21/actions/workflows/test.yml)

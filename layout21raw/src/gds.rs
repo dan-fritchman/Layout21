@@ -13,6 +13,7 @@ use gds21::GdsElement;
 // Crates.io
 use slotmap::{new_key_type, SlotMap};
 
+use crate::LayerSpec;
 // Local imports
 use crate::{
     bbox::BoundBoxTrait,
@@ -136,7 +137,9 @@ impl<'lib> GdsExporter<'lib> {
         });
         // Blockages do not map to GDSII elements.
         // Conversion includes the abstract's name, outline and ports.
-        elems.push(outline);
+        if let Some(outline) = abs.outline {
+            elems.push(outline);
+        }
 
         // Convert each [AbstractPort]
         for port in abs.ports.iter() {
@@ -161,8 +164,12 @@ impl<'lib> GdsExporter<'lib> {
             let pin_spec = self.export_layerspec(&layerkey, &LayerPurpose::Pin)?;
             let label_spec = self.export_layerspec(&layerkey, &LayerPurpose::Label)?;
             for shape in shapes.iter() {
-                elems.push(self.export_shape(shape, &drawing_spec)?);
-                elems.push(self.export_shape(shape, &pin_spec)?);
+                if let Some(elem) = self.export_shape(shape, &drawing_spec)? {
+                    elems.push(elem);
+                }
+                if let Some(elem) = self.export_shape(shape, &pin_spec)? {
+                    elems.push(elem);
+                }
                 elems.push(self.export_shape_label(&port.net, shape, &label_spec)?);
             }
         }
@@ -246,11 +253,14 @@ impl<'lib> GdsExporter<'lib> {
         // Get the element's layer-numbers pair
         let layerspec = self.export_layerspec(&elem.layer, &elem.purpose)?;
         // Convert its core inner [Shape]
-        let mut gds_elems = vec![self.export_shape(&elem.inner, &layerspec)?];
+        let mut gds_elems = match self.export_shape(&elem.inner, &layerspec)? {
+            Some(x) => vec![x],
+            None => Vec::new(),
+        };
         // If there's an assigned net, create a corresponding text-element
         if let Some(name) = &elem.net {
             // Get the element's layer-numbers pair
-            let layerspec = self.export_layerspec(&elem.layer, &LayerPurpose::Label)?;
+            let layerspec = self.export_layerspec(&elem.layer, &elem.purpose)?;
             gds_elems.push(self.export_shape_label(name, &elem.inner, &layerspec)?);
         }
         Ok(gds_elems)
@@ -265,7 +275,7 @@ impl<'lib> GdsExporter<'lib> {
         &mut self,
         shape: &Shape,
         layerspec: &gds21::GdsLayerSpec,
-    ) -> LayoutResult<gds21::GdsElement> {
+    ) -> LayoutResult<Option<gds21::GdsElement>> {
         let elem = match shape {
             Shape::Rect(r) => {
                 let (p0, p1) = (&r.p0, &r.p1);
@@ -317,8 +327,9 @@ impl<'lib> GdsExporter<'lib> {
                 }
                 .into()
             }
+            Shape::Point(_) => return Ok(None),
         };
-        Ok(elem)
+        Ok(Some(elem))
     }
     /// Create a labeling [gds21::GdsElement] for [Shape] `shape`
     pub fn export_shape_label(
@@ -386,7 +397,14 @@ impl PlaceLabels for Shape {
             Shape::Rect(ref r) => r.label_location(),
             Shape::Polygon(ref p) => p.label_location(),
             Shape::Path(ref p) => p.label_location(),
+            Shape::Point(ref p) => p.label_location(),
         }
+    }
+}
+impl PlaceLabels for Point {
+    fn label_location(&self) -> LayoutResult<Point> {
+        // Place rectangle-labels in the center of the rectangle
+        Ok(*self)
     }
 }
 impl PlaceLabels for Rect {
@@ -593,14 +611,20 @@ impl GdsImporter {
     /// Import a GDS Cell ([gds21::GdsStruct]) into a [Cell]
     fn import_cell(&mut self, strukt: &gds21::GdsStruct) -> LayoutResult<Cell> {
         self.ctx.push(ErrorContext::Cell(strukt.name.clone()));
-        let cell = self.import_layout(strukt)?.into();
+        let (layout, abs) = self.import_layout(strukt)?;
+        let cell = Cell {
+            name: layout.name.clone(),
+            layout: Some(layout),
+            abs: Some(abs),
+        };
         self.ctx.pop();
         Ok(cell)
     }
     /// Import a GDS Cell ([gds21::GdsStruct]) into a [Layout]
-    fn import_layout(&mut self, strukt: &gds21::GdsStruct) -> LayoutResult<Layout> {
+    fn import_layout(&mut self, strukt: &gds21::GdsStruct) -> LayoutResult<(Layout, Abstract)> {
         let mut layout = Layout::default();
         let name = strukt.name.clone();
+        let mut abs = Abstract::new(&name);
         layout.name = name.clone();
         self.ctx.push(ErrorContext::Impl);
 
@@ -646,62 +670,96 @@ impl GdsImporter {
                 }
             }
         }
+        let mut ports = HashMap::new();
         // Pass two: sort out whether each [gds21::GdsTextElem] is a net-label,
         // And if so, assign it as a net-name on each intersecting [Element].
         // Text elements which do not overlap a geometric element on the same layer
         // are converted to annotations.
+        let layer_map = Ptr::clone(&self.layers);
+        let layer_map = layer_map.read().unwrap();
         for textelem in &texts {
+            let net_name = textelem.string.to_lowercase().to_string();
+            let text_key =
+                layer_map.get_from_spec(LayerSpec::new(textelem.layer, textelem.texttype));
             let loc = self.import_point(&textelem.xy)?;
-            if let Some(layer) = layers.get(&textelem.layer) {
-                // Layer exists in geometry; see which elements intersect with this text
-                let mut hit = false;
-                for ekey in layer.iter() {
-                    let elem = elems.get_mut(*ekey).unwrap();
-                    if elem.inner.contains(&loc) {
-                        // Label lands inside this element.
-                        // Check whether we have an existing label.
-                        // If so, it better be the same net name!
-                        // FIXME: casing, as usual with all EDA crap.
-                        // Here we support case *insensitive* GDSes, and lower-case everything.
-                        // Many GDS seem to mix and match upper and lower case,
-                        // essentially using the case-insensitivity for connections (bleh).
-                        let lower_case_name = textelem.string.to_lowercase();
-                        if let Some(pname) = &elem.net {
-                            if *pname != lower_case_name {
-                                println!(
-                                    "Warning: GDSII labels shorting nets {} and {} on layer {}",
+            if text_key.is_none() {
+                println!(
+                    "Ignoring text element on unknown GDS layer ({}, {}).",
+                    textelem.layer, textelem.texttype
+                );
+                continue;
+            }
+            let (text_key, purp) = text_key.unwrap();
+            let draw_key =
+                layer_map.get_new_purpose(textelem.layer, textelem.texttype, LayerPurpose::Drawing);
+
+            if (purp == LayerPurpose::Label || purp == LayerPurpose::Pin) && draw_key.is_some() {
+                let port = ports
+                    .entry(net_name.clone())
+                    .or_insert(AbstractPort::new(&net_name));
+                if let Some(layer) = layers.get(&textelem.layer) {
+                    if draw_key.is_none() {
+                        println!(
+                            "No drawing layer found for GDS layer ({}, {}).",
+                            textelem.layer, textelem.texttype
+                        );
+                    }
+                    // Layer exists in geometry; see which elements intersect with this text
+                    for ekey in layer.iter() {
+                        let elem = elems.get_mut(*ekey).unwrap();
+                        if elem.inner.contains(&loc) && Some(elem.layer) == draw_key {
+                            let layer_key = draw_key.unwrap();
+                            // Label lands inside this element.
+                            // Check whether we have an existing label.
+                            // If so, it better be the same net name!
+                            // FIXME: casing, as usual with all EDA crap.
+                            // Here we support case *insensitive* GDSes, and lower-case everything.
+                            // Many GDS seem to mix and match upper and lower case,
+                            // essentially using the case-insensitivity for connections (bleh).
+                            let lower_case_name = textelem.string.to_lowercase();
+                            if let Some(pname) = &elem.net {
+                                if *pname != lower_case_name {
+                                    println!(
+                                    "Warning: GDSII labels shorting nets {} and {} on layer {} in cell {}",
                                     pname,
                                     textelem.string.clone(),
-                                    textelem.layer
+                                    textelem.layer,
+                                    &name,
                                 );
-                                // return self.fail(format!(
-                                //     "GDSII labels shorting nets {} and {} on layer {}",
-                                //     pname,
-                                //     textelem.string.clone(),
-                                //     textelem.layer
-                                // ));
+                                    // return self.fail(format!(
+                                    //     "GDSII labels shorting nets {} and {} on layer {}",
+                                    //     pname,
+                                    //     textelem.string.clone(),
+                                    //     textelem.layer
+                                    // ));
+                                }
+                            } else {
+                                elem.net = Some(lower_case_name);
+                                port.add_shape(layer_key, elem.inner.clone());
                             }
-                        } else {
-                            elem.net = Some(lower_case_name);
                         }
-                        hit = true;
                     }
                 }
-                // If we've hit at least one, carry onto the next TextElement
-                if hit {
-                    continue;
-                }
+            } else {
+                // Import the text element as is
+                println!("Importing unattached GDSII text element `{}`", &net_name);
+                elems.insert(Element {
+                    net: Some(net_name),
+                    layer: text_key,
+                    purpose: purp,
+                    inner: Shape::Point(loc),
+                });
             }
-            // No hits (or a no-shape Layer). Create an annotation instead.
-            layout.annotations.push(TextElement {
-                string: textelem.string.clone(),
-                loc,
-            });
+        }
+        drop(layer_map);
+
+        for (_, port) in ports.into_iter() {
+            abs.add_port(port);
         }
         // Pull the elements out of the local slot-map, into the vector that [Layout] wants
         layout.elems = elems.drain().map(|(_k, v)| v).collect();
         self.ctx.pop();
-        Ok(layout)
+        Ok((layout, abs))
     }
     /// Import a [gds21::GdsBoundary] into an [Element]
     fn import_boundary(&mut self, x: &gds21::GdsBoundary) -> LayoutResult<Element> {
@@ -934,8 +992,10 @@ impl GdsImporter {
         elem: &impl gds21::HasLayer,
     ) -> LayoutResult<(LayerKey, LayerPurpose)> {
         let spec = elem.layerspec();
-        let mut layers = self.layers.write()?;
-        layers.get_or_insert(spec.layer, spec.xtype)
+        let layers = self.layers.write()?;
+        layers
+            .get_from_spec(spec.into())
+            .ok_or(LayoutError::msg("Layer Not Found"))
     }
 }
 impl ErrorHelper for GdsImporter {

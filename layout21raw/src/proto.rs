@@ -13,6 +13,7 @@
 use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 
+use crate::LayerSpec;
 // Local imports
 use crate::{
     utils::{ErrorContext, ErrorHelper, Ptr},
@@ -106,7 +107,9 @@ impl<'lib> ProtoExporter<'lib> {
                 .push(self.export_abstract_blockages(layerkey, shapes)?);
         }
         // Convert its outline
-        pabs.outline = Some(self.export_polygon(&abs.outline)?);
+        if let Some(ref outline) = abs.outline {
+            pabs.outline = Some(self.export_polygon(outline)?);
+        }
         // And we're done - pop the context and return
         self.ctx.pop();
         Ok(pabs)
@@ -233,6 +236,7 @@ impl<'lib> ProtoExporter<'lib> {
             Shape::Rect(ref r) => Ok(ProtoShape::Rect(self.export_rect(r)?)),
             Shape::Polygon(ref p) => Ok(ProtoShape::Poly(self.export_polygon(p)?)),
             Shape::Path(ref p) => Ok(ProtoShape::Path(self.export_path(p)?)),
+            Shape::Point(_) => self.fail("Cannot export point shapes as protos"),
         }
     }
     /// Export a [Rect]
@@ -286,6 +290,7 @@ impl<'lib> ProtoExporter<'lib> {
             Shape::Rect(rect) => pshapes.rectangles.push(self.export_rect(rect)?),
             Shape::Polygon(poly) => pshapes.polygons.push(self.export_polygon(poly)?),
             Shape::Path(path) => pshapes.paths.push(self.export_path(path)?),
+            Shape::Point(_) => return self.fail("Cannot export point shapes as protos"),
         };
         Ok(())
     }
@@ -674,10 +679,13 @@ impl ProtoImporter {
         // FIXME: maybe a bigger-size type for these layer numbers.
         let num = i16::try_from(player.number)?;
         let purpose = i16::try_from(player.purpose)?;
-        let mut layers = self.layers.write()?;
-        layers.get_or_insert(num, purpose)
+        let layers = self.layers.write()?;
+        layers
+            .get_from_spec(LayerSpec::new(num, purpose))
+            .ok_or(LayoutError::msg("Layer Not Found"))
     }
 }
+
 impl ErrorHelper for ProtoImporter {
     type Error = LayoutError;
     fn err(&self, msg: impl Into<String>) -> LayoutError {
@@ -729,8 +737,11 @@ fn proto1() -> LayoutResult<()> {
     // Round-trip through Layout21::Raw -> ProtoBuf -> Layout21::Raw
     let mut lib = Library::new("prt_lib", Units::Nano);
     let (layer, purpose) = {
+        use crate::Layer;
+        let mut layer = Layer::new(0, "prt_layer");
+        layer.add_purpose(0, LayerPurpose::Drawing);
         let mut layers = lib.layers.write()?;
-        layers.get_or_insert(0, 0)?
+        (layers.add(layer), LayerPurpose::Drawing)
     };
     let c1 = lib.cells.insert(Layout {
         name: "prt_cell".into(),

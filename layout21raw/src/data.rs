@@ -9,10 +9,15 @@
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
+use gds21::GdsLayerSpec;
 // Crates.io
+use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 use slotmap::{new_key_type, SlotMap};
 
+use crate::align::AlignRect;
+use crate::translate::Translate;
+use crate::Rect;
 // Local Imports
 use crate::{
     bbox::{BoundBox, BoundBoxTrait},
@@ -115,21 +120,160 @@ impl SiUnits {
 }
 
 /// Instance of another Cell
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Builder)]
 pub struct Instance {
     /// Instance Name
+    #[builder(setter(into))]
     pub inst_name: String,
     /// Cell Definition Reference
+    #[builder(setter(into))]
     pub cell: Ptr<Cell>,
     /// Location of `cell` origin
     /// regardless of rotation or reflection
+    #[builder(default)]
     pub loc: Point,
     /// Vertical reflection,
     /// applied *before* rotation
+    #[builder(default)]
     pub reflect_vert: bool,
     /// Angle of rotation (degrees),
     /// Clockwise and applied *after* reflection
+    #[builder(default, setter(strip_option))]
     pub angle: Option<f64>,
+}
+
+impl BoundBoxTrait for Instance {
+    fn bbox(&self) -> BoundBox {
+        let inner = {
+            let cell = self.cell.read().unwrap();
+            cell.layout.as_ref().unwrap().bbox()
+        };
+
+        if inner.is_empty() {
+            return inner;
+        }
+
+        let r = Rect {
+            p0: inner.p0,
+            p1: inner.p1,
+        };
+
+        let r = r.transform(&Transform::from_instance(
+            &self.loc,
+            self.reflect_vert,
+            self.angle,
+        ));
+
+        BoundBox { p0: r.p0, p1: r.p1 }
+    }
+}
+
+impl Translate for Instance {
+    fn translate(&mut self, v: Point) {
+        self.loc.translate(v);
+    }
+}
+
+impl AlignRect for Instance {}
+
+impl Instance {
+    pub fn new<N, C>(name: N, cell: C) -> Self
+    where
+        N: Into<String>,
+        C: Into<Ptr<Cell>>,
+    {
+        Self {
+            cell: cell.into(),
+            inst_name: name.into(),
+            loc: Point::new(0, 0),
+            reflect_vert: false,
+            angle: None,
+        }
+    }
+
+    #[inline]
+    pub fn builder() -> InstanceBuilder {
+        InstanceBuilder::default()
+    }
+
+    #[inline]
+    pub fn transform(&self) -> Transform {
+        self._transform()
+    }
+
+    #[inline]
+    fn _transform(&self) -> Transform {
+        Transform::from_instance(&self.loc, self.reflect_vert, self.angle)
+    }
+
+    pub fn port(&self, net: impl Into<String>) -> AbstractPort {
+        let net = net.into();
+        let cell = self.cell.read().unwrap();
+        let port = cell
+            .abs
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Cell `{}` does not have an abstract", &cell.name))
+            .unwrap()
+            .ports
+            .iter()
+            .find(|p| p.net == net)
+            .ok_or_else(|| anyhow::anyhow!("No port named {net}"))
+            .unwrap();
+
+        port.transform(&self._transform())
+    }
+
+    pub fn ports_starting_with(&self, net: &str) -> Vec<AbstractPort> {
+        let cell = self.cell.read().unwrap();
+        let xform = self._transform();
+        let ports = cell
+            .abs
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Cell `{}` does not have an abstract", &cell.name))
+            .unwrap()
+            .ports
+            .iter()
+            .filter(|p| p.net.starts_with(net))
+            .map(|p| p.transform(&xform))
+            .collect();
+
+        ports
+    }
+
+    pub fn ports(&self) -> Vec<AbstractPort> {
+        let cell = self.cell.read().unwrap();
+        let ports = &cell.abs.as_ref().unwrap().ports;
+        let xform = self._transform();
+        ports.iter().map(|p| p.transform(&xform)).collect()
+    }
+
+    pub fn has_abstract(&self) -> bool {
+        let cell = self.cell.read().unwrap();
+        cell.has_abstract()
+    }
+
+    pub fn reflect_vert_anchored(&mut self) -> &mut Self {
+        let box0 = self.bbox();
+        self.reflect_vert = !self.reflect_vert;
+        let box1 = self.bbox();
+        self.loc.y += box0.p0.y - box1.p0.y;
+        self
+    }
+
+    pub fn reflect_horiz_anchored(&mut self) -> &mut Self {
+        let box0 = self.bbox();
+        self.reflect_vert = !self.reflect_vert;
+        self.angle = Some(self.angle.unwrap_or(0f64) + 180f64);
+
+        let box1 = self.bbox();
+        self.loc.x += box0.p0.x - box1.p0.x;
+        self.loc.y += box0.p0.y - box1.p0.y;
+
+        let final_box = self.bbox();
+        assert_eq!(final_box, box0);
+
+        self
+    }
 }
 
 /// # Layer Set & Manager
@@ -165,18 +309,9 @@ impl Layers {
         }
         LayoutError::fail("No more layer numbers available")
     }
-    /// Get a reference to the [LayerKey] for layer-number `num`
-    pub fn keynum(&self, num: i16) -> Option<LayerKey> {
-        self.nums.get(&num).map(|x| x.clone())
-    }
     /// Get a reference to the [LayerKey] layer-name `name`
     pub fn keyname(&self, name: impl Into<String>) -> Option<LayerKey> {
         self.names.get(&name.into()).map(|x| x.clone())
-    }
-    /// Get a reference to [Layer] number `num`
-    pub fn num(&self, num: i16) -> Option<&Layer> {
-        let key = self.nums.get(&num)?;
-        self.slots.get(*key)
     }
     /// Get a reference to [Layer] name `name`
     pub fn name(&self, name: &str) -> Option<&Layer> {
@@ -192,41 +327,40 @@ impl Layers {
     pub fn get(&self, key: LayerKey) -> Option<&Layer> {
         self.slots.get(key)
     }
-    /// Get the ([LayerKey], [LayerPurpose]) objects for numbers (`layernum`, `purposenum`) if present.
-    /// Inserts a new [Layer] if `layernum` is not present.
-    /// Returns `LayerPurpose::Other(purposenum)` if `purposenum` is not present on that layer.
-    pub fn get_or_insert(
-        &mut self,
-        layernum: i16,
-        purposenum: i16,
-    ) -> LayoutResult<(LayerKey, LayerPurpose)> {
-        // Get the [LayerKey] for `layernum`, creating the [Layer] if it doesn't exist.
-        let key = match self.keynum(layernum) {
-            Some(key) => key.clone(),
-            None => self.add(Layer::from_num(layernum)),
-        };
-        // Slightly awkwardly, get that [Layer] (back), so we can get or add a [LayerPurpose]
-        let layer = self
-            .slots
-            .get_mut(key)
-            .ok_or(LayoutError::msg("Layer Not Found"))?;
-        // Get or create the corresponding [LayerPurpose]
-        let purpose = match layer.purpose(purposenum) {
-            Some(purpose) => purpose.clone(),
-            None => {
-                // Create a new anonymous/ numbered layer-purpose
-                let purpose = LayerPurpose::Other(purposenum);
-                layer.add_purpose(purposenum, purpose.clone())?;
-                purpose
-            }
-        };
-        Ok((key, purpose))
-    }
     /// Get a shared reference to the internal <[LayerKey], [Layer]> map
     pub fn slots(&self) -> &SlotMap<LayerKey, Layer> {
         &self.slots
     }
+
+    pub fn get_new_purpose(&self, num: i16, purpose: i16, to: LayerPurpose) -> Option<LayerKey> {
+        let lay = self.get_layer_from_spec(num, purpose)?;
+        let purpose = lay.num(&to)?;
+        let (key, _) = self.get_from_spec(num, purpose)?;
+        Some(key)
+    }
+
+    pub fn get_layer_from_spec(&self, num: i16, purpose: i16) -> Option<&Layer> {
+        let (key, _) = self.get_from_spec(num, purpose)?;
+        self.get(key)
+    }
+
+    pub fn get_from_spec(&self, num: i16, purpose: i16) -> Option<(LayerKey, LayerPurpose)> {
+        for (k, layer) in self.slots().iter() {
+            if layer.layernum != spec.0 {
+                continue;
+            }
+            if let Some(purpose) = layer.purpose(spec.1) {
+                return Some((k, purpose.clone()));
+            }
+        }
+        None
+    }
+
+    pub fn get_layer_names(&self) -> Vec<&String> {
+        self.names.keys().collect()
+    }
 }
+
 /// Layer-Purpose Enumeration
 /// Includes the common use-cases for each shape,
 /// and two "escape hatches", one named and one not.
@@ -252,11 +386,16 @@ impl Default for LayerPurpose {
 
 /// # Layer Specification
 /// As in seemingly every layout system, this uses two numbers to identify each layer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct LayerSpec(i16, i16);
 impl LayerSpec {
     pub fn new(n1: i16, n2: i16) -> Self {
         Self(n1, n2)
+    }
+}
+impl From<GdsLayerSpec> for LayerSpec {
+    fn from(other: GdsLayerSpec) -> Self {
+        Self(other.layer, other.xtype)
     }
 }
 /// # Per-Layer Datatype Specification
@@ -339,6 +478,10 @@ impl Layer {
     pub fn num(&self, purpose: &LayerPurpose) -> Option<i16> {
         self.nums.get(purpose).copied()
     }
+    /// Retrieve a list of purpose number-[LayerPurpose] tuples
+    pub fn get_purps(&self) -> Vec<(&i16, &LayerPurpose)> {
+        self.purps.iter().collect()
+    }
 }
 
 /// Raw Abstract-Layout
@@ -350,7 +493,7 @@ pub struct Abstract {
     /// Cell Name
     pub name: String,
     /// Outline
-    pub outline: Polygon,
+    pub outline: Option<Polygon>,
     /// Ports
     pub ports: Vec<AbstractPort>,
     /// Blockages
@@ -358,16 +501,26 @@ pub struct Abstract {
 }
 impl Abstract {
     /// Create a new [Abstract] with the given `name`
-    pub fn new(name: impl Into<String>, outline: Polygon) -> Self {
+    pub fn new(name: impl Into<String>) -> Self {
         let name = name.into();
         Self {
             name,
-            outline,
+            outline: None,
             ports: Vec::new(),
             blockages: HashMap::new(),
         }
     }
+
+    pub fn add_port(&mut self, port: AbstractPort) -> &mut Self {
+        self.ports.push(port);
+        self
+    }
+
+    pub fn set_name(&mut self, name: impl Into<String>) {
+        self.name = name.into();
+    }
 }
+
 /// # Port Element for [Abstract]s
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AbstractPort {
@@ -385,6 +538,61 @@ impl AbstractPort {
             shapes: HashMap::new(),
         }
     }
+
+    /// Renames this port
+    pub fn named(mut self, name: impl Into<String>) -> Self {
+        self.net = name.into();
+        self
+    }
+
+    pub fn add_shape(&mut self, layer: LayerKey, shape: Shape) -> &mut Self {
+        let v = self.shapes.entry(layer).or_insert(Vec::with_capacity(1));
+        v.push(shape);
+        self
+    }
+
+    pub fn set_net(&mut self, net: impl Into<String>) -> &mut Self {
+        self.net = net.into();
+        self
+    }
+
+    /// Adds the shapes of `other` to this [`AbstractPort`].
+    pub fn merge(&mut self, other: Self) {
+        for (k, mut v) in other.shapes.into_iter() {
+            let shapes = self.shapes.entry(k).or_insert(Vec::new());
+            shapes.append(&mut v);
+        }
+    }
+
+    pub fn bbox(&self, layer: LayerKey) -> Option<BoundBox> {
+        if let Some(shapes) = self.shapes.get(&layer) {
+            let mut bbox = BoundBox::empty();
+            for s in shapes {
+                bbox = s.union(&bbox);
+            }
+            Some(bbox)
+        } else {
+            None
+        }
+    }
+
+    pub fn largest_rect(&self, layer: LayerKey) -> Option<Rect> {
+        let shapes = self.shapes.get(&layer)?;
+        let mut best = None;
+        let mut best_area = 0;
+        for s in shapes {
+            let r = match s {
+                Shape::Rect(r) => r,
+                _ => continue,
+            };
+            let area = r.area();
+            if area > best_area {
+                best_area = area;
+                best = Some(*r)
+            }
+        }
+        best
+    }
 }
 
 /// # Raw Layout Library  
@@ -400,6 +608,7 @@ pub struct Library {
     /// Cell Definitions
     pub cells: PtrList<Cell>,
 }
+
 impl Library {
     /// Create a new and empty Library
     pub fn new(name: impl Into<String>, units: Units) -> Self {
@@ -408,6 +617,20 @@ impl Library {
             units,
             ..Default::default()
         }
+    }
+
+    /// Finds the cell with the given name, if one exists.
+    ///
+    /// Note that this operation takes `O(n)` time in the worst
+    /// case, where `n` is the number of cells in the library.
+    pub fn cell(&self, name: &str) -> Option<Ptr<Cell>> {
+        self.cells
+            .iter()
+            .find(|c| {
+                let c = c.read().unwrap();
+                c.name == name
+            })
+            .cloned()
     }
 }
 
@@ -460,7 +683,7 @@ pub struct Cell {
     pub layout: Option<Layout>,
 }
 impl Cell {
-    /// Create a new and empty Cell named `name`
+    /// Create a new and empty Cell named `name`.
     pub fn new(name: impl Into<String>) -> Self {
         let name = name.into();
         Self {
@@ -468,7 +691,80 @@ impl Cell {
             ..Default::default()
         }
     }
+
+    /// Creates a cell with empty abstract and layout views.
+    pub fn empty<S>(name: S) -> Self
+    where
+        S: Clone + Into<String>,
+    {
+        let abs = Some(Abstract::new(name.clone()));
+        let layout = Some(Layout::new(name.clone()));
+        let name = name.into();
+        Self { name, abs, layout }
+    }
+
+    #[inline]
+    pub fn has_abstract(&self) -> bool {
+        self.abs.is_some()
+    }
+
+    /// Gets a mutable reference to this cell's [`Layout`].
+    ///
+    /// Panics if the cell does not have a layout view.
+    #[inline]
+    pub fn layout_mut(&mut self) -> &mut Layout {
+        self.layout.as_mut().unwrap()
+    }
+
+    /// Gets an immutable reference to this cell's [`Layout`].
+    ///
+    /// Panics if the cell does not have a layout view.
+    #[inline]
+    pub fn layout(&self) -> &Layout {
+        self.layout.as_ref().unwrap()
+    }
+
+    /// Gets an immutable reference to this cell's [`Abstract`].
+    ///
+    /// Panics if the cell does not have an abstract view.
+    #[inline]
+    pub fn abs(&self) -> &Abstract {
+        self.abs.as_ref().unwrap()
+    }
+
+    /// Gets a mutable reference to this cell's [`Abstract`].
+    ///
+    /// Panics if the cell does not have an abstract view.
+    #[inline]
+    pub fn abs_mut(&mut self) -> &mut Abstract {
+        self.abs.as_mut().unwrap()
+    }
+
+    /// Adds a new pin to the layout and abstract views of this cell, if they exist.
+    pub fn add_pin(&mut self, net: impl Into<String>, layer: LayerKey, rect: Rect) {
+        let net = net.into();
+        if let Some(ref mut layout) = self.layout {
+            layout.add_pin(net.clone(), layer, rect);
+        }
+        if let Some(ref mut abs) = self.abs {
+            let mut port = AbstractPort::new(net);
+            port.add_shape(layer, Shape::Rect(rect));
+            abs.add_port(port);
+        }
+    }
+
+    /// Adds a new pin to the layout and abstract views of this cell, if they exist.
+    pub fn add_pin_from_port(&mut self, port: AbstractPort, layer: LayerKey) {
+        if let Some(ref mut layout) = self.layout {
+            let rect = port.largest_rect(layer).unwrap();
+            layout.add_pin(port.net.clone(), layer, rect);
+        }
+        if let Some(ref mut abs) = self.abs {
+            abs.add_port(port);
+        }
+    }
 }
+
 impl From<Abstract> for Cell {
     fn from(src: Abstract) -> Self {
         Self {
@@ -505,20 +801,69 @@ pub struct Layout {
     pub annotations: Vec<TextElement>,
 }
 impl Layout {
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            ..Default::default()
+        }
+    }
+
     /// Create a rectangular [BoundBox] surrounding all elements in the [Layout].
     pub fn bbox(&self) -> BoundBox {
         let mut bbox = BoundBox::empty();
         for elem in &self.elems {
             bbox = elem.inner.union(&bbox);
         }
+        for inst in &self.insts {
+            let b = inst.bbox();
+            if !b.is_empty() {
+                let s = Shape::Rect(Rect { p0: b.p0, p1: b.p1 });
+                bbox = s.union(&bbox);
+            }
+        }
         bbox
     }
+
+    pub fn add_inst<T>(&mut self, inst: T)
+    where
+        T: Into<Instance>,
+    {
+        self.insts.push(inst.into());
+    }
+
+    pub fn add<T>(&mut self, elem: T)
+    where
+        T: Into<Element>,
+    {
+        self.elems.push(elem.into());
+    }
+
     /// Flatten a [Layout], particularly its hierarchical instances, to a vector of [Element]s
     pub fn flatten(&self) -> LayoutResult<Vec<Element>> {
         // Kick off recursive calls, with the identity-transform applied for the top-level `layout`
         let mut elems = Vec::new();
         flatten_helper(self, &Transform::identity(), &mut elems)?;
         Ok(elems)
+    }
+
+    /// Creates a physical layout pin with the given layer, position and name.
+    pub fn add_pin(&mut self, net: impl Into<String>, layer: LayerKey, rect: Rect) {
+        self.elems.push(Element {
+            net: Some(net.into()),
+            layer,
+            inner: Shape::Rect(rect),
+            purpose: LayerPurpose::Pin,
+        });
+    }
+
+    /// Draws a rectangle on the given layer.
+    pub fn draw_rect(&mut self, layer: LayerKey, rect: Rect) {
+        self.elems.push(Element {
+            net: None,
+            layer,
+            inner: Shape::Rect(rect),
+            purpose: LayerPurpose::Drawing,
+        });
     }
 }
 /// Internal helper and core logic for [Layout::flatten].

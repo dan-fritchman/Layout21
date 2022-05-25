@@ -220,12 +220,7 @@ impl<'lib> LayerPeriod<'lib> {
         Ok(())
     }
     /// Cut all [Track]s from `start` to `stop`,
-    pub fn cut(
-        &mut self,
-        start: DbUnits,
-        stop: DbUnits,
-        src: &'lib TrackCross,
-    ) -> TrackResult<()> {
+    pub fn cut(&mut self, start: DbUnits, stop: DbUnits, src: &'lib TrackCross) -> TrackResult<()> {
         for t in self.rails.iter_mut() {
             t.cut(start, stop, src)?;
         }

@@ -8,14 +8,11 @@
 use std::convert::TryFrom;
 
 // Local imports
+use crate::array::{Array, ArrayInstance, Arrayable};
 use crate::bbox::HasBoundBox;
-use crate::{instance::Instance, layout::Layout};
 use crate::coords::{LayerPitches, PrimPitches, UnitSpeced, Xy};
 use crate::library::Library;
-use crate::array::{Array, ArrayInstance, Arrayable};
-use crate::placement::{
-    Align, Place, Placeable, RelativePlace, SepBy, Side,
-};
+use crate::placement::{Align, Place, Placeable, RelativePlace, SepBy, Side};
 use crate::raw::{Dir, LayoutError, LayoutResult};
 use crate::utils::{DepOrder, DepOrderer, ErrorContext, ErrorHelper, Ptr};
 use crate::validate::ValidStack;
@@ -23,6 +20,7 @@ use crate::{
     abs, stack,
     tracks::{TrackCross, TrackRef},
 };
+use crate::{instance::Instance, layout::Layout};
 
 /// # Placer
 /// Converts all potentially-relatively-placed attributes to absolute positions.
@@ -114,10 +112,7 @@ impl Placer {
     }
     /// Flatten an [ArrayInstance] to a vector of Cell Instances.
     /// Instance location must be absolute by call-time.
-    fn flatten_array_inst(
-        &mut self,
-        array_inst: &ArrayInstance,
-    ) -> LayoutResult<Vec<Instance>> {
+    fn flatten_array_inst(&mut self, array_inst: &ArrayInstance) -> LayoutResult<Vec<Instance>> {
         // Read the child-Instances from the underlying [Array] definition
         let mut children = {
             let array = array_inst.array.read()?;
@@ -426,7 +421,7 @@ impl Placer {
                     if inst.reflected(!dir) {
                         period_tracks - track - 1
                     } else {
-                        period_tracks + track 
+                        period_tracks + track
                     }
                 };
 
@@ -618,8 +613,8 @@ impl DepOrder for PlaceOrder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::outline::Outline;
     use crate::cell::Cell;
+    use crate::outline::Outline;
     use crate::placement::{Place, Placeable, RelAssign, RelativePlace, SepBy, Separation, Side};
     use crate::tests::{exports, stacks::SampleStacks};
 

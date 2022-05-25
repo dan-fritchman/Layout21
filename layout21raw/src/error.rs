@@ -25,11 +25,11 @@ pub enum LayoutError {
     /// Conversion Errors, with Boxed External Error
     Conversion {
         message: String,
-        err: Box<dyn std::error::Error>,
+        err: Box<dyn std::error::Error + Send + Sync>,
         stack: Vec<ErrorContext>,
     },
     /// Boxed External Errors
-    Boxed(Box<dyn std::error::Error>),
+    Boxed(Box<dyn std::error::Error + Send + Sync>),
     /// Uncategorized Error, with String Message
     Str(String),
     /// # [Ptr] Locking
@@ -113,7 +113,7 @@ impl<T> From<std::sync::PoisonError<T>> for LayoutError {
         Self::PtrLock
     }
 }
-impl<T: std::error::Error + 'static> From<Box<T>> for LayoutError {
+impl<T: std::error::Error + Send + Sync + 'static> From<Box<T>> for LayoutError {
     fn from(e: Box<T>) -> Self {
         Self::Boxed(e)
     }

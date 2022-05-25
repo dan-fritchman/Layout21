@@ -108,7 +108,7 @@ pub struct TopLoc {
 /// Note there are only two such sides: the "origin-side" [BottomOrLeft] and the "width-side" [TopOrRight].
 /// Each [Layer]'s orientation ([Dir]) dictates between bottom/left and top/right.
 /// Also note the requirements on [Outline] shapes ensure each track has a unique left/right or top/bottom pair of edges.
-/// 
+///
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Side {
     BottomOrLeft,

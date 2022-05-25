@@ -19,7 +19,7 @@ use by_address::ByAddress;
 /// Attribute access is largely forwarded through [Deref] calls,
 /// allowing for fairly natural syntax after grabbing `read()` or `write()` access.
 /// For example:
-/// 
+///
 /// ```text
 /// let data = ptr.read()?;
 /// data.some_function();

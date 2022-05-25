@@ -19,10 +19,12 @@ lef21 = {path = "../lef21", version = "0.2.1", optional = true}
 # Crates.io 
 enum_dispatch = "0.3.7"
 num-integer = "0.1"
-num-traits = "0.2"
-serde = {version = "1.0", features = ["derive"]}
-serde_derive = "1.0.88"
+num-traits = "0.2.15"
+serde = { version = "1.0.137", features = ["derive"] }
+serde_derive = "1.0"
 slotmap = {version = "1.0", features = ["serde"]}
+derive_builder = "0.11"
+anyhow = "1"
 
 [features]
 # Break out each import/export format as a feature 
