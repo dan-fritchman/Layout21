@@ -775,6 +775,14 @@ impl From<&str> for LefError {
 //     }
 // }
 
+impl std::fmt::Display for LefError {
+    /// Delegates to the [Debug] implementation
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        std::fmt::Debug::fmt(self, f)
+    }
+}
+impl std::error::Error for LefError {}
+
 /// Lef21 Library-Wide Result Type
 pub type LefResult<T> = Result<T, LefError>;
 
