@@ -717,6 +717,8 @@ enumstr!(
     }
 );
 
+use super::read::{LefParseErrorType, ParserState};
+
 /// # Lef Error Enumeration
 #[derive(Debug)]
 pub enum LefError {
@@ -728,12 +730,9 @@ pub enum LefError {
     },
     /// Parser Errors
     Parse {
-        tp: super::read::LefParseErrorType,
-        ctx: Vec<super::read::LefParseContext>,
-        token: String,
-        line_content: String,
-        line_num: usize,
-        pos: usize,
+        msg: Option<String>,
+        tp: LefParseErrorType,
+        state: ParserState,
     },
     /// Wrapped errors, generally from other crates
     Boxed(Box<dyn std::error::Error>),
