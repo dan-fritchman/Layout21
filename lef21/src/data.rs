@@ -32,7 +32,7 @@ pub type LefDecimal = rust_decimal::Decimal;
 pub(crate) static V5P4: Lazy<LefDecimal> = Lazy::new(|| LefDecimal::from_str("5.4").unwrap());
 pub(crate) static V5P8: Lazy<LefDecimal> = Lazy::new(|| LefDecimal::from_str("5.8").unwrap());
 
-/// # Lef Library  
+/// # Lef Library
 ///
 /// LEF's primary design-content container, including a set of macro/cell definitions and associated metadata.
 #[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -75,7 +75,7 @@ pub struct LefLibrary {
     #[builder(default, setter(strip_option))]
     pub units: Option<LefUnits>,
 
-    // Unsupported
+    // Unsupported fields recommended for *either* LEF "cell libraries" or "technologies"
     /// Via Definitions (Unsupported)
     #[serde(default, skip_serializing)]
     #[builder(default)]
@@ -84,6 +84,43 @@ pub struct LefLibrary {
     #[serde(default, skip_serializing)]
     #[builder(default)]
     pub extensions: Unsupported,
+    // Fields recommended for LEF technology descriptions, AKA "tech-lefs"
+    /// Manufacturing Grid
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub manufacturing_grid: Unsupported,
+    /// "Use Min Spacing" Option
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub use_min_spacing: Unsupported,
+    /// Clearance Measure
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub clearance_measure: Unsupported,
+    /// Property Definitions
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub property_definitions: Unsupported,
+    /// Layer Definitions
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub layers: Unsupported,
+    /// Max Via Stack
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub max_via_stack: Unsupported,
+    /// Via Rules
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub via_rules: Unsupported,
+    /// Via Rules Generators
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub via_rule_generators: Unsupported,
+    /// Non Default Rules
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub non_default_rules: Unsupported,
 }
 impl LefLibrary {
     /// Create a new and initially empty [LefLibrary].  
@@ -450,7 +487,6 @@ impl LefDbuPerMicron {
 /// # Lef Physical-Dimension Units
 ///
 /// Conversion factors for a variety of physical quantities.  
-/// Only the distance-measurement `database_microns` is supported.
 ///
 #[derive(Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct LefUnits {
@@ -458,22 +494,20 @@ pub struct LefUnits {
     /// Defaults to 100, i.e. 1 DBU = 10nm
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub database_microns: Option<LefDbuPerMicron>,
-
-    // Unsupported Fields
-    #[serde(default, skip_serializing)]
-    pub time_ns: Unsupported,
-    #[serde(default, skip_serializing)]
-    pub capacitance_pf: Unsupported,
-    #[serde(default, skip_serializing)]
-    pub resistance_ohms: Unsupported,
-    #[serde(default, skip_serializing)]
-    pub power_mw: Unsupported,
-    #[serde(default, skip_serializing)]
-    pub current_ma: Unsupported,
-    #[serde(default, skip_serializing)]
-    pub voltage_volts: Unsupported,
-    #[serde(default, skip_serializing)]
-    pub frequency_mhz: Unsupported,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub time_ns: Option<LefDecimal>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capacitance_pf: Option<LefDecimal>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resistance_ohms: Option<LefDecimal>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub power_mw: Option<LefDecimal>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_ma: Option<LefDecimal>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voltage_volts: Option<LefDecimal>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frequency_mhz: Option<LefDecimal>,
 }
 /// # Lef Site Definition
 ///
@@ -552,7 +586,6 @@ enumstr!(
         By: "BY",
         BusBitChars: "BUSBITCHARS",
         DividerChar: "DIVIDERCHAR",
-        Units: "UNITS",
         BeginExtension: "BEGINEXT",
         Tristate: "TRISTATE",
         Input: "INPUT",
@@ -563,6 +596,25 @@ enumstr!(
         DesignRuleWidth: "DESIGNRULEWIDTH",
         Spacing: "SPACING",
         Bump: "BUMP",
+
+        // UNITS Fields
+        Units: "UNITS",
+        Time: "TIME",
+        Nanoseconds: "NANOSECONDS",
+        Capacitance: "CAPACITANCE",
+        Picofarads: "PICOFARADS",
+        Resistance: "RESISTANCE",
+        Ohms: "OHMS",
+        Power: "POWER",
+        Milliwatts: "MILLIWATTS",
+        Current: "CURRENT",
+        Milliamps: "MILLIAMPS",
+        Voltage: "VOLTAGE",
+        Volts: "VOLTS",
+        Database: "DATABASE",
+        Microns: "MICRONS",
+        Frequency: "FREQUENCY",
+        Megahertz: "MEGAHERTZ",
 
         // ANTENNA Fields
         AntennaModel: "ANTENNAMODEL",
@@ -583,6 +635,14 @@ enumstr!(
         GroundSensitivity: "GROUNDSENSITIVITY",
         MustJoin: "MUSTJOIN",
         Property: "PROPERTY",
+        ManufacturingGrid: "MANUFACTURINGGRID",
+        UseMinSpacing: "USEMINSPACING",
+        ClearanceMeasure: "CLEARANCEMEASURE",
+        PropertyDefinitions: "PROPERTYDEFINITIONS",
+        MaxViaStack: "MAXVIASTACK",
+        ViaRule: "VIARULE",
+        Generate: "GENERATE",
+        NonDefaultRule: "NONDEFAULTRULE",
     }
 );
 impl LefKey {

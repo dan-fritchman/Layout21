@@ -442,19 +442,6 @@ impl<'src> LefParser<'src> {
         }
         Ok(())
     }
-    /// Assert that the next [Token] is a [TokenType::Name], and that its string value matches `key`.
-    /// Note that LEF keywords are case-insensitive. The next [Token] is converted to uppercase before comparison,
-    /// where the keyword `kw` is expected to be provided in uppercase by the caller.
-    fn expect_keyword(&mut self, kw: &str) -> LefResult<()> {
-        let txt = self.get_name()?.to_ascii_uppercase();
-        if txt == kw {
-            Ok(())
-        } else {
-            self.fail(LefParseErrorType::RequiredWord {
-                expected: String::from(kw),
-            })
-        }
-    }
     /// Assert that the next [Token] is a [TokenType::Name], and that its string value matches `ident`.
     /// Unlike [LefParser::expect_keyword], this function matches literally, and does not convert to uppercase.
     fn expect_ident(&mut self, ident: &str) -> LefResult<()> {
@@ -516,7 +503,15 @@ impl<'src> LefParser<'src> {
                     self.expect_key(LefKey::Library)?; // Expect END LIBRARY
                     break;
                 }
-                LefKey::BeginExtension => self.fail(LefParseErrorType::Unsupported)?,
+                LefKey::BeginExtension
+                | LefKey::ManufacturingGrid
+                | LefKey::UseMinSpacing
+                | LefKey::ClearanceMeasure
+                | LefKey::PropertyDefinitions
+                | LefKey::MaxViaStack
+                | LefKey::ViaRule
+                | LefKey::Generate
+                | LefKey::NonDefaultRule => self.fail(LefParseErrorType::Unsupported)?,
                 _ => self.fail(LefParseErrorType::InvalidKey)?,
             }
         }
@@ -882,26 +877,76 @@ impl<'src> LefParser<'src> {
     }
     /// Parse [LefUnits] definitions
     fn parse_units(&mut self) -> LefResult<LefUnits> {
+        use LefKey::{
+            Capacitance, Current, Database, End, Frequency, Megahertz, Microns, Milliamps,
+            Milliwatts, Nanoseconds, Ohms, Picofarads, Power, Resistance, Time, Units, Voltage,
+            Volts,
+        };
         self.ctx.push(LefParseContext::Units);
-        self.expect_key(LefKey::Units)?;
+        self.expect_key(Units)?;
         let mut units = LefUnits::default();
         loop {
-            match self.get_name()?.to_ascii_uppercase().as_str() {
-                "DATABASE" => {
+            match self.get_key()? {
+                Database => {
                     // Parse the DATABASE MICRONS flavor
-                    self.expect_keyword("MICRONS")?;
+                    self.expect_key(Microns)?;
                     let num = self.parse_number()?;
                     self.expect(TokenType::SemiColon)?;
                     units.database_microns = Some(LefDbuPerMicron::try_new(num)?);
                 }
-                "END" => {
-                    // End of UNITS
-                    self.expect_keyword("UNITS")?;
-                    break;
+                Time => {
+                    // Parse the TIME NANOSECONDS flavor
+                    self.expect_key(Nanoseconds)?;
+                    let num = self.parse_number()?;
+                    self.expect(TokenType::SemiColon)?;
+                    units.time_ns = Some(num);
                 }
-                // All the other united quantities are unsupported
-                "TIME" | "CAPACITANCE" | "RESISTANCE" | "POWER" | "CURRENT" | "VOLTAGE"
-                | "FREQUENCY" => self.fail(LefParseErrorType::Unsupported)?,
+                Capacitance => {
+                    // Parse the CAPACITANCE PICOFARADS flavor
+                    self.expect_key(Picofarads)?;
+                    let num = self.parse_number()?;
+                    self.expect(TokenType::SemiColon)?;
+                    units.capacitance_pf = Some(num);
+                }
+                Resistance => {
+                    // Parse the CAPACITANCE PICOFARADS flavor
+                    self.expect_key(Ohms)?;
+                    let num = self.parse_number()?;
+                    self.expect(TokenType::SemiColon)?;
+                    units.resistance_ohms = Some(num);
+                }
+                Power => {
+                    // Parse the POWER MILLIWATTS flavor
+                    self.expect_key(Milliwatts)?;
+                    let num = self.parse_number()?;
+                    self.expect(TokenType::SemiColon)?;
+                    units.power_mw = Some(num);
+                }
+                Current => {
+                    // Parse the CURRENT MILLIAMPS flavor
+                    self.expect_key(Milliamps)?;
+                    let num = self.parse_number()?;
+                    self.expect(TokenType::SemiColon)?;
+                    units.current_ma = Some(num);
+                }
+                Voltage => {
+                    // Parse the VOLTAGE VOLTS flavor
+                    self.expect_key(Volts)?;
+                    let num = self.parse_number()?;
+                    self.expect(TokenType::SemiColon)?;
+                    units.voltage_volts = Some(num);
+                }
+                Frequency => {
+                    // Parse the FREQUENCY MEGAHERTZ flavor
+                    self.expect_key(Megahertz)?;
+                    let num = self.parse_number()?;
+                    self.expect(TokenType::SemiColon)?;
+                    units.frequency_mhz = Some(num);
+                }
+                End => {
+                    self.expect_key(Units)?;
+                    break; // End of UNITS definitions
+                }
                 _ => self.fail(LefParseErrorType::InvalidKey)?,
             }
         }
@@ -1109,6 +1154,41 @@ pub struct ParserState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn it_parses_units() -> LefResult<()> {
+        // Parse UNITS content into LefUnits
+
+        // Check that for version 5.3 this same MACRO parses successfully
+        let src = r#"
+        UNITS
+            DATABASE MICRONS 1000 ;
+            TIME NANOSECONDS 1 ;
+            CAPACITANCE PICOFARADS 2 ;
+            RESISTANCE OHMS 3 ;
+            POWER MILLIWATTS 5 ;
+            CURRENT MILLIAMPS 6 ;
+            VOLTAGE VOLTS 7 ;
+            FREQUENCY MEGAHERTZ 8 ;
+        END UNITS
+        "#;
+        let mut parser = LefParser::new(src)?;
+        let units = parser.parse_units()?;
+        assert_eq!(
+            units,
+            LefUnits {
+                database_microns: Some(LefDbuPerMicron(1000)),
+                time_ns: Some(LefDecimal::from(1)),
+                capacitance_pf: Some(LefDecimal::from(2)),
+                resistance_ohms: Some(LefDecimal::from(3)),
+                power_mw: Some(LefDecimal::from(5)),
+                current_ma: Some(LefDecimal::from(6)),
+                voltage_volts: Some(LefDecimal::from(7)),
+                frequency_mhz: Some(LefDecimal::from(8)),
+            }
+        );
+        Ok(())
+    }
     #[test]
     fn it_parses_with_source() -> LefResult<()> {
         // Test that the SOURCE keyword works for old versions of the LEF spec, and fails for new ones.
