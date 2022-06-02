@@ -717,6 +717,8 @@ enumstr!(
     }
 );
 
+use super::read::{LefParseErrorType, ParserState};
+
 /// # Lef Error Enumeration
 #[derive(Debug)]
 pub enum LefError {
@@ -728,12 +730,9 @@ pub enum LefError {
     },
     /// Parser Errors
     Parse {
-        tp: super::read::LefParseErrorType,
-        ctx: Vec<super::read::LefParseContext>,
-        token: String,
-        line_content: String,
-        line_num: usize,
-        pos: usize,
+        msg: Option<String>,
+        tp: LefParseErrorType,
+        state: ParserState,
     },
     /// Wrapped errors, generally from other crates
     Boxed(Box<dyn std::error::Error>),
@@ -774,6 +773,14 @@ impl From<&str> for LefError {
 //         Self::Boxed(Box::new(e))
 //     }
 // }
+
+impl std::fmt::Display for LefError {
+    /// Delegates to the [Debug] implementation
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        std::fmt::Debug::fmt(self, f)
+    }
+}
+impl std::error::Error for LefError {}
 
 /// Lef21 Library-Wide Result Type
 pub type LefResult<T> = Result<T, LefError>;

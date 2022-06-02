@@ -1,0 +1,16 @@
+[package]
+description = "Converts GDS files to protocol buffer descriptions, using Layout21, and Gds21."
+name = "lef2yaml"
+# Shared layout21 attributes
+authors = ["Dan Fritchman <dan@fritch.mn>", "Arya Reais-Parsi <aryap@berkeley.edu>"]
+edition = "2018"
+license = "BSD-3-Clause"
+repository = "https://github.com/dan-fritchman/Layout21"
+version = "0.2.1"
+workspace = "../"
+exclude = ["resources",]
+
+[dependencies]
+lef21 = {path = "../lef21"}
+layout21utils = {path = "../layout21utils"}
+clap = { version = "3.0.0-beta.5", features = ["derive"] }
