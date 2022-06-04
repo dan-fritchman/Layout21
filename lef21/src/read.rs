@@ -573,7 +573,7 @@ impl<'src> LefParser<'src> {
                     mac.foreign(LefForeign {
                         cell_name,
                         pt,
-                        orient: Unsupported,
+                        orient: None,
                     })
                 }
                 LefKey::Origin => {

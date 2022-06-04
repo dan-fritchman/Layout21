@@ -1,0 +1,1246 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Lef Library",
+  "description": "LEF's primary design-content container, including a set of macro/cell definitions and associated metadata.",
+  "type": "object",
+  "properties": {
+    "bus_bit_chars": {
+      "description": "Bus-Bit Separator Characters",
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": [
+        {
+          "type": "string",
+          "maxLength": 1,
+          "minLength": 1
+        },
+        {
+          "type": "string",
+          "maxLength": 1,
+          "minLength": 1
+        }
+      ],
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "clearance_measure": {
+      "description": "Clearance Measure",
+      "writeOnly": true,
+      "anyOf": [
+        {
+          "$ref": "#/definitions/Unsupported"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "divider_char": {
+      "description": "Divider Character",
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 1,
+      "minLength": 1
+    },
+    "extensions": {
+      "description": "Syntax Extensions (Unsupported)",
+      "writeOnly": true,
+      "anyOf": [
+        {
+          "$ref": "#/definitions/Unsupported"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "layers": {
+      "description": "Layer Definitions",
+      "writeOnly": true,
+      "anyOf": [
+        {
+          "$ref": "#/definitions/Unsupported"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "macros": {
+      "description": "Macro Definitions",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/LefMacro"
+      }
+    },
+    "manufacturing_grid": {
+      "description": "Manufacturing Grid",
+      "writeOnly": true,
+      "anyOf": [
+        {
+          "$ref": "#/definitions/Unsupported"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "max_via_stack": {
+      "description": "Max Via Stack",
+      "writeOnly": true,
+      "anyOf": [
+        {
+          "$ref": "#/definitions/Unsupported"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "names_case_sensitive": {
+      "description": "Case-Sensitive Name Setting Valid for LEF versions 5.4 and earlier",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/LefOnOff"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "no_wire_extension_at_pin": {
+      "description": "Wire-Extension Pin Settings Valid for LEF versions 5.4 and earlier",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/LefOnOff"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "non_default_rules": {
+      "description": "Non Default Rules",
+      "writeOnly": true,
+      "anyOf": [
+        {
+          "$ref": "#/definitions/Unsupported"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "property_definitions": {
+      "description": "Property Definitions",
+      "writeOnly": true,
+      "anyOf": [
+        {
+          "$ref": "#/definitions/Unsupported"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sites": {
+      "description": "Site Definitions",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/LefSite"
+      }
+    },
+    "units": {
+      "description": "Dimensional Units Recommended to be specified in a tech-lef. But turns up in libraries as well.",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/LefUnits"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "use_min_spacing": {
+      "description": "\"Use Min Spacing\" Option",
+      "writeOnly": true,
+      "anyOf": [
+        {
+          "$ref": "#/definitions/Unsupported"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "version": {
+      "description": "Lef Spec Version",
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "via_rule_generators": {
+      "description": "Via Rules Generators",
+      "writeOnly": true,
+      "anyOf": [
+        {
+          "$ref": "#/definitions/Unsupported"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "via_rules": {
+      "description": "Via Rules",
+      "writeOnly": true,
+      "anyOf": [
+        {
+          "$ref": "#/definitions/Unsupported"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "vias": {
+      "description": "Via Definitions (Unsupported)",
+      "writeOnly": true,
+      "anyOf": [
+        {
+          "$ref": "#/definitions/Unsupported"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "definitions": {
+    "LefAntennaModel": {
+      "description": "Antenna Models",
+      "type": "string",
+      "enum": [
+        "Oxide1",
+        "Oxide2",
+        "Oxide3",
+        "Oxide4"
+      ]
+    },
+    "LefBlockClassType": {
+      "description": "Sub-Types for Macros of Class [LefMacroClass::Block]",
+      "type": "string",
+      "enum": [
+        "BlackBox",
+        "Soft"
+      ]
+    },
+    "LefCoreClassType": {
+      "description": "Sub-Types for Macros of Class [LefMacroClass::Core]",
+      "type": "string",
+      "enum": [
+        "FeedThru",
+        "TieHigh",
+        "TieLow",
+        "Spacer",
+        "AntennaCell",
+        "WellTap"
+      ]
+    },
+    "LefDbuPerMicron": {
+      "title": "Lef Distance Units per Micron",
+      "description": "A constrained numeric type. Allowed values of [LefDbuPerMicron] are: [100, 200, 400, 800, 1000, 2000, 4000, 8000, 10_000, 20_000]. Adherence to this set is checked at construction time.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0.0
+    },
+    "LefDefSource": {
+      "title": "Lef/ Def `SOURCE`",
+      "description": "Specifies the source of a component In all versions since at least 5.7 (2009), SOURCE is a DEF-only field on COMPONENT definitions. Prior versions also include this as a field for LEF MACRO definitions.",
+      "type": "string",
+      "enum": [
+        "Netlist",
+        "Dist",
+        "Timing",
+        "User"
+      ]
+    },
+    "LefEndCapClassType": {
+      "description": "Sub-Types for Macros of Class [LefMacroClass::EndCap]",
+      "type": "string",
+      "enum": [
+        "Pre",
+        "Post",
+        "TopLeft",
+        "TopRight",
+        "BottomLeft",
+        "BottomRight"
+      ]
+    },
+    "LefForeign": {
+      "title": "Lef Foreign Cell Declaration",
+      "description": "Declares the linkage to another cell, commonly in DEF or GDSII format. Foreign-cell references are stored exacty as in the LEF format: as a string cell-name. The optional `ORIENT` feature is not supported.",
+      "type": "object",
+      "required": [
+        "cell_name"
+      ],
+      "properties": {
+        "cell_name": {
+          "description": "Foreign Cell Name",
+          "type": "string"
+        },
+        "orient": {
+          "description": "Orientation (Unsupported)",
+          "writeOnly": true,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Unsupported"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pt": {
+          "description": "Location",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/LefPoint"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "LefGeometry": {
+      "title": "Lef Geometric Object Enumeration",
+      "description": "Includes [LefShape]s and Iterators thereof",
+      "oneOf": [
+        {
+          "description": "Single Shape",
+          "type": "object",
+          "required": [
+            "Shape"
+          ],
+          "properties": {
+            "Shape": {
+              "$ref": "#/definitions/LefShape"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Repeated Iteration/ Array of Shapes (Unsupported)",
+          "type": "object",
+          "required": [
+            "Iterate"
+          ],
+          "properties": {
+            "Iterate": {
+              "type": "object",
+              "required": [
+                "shape"
+              ],
+              "properties": {
+                "pattern": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/Unsupported"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "shape": {
+                  "$ref": "#/definitions/LefShape"
+                }
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "LefLayerGeometries": {
+      "title": "Lef Single-Layer Geometry Store",
+      "description": "Most LEF spatial data (e.g. ports, blockages) is organized by layer. [LefLayerGeometries] stores the combination of a layer (name) and suite of geometric primitives (e.g. rectangles, polygons) and vias on that layer.\n\n[LefLayerGeometries] are the primary building block of [LefPort]s and macro obstructions.",
+      "type": "object",
+      "required": [
+        "layer_name"
+      ],
+      "properties": {
+        "except_pg_net": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "geometries": {
+          "description": "Geometries",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/LefGeometry"
+          }
+        },
+        "layer_name": {
+          "description": "Layer Name",
+          "type": "string"
+        },
+        "spacing": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/LefLayerSpacing"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "vias": {
+          "description": "Vias",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/LefVia"
+          }
+        },
+        "width": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      }
+    },
+    "LefLayerSpacing": {
+      "title": "Enumerated Layer-Spacing Options",
+      "description": "Includes absolute spacing and design-rule-width modifiers.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "Spacing"
+          ],
+          "properties": {
+            "Spacing": {
+              "type": "number"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "DesignRuleWidth"
+          ],
+          "properties": {
+            "DesignRuleWidth": {
+              "type": "number"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "LefMacro": {
+      "title": "Lef Macro",
+      "description": "The primary block-level construct comprising each [LefLibrary]. Defines a hardware-block's physical abstract, including: * Pin definitions (`pins`) with locations, directions, and associated metadata * Required blockage-obstructions (`obs`) * A variety of other block-level metadata",
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "class": {
+          "description": "Macro Class",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/LefMacroClass"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "density": {
+          "description": "Density Objects (Unsupported)",
+          "writeOnly": true,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Unsupported"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "eeq": {
+          "description": "Electrically-Equivalent Cell (Unsupported)",
+          "writeOnly": true,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Unsupported"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fixed_mask": {
+          "description": "Fixed Mask Option (Unsupported)",
+          "writeOnly": true,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Unsupported"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "foreign": {
+          "description": "Foreign (i.e. GDSII, DEF) Cell",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/LefForeign"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "description": "Macro Name",
+          "type": "string"
+        },
+        "obs": {
+          "description": "Obstructions",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/LefLayerGeometries"
+          }
+        },
+        "origin": {
+          "description": "X-Y Origin",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/LefPoint"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pins": {
+          "description": "Pin List",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/LefPin"
+          }
+        },
+        "properties": {
+          "description": "Properties (Unsupported)",
+          "writeOnly": true,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Unsupported"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "site": {
+          "description": "Site Name Note the optional `SITEPATTERN` is not supported",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "size": {
+          "description": "Outline Size",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "source": {
+          "description": "Source Valid for LEF versions 5.4 and earlier",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/LefDefSource"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "symmetry": {
+          "description": "Rotational & Translation Symmetries",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/LefSymmetry"
+          }
+        }
+      }
+    },
+    "LefMacroClass": {
+      "title": "[LefMacro] Classes",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "Ring"
+          ]
+        },
+        {
+          "type": "object",
+          "required": [
+            "Cover"
+          ],
+          "properties": {
+            "Cover": {
+              "type": "object",
+              "required": [
+                "bump"
+              ],
+              "properties": {
+                "bump": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "Block"
+          ],
+          "properties": {
+            "Block": {
+              "type": "object",
+              "properties": {
+                "tp": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/LefBlockClassType"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "Pad"
+          ],
+          "properties": {
+            "Pad": {
+              "type": "object",
+              "properties": {
+                "tp": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/LefPadClassType"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "Core"
+          ],
+          "properties": {
+            "Core": {
+              "type": "object",
+              "properties": {
+                "tp": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/LefCoreClassType"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "EndCap"
+          ],
+          "properties": {
+            "EndCap": {
+              "type": "object",
+              "required": [
+                "tp"
+              ],
+              "properties": {
+                "tp": {
+                  "$ref": "#/definitions/LefEndCapClassType"
+                }
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "LefOnOff": {
+      "description": "Binary On/Off Settings, Denoted by `ON` and `OFF`",
+      "type": "string",
+      "enum": [
+        "On",
+        "Off"
+      ]
+    },
+    "LefPadClassType": {
+      "description": "Sub-Types for Macros of Class [LefMacroClass::Pad]",
+      "type": "string",
+      "enum": [
+        "Input",
+        "Output",
+        "Inout",
+        "Power",
+        "Spacer",
+        "AreaIo"
+      ]
+    },
+    "LefPin": {
+      "title": "Lef Pin Definition",
+      "description": "A named, directed pin, including one or more \"weakly connected\" physical [LefPort]s.",
+      "type": "object",
+      "required": [
+        "name",
+        "ports"
+      ],
+      "properties": {
+        "antenna_attrs": {
+          "description": "Antenna Attributes",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/LefPinAntennaAttr"
+          }
+        },
+        "antenna_model": {
+          "description": "Antenna Model",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/LefAntennaModel"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "direction": {
+          "description": "Direction",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/LefPinDirection"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ground_sensitivity": {
+          "description": "Ground Sensitivity (Unsupported)",
+          "writeOnly": true,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Unsupported"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "must_join": {
+          "description": "Must-Join (Unsupported)",
+          "writeOnly": true,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Unsupported"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "description": "Pin Name",
+          "type": "string"
+        },
+        "net_expr": {
+          "description": "Net Expression (Unsupported)",
+          "writeOnly": true,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Unsupported"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ports": {
+          "description": "Port Geometries",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/LefPort"
+          }
+        },
+        "properties": {
+          "description": "Properties (Unsupported)",
+          "writeOnly": true,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Unsupported"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "shape": {
+          "description": "Shape",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/LefPinShape"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "supply_sensitivity": {
+          "description": "Supply Sensitivity (Unsupported)",
+          "writeOnly": true,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Unsupported"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "taper_rule": {
+          "description": "Taper Rule (Unsupported)",
+          "writeOnly": true,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Unsupported"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "use": {
+          "description": "Usage / Role",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/LefPinUse"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "LefPinAntennaAttr": {
+      "title": "Lef Antenna Attributes",
+      "description": "Stored as key-value pairs from string-keys named \"ANTENNA*\" to [LefDecimal] values. Note each pair may have an optional `layer` specifier, and that each key may have multiple attributes, generally specifying different layers.",
+      "type": "object",
+      "required": [
+        "key",
+        "val"
+      ],
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "layer": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "val": {
+          "type": "number"
+        }
+      }
+    },
+    "LefPinDirection": {
+      "title": "Lef Pin Direction",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "Input",
+            "Inout",
+            "FeedThru"
+          ]
+        },
+        {
+          "type": "object",
+          "required": [
+            "Output"
+          ],
+          "properties": {
+            "Output": {
+              "type": "object",
+              "required": [
+                "tristate"
+              ],
+              "properties": {
+                "tristate": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "LefPinShape": {
+      "description": "Specifies a pin with special connection requirements because of its shape",
+      "type": "string",
+      "enum": [
+        "Abutment",
+        "Ring",
+        "FeedThru"
+      ]
+    },
+    "LefPinUse": {
+      "title": "Lef Pin-Usage",
+      "description": "Specifies the usage-intent for a [LefPin]. Note this is the noun form of \"use\", pronounced with the hard \"s\" - not the verb form pronounced like the New Jersey second-person plural \"yous\".",
+      "type": "string",
+      "enum": [
+        "Signal",
+        "Analog",
+        "Power",
+        "Ground",
+        "Clock"
+      ]
+    },
+    "LefPoint": {
+      "title": "Lef X-Y Spatial Point",
+      "description": "Specified in [LefDecimal]-valued Cartesian coordinates. Supports common mathematical operations (Add, Sub, increment, etc.).",
+      "type": "object",
+      "required": [
+        "x",
+        "y"
+      ],
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        }
+      }
+    },
+    "LefPort": {
+      "title": "Lef Port",
+      "description": "Defines the physical locations and optional metadata of a port on a pin. LEF includes the notion of multiple \"weakly connected\" ports per pin; each [LefPort] is one such weakly-connected point.",
+      "type": "object",
+      "properties": {
+        "class": {
+          "description": "Port-Class",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/LefPortClass"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "layers": {
+          "description": "Layers & Geometries",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/LefLayerGeometries"
+          }
+        }
+      }
+    },
+    "LefPortClass": {
+      "description": "Sub-Types for Macros of Class [LefMacroClass::Core]",
+      "type": "string",
+      "enum": [
+        "None",
+        "Core",
+        "Bump"
+      ]
+    },
+    "LefShape": {
+      "title": "Lef Shape Enumeration",
+      "description": "Includes each of LEF's individual geometric primitives: rectangles, polygons, and paths.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "Rect"
+          ],
+          "properties": {
+            "Rect": {
+              "type": "array",
+              "items": [
+                {
+                  "$ref": "#/definitions/LefPoint"
+                },
+                {
+                  "$ref": "#/definitions/LefPoint"
+                }
+              ],
+              "maxItems": 2,
+              "minItems": 2
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "Polygon"
+          ],
+          "properties": {
+            "Polygon": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/LefPoint"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "Path"
+          ],
+          "properties": {
+            "Path": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/LefPoint"
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "LefSite": {
+      "title": "Lef Site Definition",
+      "description": "Defines a placement-site in designs. Dictates the placement grid for a family of macros.",
+      "type": "object",
+      "required": [
+        "class",
+        "name",
+        "size"
+      ],
+      "properties": {
+        "class": {
+          "description": "Site Class",
+          "allOf": [
+            {
+              "$ref": "#/definitions/LefSiteClass"
+            }
+          ]
+        },
+        "name": {
+          "description": "Site Name",
+          "type": "string"
+        },
+        "row_pattern": {
+          "description": "Row Patterns, re other previously defined sites (Unsupported)",
+          "writeOnly": true,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Unsupported"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "size": {
+          "description": "Size",
+          "type": "array",
+          "items": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "symmetry": {
+          "description": "Rotational & Translation Symmetries",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/LefSymmetry"
+          }
+        }
+      }
+    },
+    "LefSiteClass": {
+      "description": "[LefSite] Classes",
+      "type": "string",
+      "enum": [
+        "Pad",
+        "Core"
+      ]
+    },
+    "LefSymmetry": {
+      "description": "Specifies which MACRO orientations are valid for placement",
+      "type": "string",
+      "enum": [
+        "X",
+        "Y",
+        "R90"
+      ]
+    },
+    "LefUnits": {
+      "title": "Lef Physical-Dimension Units",
+      "description": "Conversion factors for a variety of physical quantities.",
+      "type": "object",
+      "properties": {
+        "capacitance_pf": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "current_ma": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "database_microns": {
+          "description": "Database Distance Units per Micron Defaults to 100, i.e. 1 DBU = 10nm",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/LefDbuPerMicron"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "frequency_mhz": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "power_mw": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "resistance_ohms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "time_ns": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "voltage_volts": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      }
+    },
+    "LefVia": {
+      "title": "Lef Via Instance",
+      "description": "A located instance of via-type `via_name`, typically used as part of a [LefLayerGeometries] definition. The via-type is generally interpreted as a string-valued reference into tech-lef data. It is stored in each [LefVia] exactly as in LEF, as a string type-name.",
+      "type": "object",
+      "required": [
+        "pt",
+        "via_name"
+      ],
+      "properties": {
+        "pt": {
+          "description": "Location",
+          "allOf": [
+            {
+              "$ref": "#/definitions/LefPoint"
+            }
+          ]
+        },
+        "via_name": {
+          "description": "Via-Type Name",
+          "type": "string"
+        }
+      }
+    },
+    "Unsupported": {
+      "title": "Unsupported Feature",
+      "description": "Empty placeholder struct for unsupported LEF features. Primarily included for documentation purposes. Most [`Unsupported`] fields are of type [`Optional<Unsupported>`] for sake of serialization, so that they can take on the `null` value of many data formats. Setting these fields to [`Some(Unsupported)`] instead of [`None`] is largely a distinction without a difference.",
+      "type": "null"
+    }
+  }
+}

@@ -13,6 +13,7 @@ use derive_more::{Add, AddAssign, Sub, SubAssign};
 use once_cell::sync::Lazy;
 #[allow(unused_imports)]
 use rust_decimal::prelude::*;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 // Layout21 Imports
@@ -35,7 +36,7 @@ pub(crate) static V5P8: Lazy<LefDecimal> = Lazy::new(|| LefDecimal::from_str("5.
 /// # Lef Library
 ///
 /// LEF's primary design-content container, including a set of macro/cell definitions and associated metadata.
-#[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[builder(pattern = "owned", setter(into))]
 pub struct LefLibrary {
     // Required
@@ -79,48 +80,48 @@ pub struct LefLibrary {
     /// Via Definitions (Unsupported)
     #[serde(default, skip_serializing)]
     #[builder(default)]
-    pub vias: Unsupported,
+    pub vias: Option<Unsupported>,
     /// Syntax Extensions (Unsupported)
     #[serde(default, skip_serializing)]
     #[builder(default)]
-    pub extensions: Unsupported,
+    pub extensions: Option<Unsupported>,
     // Fields recommended for LEF technology descriptions, AKA "tech-lefs"
     /// Manufacturing Grid
     #[serde(default, skip_serializing)]
     #[builder(default)]
-    pub manufacturing_grid: Unsupported,
+    pub manufacturing_grid: Option<Unsupported>,
     /// "Use Min Spacing" Option
     #[serde(default, skip_serializing)]
     #[builder(default)]
-    pub use_min_spacing: Unsupported,
+    pub use_min_spacing: Option<Unsupported>,
     /// Clearance Measure
     #[serde(default, skip_serializing)]
     #[builder(default)]
-    pub clearance_measure: Unsupported,
+    pub clearance_measure: Option<Unsupported>,
     /// Property Definitions
     #[serde(default, skip_serializing)]
     #[builder(default)]
-    pub property_definitions: Unsupported,
+    pub property_definitions: Option<Unsupported>,
     /// Layer Definitions
     #[serde(default, skip_serializing)]
     #[builder(default)]
-    pub layers: Unsupported,
+    pub layers: Option<Unsupported>,
     /// Max Via Stack
     #[serde(default, skip_serializing)]
     #[builder(default)]
-    pub max_via_stack: Unsupported,
+    pub max_via_stack: Option<Unsupported>,
     /// Via Rules
     #[serde(default, skip_serializing)]
     #[builder(default)]
-    pub via_rules: Unsupported,
+    pub via_rules: Option<Unsupported>,
     /// Via Rules Generators
     #[serde(default, skip_serializing)]
     #[builder(default)]
-    pub via_rule_generators: Unsupported,
+    pub via_rule_generators: Option<Unsupported>,
     /// Non Default Rules
     #[serde(default, skip_serializing)]
     #[builder(default)]
-    pub non_default_rules: Unsupported,
+    pub non_default_rules: Option<Unsupported>,
 }
 impl LefLibrary {
     /// Create a new and initially empty [LefLibrary].  
@@ -149,7 +150,7 @@ impl LefLibrary {
 /// * Required blockage-obstructions (`obs`)
 /// * A variety of other block-level metadata
 ///
-#[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[builder(pattern = "owned", setter(into))]
 pub struct LefMacro {
     // Required
@@ -200,19 +201,19 @@ pub struct LefMacro {
     /// Fixed Mask Option (Unsupported)
     #[serde(default, skip_serializing)]
     #[builder(default)]
-    pub fixed_mask: Unsupported,
+    pub fixed_mask: Option<Unsupported>,
     /// Electrically-Equivalent Cell (Unsupported)
     #[serde(default, skip_serializing)]
     #[builder(default)]
-    pub eeq: Unsupported,
+    pub eeq: Option<Unsupported>,
     /// Density Objects (Unsupported)
     #[serde(default, skip_serializing)]
     #[builder(default)]
-    pub density: Unsupported,
+    pub density: Option<Unsupported>,
     /// Properties (Unsupported)
     #[serde(default, skip_serializing)]
     #[builder(default)]
-    pub properties: Unsupported,
+    pub properties: Option<Unsupported>,
 }
 impl LefMacro {
     /// Create a new and initially empty [LefMacro] with name `name`
@@ -225,7 +226,7 @@ impl LefMacro {
     }
 }
 /// # [LefMacro] Classes
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub enum LefMacroClass {
     Cover { bump: bool },
     Ring,
@@ -239,7 +240,7 @@ pub enum LefMacroClass {
 /// Declares the linkage to another cell, commonly in DEF or GDSII format.
 /// Foreign-cell references are stored exacty as in the LEF format: as a string cell-name.
 /// The optional `ORIENT` feature is not supported.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub struct LefForeign {
     /// Foreign Cell Name
     pub cell_name: String,
@@ -249,12 +250,12 @@ pub struct LefForeign {
     // Unsupported Fields
     /// Orientation (Unsupported)
     #[serde(default, skip_serializing)]
-    pub orient: Unsupported,
+    pub orient: Option<Unsupported>,
 }
 /// # Lef Pin Definition
 ///
 /// A named, directed pin, including one or more "weakly connected" physical [LefPort]s.
-#[derive(Clone, Default, Builder, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Default, Builder, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[builder(pattern = "owned", setter(into))]
 pub struct LefPin {
     // Required Fields
@@ -289,30 +290,30 @@ pub struct LefPin {
     /// Taper Rule (Unsupported)
     #[serde(default, skip_serializing)]
     #[builder(default)]
-    pub taper_rule: Unsupported,
+    pub taper_rule: Option<Unsupported>,
     /// Net Expression (Unsupported)
     #[serde(default, skip_serializing)]
     #[builder(default)]
-    pub net_expr: Unsupported,
+    pub net_expr: Option<Unsupported>,
     /// Supply Sensitivity (Unsupported)
     #[serde(default, skip_serializing)]
     #[builder(default)]
-    pub supply_sensitivity: Unsupported,
+    pub supply_sensitivity: Option<Unsupported>,
     /// Ground Sensitivity (Unsupported)
     #[serde(default, skip_serializing)]
     #[builder(default)]
-    pub ground_sensitivity: Unsupported,
+    pub ground_sensitivity: Option<Unsupported>,
     /// Must-Join (Unsupported)
     #[serde(default, skip_serializing)]
     #[builder(default)]
-    pub must_join: Unsupported,
+    pub must_join: Option<Unsupported>,
     /// Properties (Unsupported)
     #[serde(default, skip_serializing)]
     #[builder(default)]
-    pub properties: Unsupported,
+    pub properties: Option<Unsupported>,
 }
 /// # Lef Pin Direction
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub enum LefPinDirection {
     Input,
     Output { tristate: bool },
@@ -336,7 +337,7 @@ impl std::fmt::Display for LefPinDirection {
 /// Stored as key-value pairs from string-keys named "ANTENNA*" to [LefDecimal] values.
 /// Note each pair may have an optional `layer` specifier,
 /// and that each key may have multiple attributes, generally specifying different layers.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub struct LefPinAntennaAttr {
     pub key: String,
     pub val: LefDecimal,
@@ -347,7 +348,7 @@ pub struct LefPinAntennaAttr {
 /// Defines the physical locations and optional metadata of a port on a pin.
 /// LEF includes the notion of multiple "weakly connected" ports per pin;
 /// each [LefPort] is one such weakly-connected point.
-#[derive(Clone, Default, Builder, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Default, Builder, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[builder(pattern = "owned", setter(into))]
 pub struct LefPort {
     /// Port-Class
@@ -365,7 +366,7 @@ pub struct LefPort {
 ///
 /// [LefLayerGeometries] are the primary building block of [LefPort]s and macro obstructions.
 ///
-#[derive(Clone, Default, Builder, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Default, Builder, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[builder(pattern = "owned", setter(into))]
 pub struct LefLayerGeometries {
     // Required
@@ -394,7 +395,7 @@ pub struct LefLayerGeometries {
 /// A located instance of via-type `via_name`, typically used as part of a [LefLayerGeometries] definition.
 /// The via-type is generally interpreted as a string-valued reference into tech-lef data.
 /// It is stored in each [LefVia] exactly as in LEF, as a string type-name.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub struct LefVia {
     /// Via-Type Name
     pub via_name: String,
@@ -403,27 +404,27 @@ pub struct LefVia {
 }
 /// # Enumerated Layer-Spacing Options
 /// Includes absolute spacing and design-rule-width modifiers.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub enum LefLayerSpacing {
     Spacing(LefDecimal),
     DesignRuleWidth(LefDecimal),
 }
 /// # Lef Geometric Object Enumeration
 /// Includes [LefShape]s and Iterators thereof
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub enum LefGeometry {
     /// Single Shape
     Shape(LefShape),
     /// Repeated Iteration/ Array of Shapes (Unsupported)
     Iterate {
         shape: LefShape,
-        pattern: Unsupported,
+        pattern: Option<Unsupported>,
     },
 }
 /// # Lef Shape Enumeration
 /// Includes each of LEF's individual geometric primitives:
 /// rectangles, polygons, and paths.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub enum LefShape {
     Rect(LefPoint, LefPoint),
     Polygon(Vec<LefPoint>),
@@ -434,7 +435,18 @@ pub enum LefShape {
 /// Specified in [LefDecimal]-valued Cartesian coordinates.  
 /// Supports common mathematical operations (Add, Sub, increment, etc.).  
 #[derive(
-    Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq, Add, AddAssign, Sub, SubAssign,
+    Clone,
+    Default,
+    Debug,
+    Deserialize,
+    Serialize,
+    JsonSchema,
+    PartialEq,
+    Eq,
+    Add,
+    AddAssign,
+    Sub,
+    SubAssign,
 )]
 pub struct LefPoint {
     pub x: LefDecimal,
@@ -460,7 +472,7 @@ impl std::fmt::Display for LefPoint {
 /// [100, 200, 400, 800, 1000, 2000, 4000, 8000, 10_000, 20_000].
 /// Adherence to this set is checked at construction time.
 ///
-#[derive(Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Default, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub struct LefDbuPerMicron(pub u32);
 impl LefDbuPerMicron {
     /// Create a new [LefDbuPerMicron], checking internally required conditions
@@ -488,7 +500,7 @@ impl LefDbuPerMicron {
 ///
 /// Conversion factors for a variety of physical quantities.  
 ///
-#[derive(Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Default, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub struct LefUnits {
     /// Database Distance Units per Micron
     /// Defaults to 100, i.e. 1 DBU = 10nm
@@ -514,7 +526,7 @@ pub struct LefUnits {
 /// Defines a placement-site in designs.
 /// Dictates the placement grid for a family of macros.
 ///
-#[derive(Clone, Builder, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Builder, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[builder(pattern = "owned", setter(into))]
 pub struct LefSite {
     // Required
@@ -535,14 +547,16 @@ pub struct LefSite {
     /// Row Patterns, re other previously defined sites (Unsupported)
     #[serde(default, skip_serializing)]
     #[builder(default)]
-    pub row_pattern: Unsupported,
+    pub row_pattern: Option<Unsupported>,
 }
 /// # Unsupported Feature
 ///
-/// Empty placeholder struct for unsupported LEF features.
-/// These fields are largely included for documentation purposes.
-/// They are never parsed, never written or serialized, and can only be set to the zero-size [Unsupported] value.
-#[derive(Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq)]
+/// Empty placeholder struct for unsupported LEF features. Primarily included for documentation purposes.
+/// Most [`Unsupported`] fields are of type [`Optional<Unsupported>`] for sake of serialization,
+/// so that they can take on the `null` value of many data formats.
+/// Setting these fields to [`Some(Unsupported)`] instead of [`None`] is largely a distinction without a difference.
+///
+#[derive(Clone, Default, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub struct Unsupported;
 
 enumstr!(
