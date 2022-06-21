@@ -92,6 +92,7 @@ fn it_parses_lib2() -> LefResult<()> {
     check_yaml(&lib, &resource("lib2.yaml"));
     Ok(())
 }
+
 /// Helper function: Assert that `data` equals the content in YAML file `fname`
 fn check_yaml<T>(data: &T, fname: impl AsRef<Path>)
 where
