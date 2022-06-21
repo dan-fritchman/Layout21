@@ -17,7 +17,7 @@ use slotmap::{new_key_type, SlotMap};
 use crate::{
     bbox::{BoundBox, BoundBoxTrait},
     error::{LayoutError, LayoutResult},
-    geom::{Point, Shape,  Transform, TransformTrait},
+    geom::{Point, Shape, Transform, TransformTrait},
     utils::{Ptr, PtrList},
 };
 
@@ -115,7 +115,7 @@ impl SiUnits {
 }
 
 /// Instance of another Cell
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Instance {
     /// Instance Name
     pub inst_name: String,
@@ -245,7 +245,7 @@ pub enum LayerPurpose {
 }
 /// # Layer Specification
 /// As in seemingly every layout system, this uses two numbers to identify each layer.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LayerSpec(i16, i16);
 impl LayerSpec {
     pub fn new(n1: i16, n2: i16) -> Self {
@@ -324,7 +324,7 @@ impl Layer {
 /// Raw Abstract-Layout
 /// Contains geometric [Element]s generally representing pins and blockages
 /// Does not contain instances, arrays, or layout-implementation details
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Abstract {
     /// Cell Name
     pub name: String,
@@ -429,7 +429,7 @@ impl<'lib> DepOrder<'lib> {
 }
 
 /// Collection of the Views describing a Cell
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct Cell {
     // Cell Name
     pub name: String,
@@ -472,7 +472,7 @@ impl From<Layout> for Cell {
 /// The geometric-level layout-definition of a [Cell].
 /// Comprised of geometric [Element]s and instances of other [Cell] [Layout]s.
 ///
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Layout {
     /// Cell Name
     pub name: String,
@@ -568,6 +568,7 @@ pub struct Element {
 /// Location, orientation, and angular rotation for an [Instance]
 /// Note these fields exist "flat" in [Instance] as well,
 /// and are grouped here for convenience.
+#[derive(Debug)]
 pub struct InstancePlace {
     /// Location of `cell` origin
     /// regardless of rotation or reflection

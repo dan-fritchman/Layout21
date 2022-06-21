@@ -345,6 +345,7 @@ impl ErrorHelper for ProtoExporter<'_> {
     }
 }
 /// Helper enumeration for converting to several proto-primitives
+#[derive(Debug, Clone, PartialEq)]
 enum ProtoShape {
     Rect(proto::Rectangle),
     Poly(proto::Polygon),

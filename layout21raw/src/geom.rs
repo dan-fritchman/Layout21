@@ -345,7 +345,7 @@ impl ShapeTrait for Path {
 /// 2x2 rotation-matrix and two-entry translation vector,
 /// used for relative movement of [Point]s and [Shape]s.
 ///
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct Transform {
     /// Rotation / Transformation Matrix
     /// Represented in row-major order
