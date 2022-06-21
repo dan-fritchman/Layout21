@@ -106,20 +106,10 @@ impl<'lib> ProtoExporter<'lib> {
                 .push(self.export_abstract_blockages(layerkey, shapes)?);
         }
         // Convert its outline
-        pabs.outline = Some(self.export_abstract_outline(&abs.outline)?);
+        pabs.outline = Some(self.export_polygon(&abs.outline)?);
         // And we're done - pop the context and return
         self.ctx.pop();
         Ok(pabs)
-    }
-    /// Export an abstract's outline to a [proto::Polygon]
-    fn export_abstract_outline(&mut self, outline: &Element) -> LayoutResult<proto::Polygon> {
-        // Convert to a [ProtoShape] enum
-        let poutline = self.export_element(outline)?;
-        // And if it's (the supported) rect-variant, return it
-        match poutline {
-            ProtoShape::Poly(p) => Ok(p),
-            _ => self.fail("abstract outline is not a polygon"),
-        }
     }
     /// Export an abstract's blockages for layer `layer`
     fn export_abstract_blockages(
@@ -427,24 +417,71 @@ impl ProtoImporter {
         Ok(cell)
     }
     /// Import a [Abstract]
-    #[allow(dead_code)] // FIXME!
-    fn import_abstract(&mut self, _pcell: &proto::Abstract) -> LayoutResult<Abstract> {
-        todo!()
+    fn import_abstract(&mut self, pabs: &proto::Abstract) -> LayoutResult<Abstract> {
+        self.ctx.push(ErrorContext::Abstract);
+
+        let mut abs = Abstract::default();
+
+        abs.name = pabs.name.clone();
+
+        for port in pabs.ports.iter() {
+            abs.ports.push(self.import_abstract_port(port)?);
+        }
+
+        for layershapes in pabs.blockages.iter() {
+            let proto::Layer { number, purpose } = layershapes.layer.as_ref().unwrap();
+            let (layerkey, _) = self
+                .layers
+                .write()
+                .unwrap()
+                .get_or_insert(*number as i16, *purpose as i16)
+                .unwrap();
+            let shapes = self.import_abstract_layer_shapes(layershapes)?;
+            abs.blockages.insert(layerkey, shapes);
+        }
+
+        abs.outline = match self.import_polygon(&pabs.outline.as_ref().unwrap())? {
+            Shape::Polygon(p) => p,
+            _ => unreachable!(
+                "import_polygon only returns the Shape::Polygon(Polygon) enum variant."
+            ),
+        };
+
+        Ok(abs)
+    }
+    /// Import an [AbstractPort]
+    fn import_abstract_port(&mut self, pport: &proto::AbstractPort) -> LayoutResult<AbstractPort> {
+        let mut port = AbstractPort::default();
+        port.net = pport.net.clone();
+
+        for layershapes in pport.shapes.iter() {
+            let proto::Layer { number, purpose } = layershapes.layer.as_ref().unwrap();
+            let (layerkey, _) = self
+                .layers
+                .write()
+                .unwrap()
+                .get_or_insert(*number as i16, *purpose as i16)
+                .unwrap();
+            let shapes = self.import_abstract_layer_shapes(layershapes)?;
+            port.shapes.insert(layerkey, shapes);
+        }
+
+        Ok(port)
     }
     /// Import a [Layout]
-    fn import_layout(&mut self, pcell: &proto::Layout) -> LayoutResult<Layout> {
+    fn import_layout(&mut self, playout: &proto::Layout) -> LayoutResult<Layout> {
         let mut cell = Layout::default();
-        let name = pcell.name.clone();
+        let name = playout.name.clone();
         cell.name = name.clone();
         self.ctx.push(ErrorContext::Impl);
 
-        for inst in &pcell.instances {
+        for inst in &playout.instances {
             cell.insts.push(self.import_instance(inst)?);
         }
-        for s in &pcell.shapes {
+        for s in &playout.shapes {
             cell.elems.extend(self.import_layer_shapes(s)?);
         }
-        for txt in &pcell.annotations {
+        for txt in &playout.annotations {
             cell.annotations.push(self.import_annotation(txt)?);
         }
         self.ctx.pop();
@@ -477,6 +514,34 @@ impl ProtoImporter {
         }
         self.ctx.pop();
         Ok(elems)
+    }
+    /// Import a layer's-worth of shapes
+    fn import_abstract_layer_shapes(
+        &mut self,
+        player: &proto::LayerShapes,
+    ) -> LayoutResult<Vec<Shape>> {
+        // Import the layer
+        let (layer, purpose) = match player.layer {
+            Some(ref l) => self.import_layer(l),
+            None => self.fail("Invalid proto::LayerShapes with no Layer"),
+        }?;
+        // Import all the shapes
+        self.ctx.push(ErrorContext::Geometry);
+        let mut shapes = Vec::new();
+        for shape in &player.rectangles {
+            let s = self.import_rect(shape)?;
+            shapes.push(s);
+        }
+        for shape in &player.polygons {
+            let s = self.import_polygon(shape)?;
+            shapes.push(s);
+        }
+        for shape in &player.paths {
+            let s = self.import_path(shape)?;
+            shapes.push(s);
+        }
+        self.ctx.pop();
+        Ok(shapes)
     }
     /// Import a text annotation
     fn import_annotation(&mut self, x: &proto::TextElement) -> LayoutResult<TextElement> {
