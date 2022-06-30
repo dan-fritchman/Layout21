@@ -45,7 +45,11 @@ fn _main(options: &ProgramOptions) -> Result<(), Box<dyn Error>> {
         Ok(lib) => lib,
     };
 
+    gds_library.save(&options.gds)?;
 
+    if options.verbose {
+        println!("wrote: {:?}", &options.gds);
+    }
 
     Ok(())
 }
