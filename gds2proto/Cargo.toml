@@ -1,6 +1,6 @@
 [package]
-description = "Converts GDS files to protocol buffer descriptions, using Layout21, and Gds21."
-name = "gds2proto"
+description = "Converters to/from Layout21 formats from/to various legacy formats."
+name = "layout21converters"
 # Shared layout21 attributes
 authors = ["Dan Fritchman <dan@fritch.mn>", "Arya Reais-Parsi <aryap@berkeley.edu>"]
 edition = "2018"
@@ -9,6 +9,12 @@ repository = "https://github.com/dan-fritchman/Layout21"
 version = "0.2.1"
 workspace = "../"
 exclude = ["resources",]
+
+[[bin]]
+name = "gds2proto"
+path = "src/gds2proto.rs"
+test = true
+bench = false
 
 [[bin]]
 name = "proto2gds"
