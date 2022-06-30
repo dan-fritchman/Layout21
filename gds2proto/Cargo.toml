@@ -10,6 +10,12 @@ version = "0.2.1"
 workspace = "../"
 exclude = ["resources",]
 
+[[bin]]
+name = "proto2gds"
+path = "src/proto2gds.rs"
+test = false
+bench = false
+
 [dependencies]
 gds21 = {path = "../gds21"}
 layout21protos = {path = "../layout21protos"}
