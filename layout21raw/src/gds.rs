@@ -17,7 +17,7 @@ use crate::{
     bbox::BoundBoxTrait,
     error::{LayoutError, LayoutResult},
     geom::{Path, Point, Polygon, Rect, Shape, ShapeTrait},
-    utils::{ErrorContext, ErrorHelper, Ptr},
+    utils::{ErrorContext, ErrorHelper, Ptr, Unwrapper},
     Abstract, AbstractPort, Cell, Dir, Element, Instance, Int, LayerKey, LayerPurpose, Layers,
     Layout, Library, TextElement, Units,
 };
@@ -206,10 +206,10 @@ impl<'lib> GdsExporter<'lib> {
         purpose: &LayerPurpose,
     ) -> LayoutResult<gds21::GdsLayerSpec> {
         let layers = self.lib.layers.read()?;
-        let layer = self.unwrap(
-            layers.get(*layer),
+        let layer = layers.get(*layer).or_handle(
+            self,
             format!("Layer {:?} Not Defined in Library {}", layer, self.lib.name),
-        )?;
+        )?; 
         let xtype = self
             .unwrap(
                 layer.num(purpose),
@@ -354,9 +354,9 @@ impl ErrorHelper for GdsExporter<'_> {
 ///
 /// Trait for calculating the location of text-labels, generally per [Shape].
 ///
-/// Sole function `label_location` calculates an appropriate location, 
-/// or returns a [LayoutError] if one cannot be found. 
-/// 
+/// Sole function `label_location` calculates an appropriate location,
+/// or returns a [LayoutError] if one cannot be found.
+///
 /// While Layout21 formats do not include "placed text", GDSII relies on it for connectivity annotations.
 /// How to place these labels varies by shape type.
 ///
