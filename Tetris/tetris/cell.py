@@ -68,7 +68,8 @@ class Cell:
             self.abs = view
         elif isinstance(view, Bundle):
             self.interface = view
-        raise TypeError
+        else:
+            raise TypeError(f"Invalid Cell View {view} of type {type(view)}")
 
     # Create from a list of [CellView]s and a name.
     def from_views(name: str, views: List[CellView]) -> "Cell":

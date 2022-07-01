@@ -64,8 +64,8 @@ class Outline:
 
     @staticmethod
     def rect(x: int, y: int) -> "Outline":
-        # Create a new rectangular outline of dimenions `x` by `y`
-        return Outline([x], [y])
+        """ Create a new rectangular outline of dimenions `x` by `y`"""
+        return Outline([PrimPitches(Dir.Horiz, x)], [PrimPitches(Dir.Vert, y)])
 
     # Maximum x-coordinate
     # (Which is also always the *first* x-coordinate)

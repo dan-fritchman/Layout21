@@ -3,6 +3,7 @@
 #
 
 from typing import List, Set, Dict
+from dataclasses import field
 
 from pydantic.dataclasses import dataclass
 
@@ -18,7 +19,7 @@ class Library:
     # Library Name
     name: str
     # Cell Definitions
-    cells: Dict[str, Cell]
+    cells: Dict[str, Cell] = field(default_factory=dict)
 
     # FIXME: `raw` stuff
     # # [raw.Library] Definitions
