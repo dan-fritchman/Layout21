@@ -18,7 +18,7 @@ use crate::{
     bbox::BoundBoxTrait,
     error::{LayoutError, LayoutResult},
     geom::{Path, Point, Polygon, Rect, Shape, ShapeTrait},
-    utils::{ErrorContext, ErrorHelper, Ptr},
+    utils::{ErrorContext, ErrorHelper, Ptr, Unwrapper},
     Abstract, AbstractPort, Cell, Dir, Element, Instance, Int, LayerKey, LayerPurpose, Layers,
     Layout, Library, TextElement, Units,
 };
@@ -222,10 +222,10 @@ impl<'lib> GdsExporter<'lib> {
         purpose: &LayerPurpose,
     ) -> LayoutResult<gds21::GdsLayerSpec> {
         let layers = self.lib.layers.read()?;
-        let layer = self.unwrap(
-            layers.get(*layer),
+        let layer = layers.get(*layer).or_handle(
+            self,
             format!("Layer {:?} Not Defined in Library {}", layer, self.lib.name),
-        )?;
+        )?; 
         let xtype = self
             .unwrap(
                 layer.num(purpose),
