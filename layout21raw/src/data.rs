@@ -17,7 +17,7 @@ use slotmap::{new_key_type, SlotMap};
 use crate::{
     bbox::{BoundBox, BoundBoxTrait},
     error::{LayoutError, LayoutResult},
-    geom::{Point, Shape,  Transform, TransformTrait},
+    geom::{Point, Polygon, Shape, Transform, TransformTrait},
     utils::{Ptr, PtrList},
 };
 
@@ -115,7 +115,7 @@ impl SiUnits {
 }
 
 /// Instance of another Cell
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Instance {
     /// Instance Name
     pub inst_name: String,
@@ -136,7 +136,7 @@ pub struct Instance {
 ///
 /// Keep track of active layers, and index them by name and number.
 ///
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Layers {
     pub slots: SlotMap<LayerKey, Layer>,
     pub nums: HashMap<i16, LayerKey>,
@@ -243,9 +243,16 @@ pub enum LayerPurpose {
     /// Other purpose, not first-class supported nor named
     Other(i16),
 }
+
+impl Default for LayerPurpose {
+    fn default() -> Self {
+        Self::Drawing
+    }
+}
+
 /// # Layer Specification
 /// As in seemingly every layout system, this uses two numbers to identify each layer.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct LayerSpec(i16, i16);
 impl LayerSpec {
     pub fn new(n1: i16, n2: i16) -> Self {
@@ -265,6 +272,19 @@ pub struct Layer {
     /// Purpose => Number Lookup
     nums: HashMap<LayerPurpose, i16>,
 }
+
+impl PartialOrd for Layer {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(&other))
+    }
+}
+
+impl Ord for Layer {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.layernum.cmp(&other.layernum)
+    }
+}
+
 impl Layer {
     /// Create a new [Layer] with the given `layernum` and `name`
     pub fn new(layernum: i16, name: impl Into<String>) -> Self {
@@ -324,12 +344,13 @@ impl Layer {
 /// Raw Abstract-Layout
 /// Contains geometric [Element]s generally representing pins and blockages
 /// Does not contain instances, arrays, or layout-implementation details
-#[derive(Debug, Clone, Serialize, Deserialize)]
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Abstract {
     /// Cell Name
     pub name: String,
     /// Outline
-    pub outline: Element,
+    pub outline: Polygon,
     /// Ports
     pub ports: Vec<AbstractPort>,
     /// Blockages
@@ -337,7 +358,7 @@ pub struct Abstract {
 }
 impl Abstract {
     /// Create a new [Abstract] with the given `name`
-    pub fn new(name: impl Into<String>, outline: Element) -> Self {
+    pub fn new(name: impl Into<String>, outline: Polygon) -> Self {
         let name = name.into();
         Self {
             name,
@@ -348,7 +369,7 @@ impl Abstract {
     }
 }
 /// # Port Element for [Abstract]s
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AbstractPort {
     /// Net Name
     pub net: String,
@@ -429,7 +450,7 @@ impl<'lib> DepOrder<'lib> {
 }
 
 /// Collection of the Views describing a Cell
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct Cell {
     // Cell Name
     pub name: String,
@@ -472,7 +493,7 @@ impl From<Layout> for Cell {
 /// The geometric-level layout-definition of a [Cell].
 /// Comprised of geometric [Element]s and instances of other [Cell] [Layout]s.
 ///
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Layout {
     /// Cell Name
     pub name: String,
@@ -553,7 +574,7 @@ pub struct TextElement {
 /// Combines a geometric [Shape] with a z-axis [Layer],
 /// and optional net connectivity annotation.
 ///
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Element {
     /// Net Name
     pub net: Option<String>,
@@ -568,6 +589,8 @@ pub struct Element {
 /// Location, orientation, and angular rotation for an [Instance]
 /// Note these fields exist "flat" in [Instance] as well,
 /// and are grouped here for convenience.
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct InstancePlace {
     /// Location of `cell` origin
     /// regardless of rotation or reflection
