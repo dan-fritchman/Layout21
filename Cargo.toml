@@ -9,5 +9,4 @@ members = [
   "layout21tetris",
   "layout21utils",
   "lef21",
-  "lef2yaml",
 ]
