@@ -982,6 +982,16 @@ impl GdsLibrary {
         let mut wr = GdsWriter::new(file);
         wr.write_lib(self)
     }
+    pub fn set_all_dates(&mut self, time: &NaiveDateTime) {
+        let forced_gds_date = GdsDateTimes {
+            modified: time.clone(),
+            accessed: time.clone(),
+        };
+        self.dates = forced_gds_date.clone();
+        for gds_struct in &mut self.structs {
+            gds_struct.dates = forced_gds_date.clone();
+        }
+    }
 }
 // Enable [GdsLibrary] and [GdsStruct] serialization to file, in each of `utils` supported formats.
 impl SerdeFile for GdsLibrary {}

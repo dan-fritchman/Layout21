@@ -4,12 +4,14 @@
 //!
 //! This program is the sibiling of gds2proto.
 
+use chrono::NaiveDateTime;
 use clap::Parser;
-use layout21raw as raw;
-use std::error::Error;
+use gds21::GdsLibrary;
 use layout21protos::conv as proto_converters;
 use layout21protos::tech as protos;
+use layout21raw as raw;
 use raw::utils::Ptr;
+use std::error::Error;
 
 #[derive(Parser)]
 struct ProgramOptions {
@@ -89,6 +91,10 @@ mod tests {
             Ok(bytes) => bytes,
             Err(_err) => panic!("Could not read golden output file"),
         };
+        let mut golden_gds = match GdsLibrary::from_bytes(golden_bytes) {
+            Ok(lib) => lib,
+            Err(_err) => panic!("Could not create golden GDS library"),
+        };
 
         let output_path = resource("proto2gds_test_output.gds");
         let options = ProgramOptions {
@@ -103,17 +109,23 @@ mod tests {
 
         // Check that `_main` succeeded, and compare the binary data it wrote to disk.
         assert!(result.is_ok());
-        let bytes = match std::fs::read(&output_path) {
+        let output_bytes = match std::fs::read(&output_path) {
             Ok(bytes) => bytes,
             Err(_err) => panic!("Could not read test output file"),
         };
 
-        // FIXME: Writing GDS output doesn't seem to be deterministic. Re-running the program will
-        // provide a valid but slightly different GDS file each time, making byte-by-byte
-        // comparison a poor way to test. If it's not possible to create GDS files
-        // deterministically, then we need a different way to make sure this worked. Something like
-        // a GDS format checker?
-        //assert_eq!(golden_bytes, bytes);
+        let mut output_gds = match GdsLibrary::from_bytes(output_bytes) {
+            Ok(lib) => lib,
+            Err(_err) => panic!("Could not create GDS library from test output"),
+        };
+        // GDS files contain a timestamp that will differ between the golden file and the
+        // newly-minted version. To avoid this we load both GDS libraries and zero the date fields,
+        // then do the comparison.
+        let date = NaiveDateTime::from_timestamp(0, 0);
+        golden_gds.set_all_dates(&date);
+        output_gds.set_all_dates(&date);
+        
+        assert_eq!(output_gds, golden_gds);
     }
 
     /// Grab the full path of resource-file `fname`
