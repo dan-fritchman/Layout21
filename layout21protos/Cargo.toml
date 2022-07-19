@@ -10,4 +10,4 @@ version = "0.2.1"
 workspace = "../"
 
 [dependencies]
-vlsir = { path = "/home/aryap/src/vlsir/bindings/rust", version = "2.0.1" }
+vlsir = "2.0.1"
