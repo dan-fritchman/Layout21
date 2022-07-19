@@ -19,7 +19,7 @@ bench = false
 [[bin]]
 name = "proto2gds"
 path = "src/proto2gds.rs"
-test = false
+test = true
 bench = false
 
 # Converts GDS files to protocol buffer descriptions, using Layout21, and Gds21.
