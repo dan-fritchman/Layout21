@@ -10,4 +10,4 @@ version = "0.2.1"
 workspace = "../"
 
 [dependencies]
-vlsir = "2.0.1"
+vlsir = { path = "vlsir/bindings/rust", version = "2.0.1" }
