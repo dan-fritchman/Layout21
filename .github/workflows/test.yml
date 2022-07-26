@@ -18,6 +18,14 @@ jobs:
           toolchain: stable
           override: true
 
+      - name: Check out latest Vlsir dependencies
+        working-directory: layout21protos
+        run: |
+          git clone git@github.com:vlsir/vlsir
+          cd vlsir
+          scripts/build.sh
+          cd -
+
       - name: Run cargo test
         run: cargo test --all --verbose -- --show-output 
 
