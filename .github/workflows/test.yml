@@ -18,6 +18,11 @@ jobs:
           toolchain: stable
           override: true
 
+      - name: Install protoc
+        uses: arduino/setup-protoc@v1
+        with:
+          version: '3.x'
+
       - name: Check out latest Vlsir dependencies
         working-directory: layout21protos
         run: |
