@@ -28,8 +28,8 @@ jobs:
         with:
           python-version: '3.x' 
 
-      - name: Install 2to3 and protobuf
-        run: pip3 install 2to3 protobuf
+      - name: Install 2to3, protobuf and black
+        run: pip3 install 2to3 protobuf black
 
       - name: Check out latest Vlsir dependencies
         working-directory: layout21protos
