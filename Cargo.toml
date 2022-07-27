@@ -2,12 +2,11 @@
 
 members = [
   "gds21",
-  "gds2proto",
-  "lef2yaml",
-  "lef21",
+  "layout21",
+  "layout21converters",
   "layout21protos",
   "layout21raw",
   "layout21tetris",
-  "layout21",
   "layout21utils",
+  "lef21",
 ]

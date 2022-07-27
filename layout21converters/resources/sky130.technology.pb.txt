@@ -1,0 +1,3668 @@
+name: "Sky130"
+layers {
+  name: "annotate"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 202
+  sub_index: 254
+}
+layers {
+  name: "areaid"
+  purpose {
+    description: "rfdiode"
+  }
+  index: 81
+  sub_index: 125
+}
+layers {
+  name: "areaid"
+  purpose {
+    description: "frameRect"
+  }
+  index: 81
+  sub_index: 12
+}
+layers {
+  name: "areaid"
+  purpose {
+    description: "hvnwell"
+  }
+  index: 81
+  sub_index: 63
+}
+layers {
+  name: "areaid"
+  purpose {
+    description: "lvNative"
+  }
+  index: 81
+  sub_index: 60
+}
+layers {
+  name: "areaid"
+  purpose {
+    description: "fillWindow"
+  }
+  index: 81
+  sub_index: 13
+}
+layers {
+  name: "areaid"
+  purpose {
+    description: "frame"
+  }
+  index: 81
+  sub_index: 3
+}
+layers {
+  name: "areaid"
+  purpose {
+    description: "standardc"
+  }
+  index: 81
+  sub_index: 4
+}
+layers {
+  name: "areaid"
+  purpose {
+    description: "etest"
+  }
+  index: 81
+  sub_index: 101
+}
+layers {
+  name: "areaid"
+  purpose {
+    description: "core"
+  }
+  index: 81
+  sub_index: 2
+}
+layers {
+  name: "areaid"
+  purpose {
+    description: "critSid"
+  }
+  index: 81
+  sub_index: 52
+}
+layers {
+  name: "areaid"
+  purpose {
+    description: "extendedDrain"
+  }
+  index: 81
+  sub_index: 57
+}
+layers {
+  name: "areaid"
+  purpose {
+    description: "lowTapDensity"
+  }
+  index: 81
+  sub_index: 14
+}
+layers {
+  name: "areaid"
+  purpose {
+    description: "substrateCut"
+  }
+  index: 81
+  sub_index: 53
+}
+layers {
+  name: "areaid"
+  purpose {
+    description: "moduleCut"
+  }
+  index: 81
+  sub_index: 10
+}
+layers {
+  name: "areaid"
+  purpose {
+    description: "deadZon"
+  }
+  index: 81
+  sub_index: 50
+}
+layers {
+  name: "areaid"
+  purpose {
+    description: "diode"
+  }
+  index: 81
+  sub_index: 23
+}
+layers {
+  name: "areaid"
+  purpose {
+    description: "rdlprobepad"
+  }
+  index: 81
+  sub_index: 27
+}
+layers {
+  name: "areaid"
+  purpose {
+    description: "opcDrop"
+  }
+  index: 81
+  sub_index: 54
+}
+layers {
+  name: "areaid"
+  purpose {
+    description: "injection"
+  }
+  index: 81
+  sub_index: 17
+}
+layers {
+  name: "areaid"
+  purpose {
+    description: "notCritSide"
+  }
+  index: 81
+  sub_index: 15
+}
+layers {
+  name: "areaid"
+  purpose {
+    description: "analog"
+  }
+  index: 81
+  sub_index: 79
+}
+layers {
+  name: "areaid"
+  purpose {
+    description: "dieCut"
+  }
+  index: 81
+  sub_index: 11
+}
+layers {
+  name: "areaid"
+  purpose {
+    description: "seal"
+  }
+  index: 81
+  sub_index: 1
+}
+layers {
+  name: "areaid"
+  purpose {
+    description: "esd"
+  }
+  index: 81
+  sub_index: 19
+}
+layers {
+  name: "areaid"
+  purpose {
+    description: "critCorner"
+  }
+  index: 81
+  sub_index: 51
+}
+layers {
+  name: "areaid"
+  purpose {
+    description: "photo"
+  }
+  index: 81
+  sub_index: 81
+}
+layers {
+  name: "areaid"
+  purpose {
+    description: "low_vt"
+  }
+  index: 81
+  sub_index: 108
+}
+layers {
+  name: "areaid"
+  purpose {
+    description: "fabBlock"
+  }
+  index: 81
+  sub_index: 82
+}
+layers {
+  name: "areaid"
+  purpose {
+    description: "padLength"
+  }
+  index: 81
+  sub_index: 67
+}
+layers {
+  name: "areaid"
+  purpose {
+    description: "pad_io"
+  }
+  index: 81
+  sub_index: 70
+}
+layers {
+  name: "areaid"
+  purpose {
+    description: "pad_pwr"
+  }
+  index: 81
+  sub_index: 71
+}
+layers {
+  name: "areaid"
+  purpose {
+    description: "pad_gnd"
+  }
+  index: 81
+  sub_index: 72
+}
+layers {
+  name: "areaid"
+  purpose {
+    description: "guard_boundary"
+  }
+  index: 81
+  sub_index: 73
+}
+layers {
+  name: "areaid"
+  purpose {
+    description: "lv_net"
+  }
+  index: 81
+  sub_index: 66
+}
+layers {
+  name: "blanking"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 124
+  sub_index: 40
+}
+layers {
+  name: "bump"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 127
+  sub_index: 22
+}
+layers {
+  name: "cap2m"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 97
+  sub_index: 44
+}
+layers {
+  name: "capacitor"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 82
+  sub_index: 64
+}
+layers {
+  name: "capm"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 89
+  sub_index: 44
+}
+layers {
+  name: "cbump"
+  purpose {
+    description: "mask"
+  }
+  index: 101
+}
+layers {
+  name: "cctm1"
+  purpose {
+    description: "maskDrop"
+  }
+  index: 101
+  sub_index: 42
+}
+layers {
+  name: "cctm1"
+  purpose {
+    description: "mask"
+  }
+  index: 35
+}
+layers {
+  name: "cctm1"
+  purpose {
+    description: "maskAdd"
+  }
+  index: 101
+  sub_index: 43
+}
+layers {
+  name: "cctm1"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 101
+  sub_index: 44
+}
+layers {
+  name: "ccu1m"
+  purpose {
+    description: "mask"
+  }
+  index: 93
+}
+layers {
+  name: "cdnm"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 110
+  sub_index: 20
+}
+layers {
+  name: "cdnm"
+  purpose {
+    description: "maskDrop"
+  }
+  index: 110
+  sub_index: 22
+}
+layers {
+  name: "cdnm"
+  purpose {
+    description: "maskAdd"
+  }
+  index: 110
+  sub_index: 21
+}
+layers {
+  name: "cdnm"
+  purpose {
+    description: "mask"
+  }
+  index: 48
+}
+layers {
+  name: ";fom"
+  purpose {
+    description: "dummy"
+  }
+  index: 22
+  sub_index: 23
+}
+layers {
+  name: "fom"
+  purpose {
+    description: "fill"
+  }
+  index: 22
+  sub_index: 99
+}
+layers {
+  name: "cfom"
+  purpose {
+    description: "maskAdd"
+  }
+  index: 22
+  sub_index: 21
+}
+layers {
+  name: "cfom"
+  purpose {
+    description: "mask"
+  }
+  index: 23
+}
+layers {
+  name: "cfom"
+  purpose {
+    description: "maskDrop"
+  }
+  index: 22
+  sub_index: 22
+}
+layers {
+  name: "cfom"
+  purpose {
+    description: "fill_block"
+  }
+  index: 22
+  sub_index: 24
+}
+layers {
+  name: "cfom"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 22
+  sub_index: 20
+}
+layers {
+  name: "chvntm"
+  purpose {
+    description: "maskAdd"
+  }
+  index: 38
+  sub_index: 21
+}
+layers {
+  name: "chvntm"
+  purpose {
+    description: "mask"
+  }
+  index: 39
+}
+layers {
+  name: "chvntm"
+  purpose {
+    description: "maskDrop"
+  }
+  index: 38
+  sub_index: 22
+}
+layers {
+  name: "chvntm"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 38
+  sub_index: 20
+}
+layers {
+  name: "chvtpm"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 88
+  sub_index: 44
+}
+layers {
+  name: "chvtpm"
+  purpose {
+    description: "maskDrop"
+  }
+  index: 97
+  sub_index: 42
+}
+layers {
+  name: "chvtpm"
+  purpose {
+    description: "mask"
+  }
+  index: 97
+}
+layers {
+  name: "chvtpm"
+  purpose {
+    description: "maskAdd"
+  }
+  index: 97
+  sub_index: 43
+}
+layers {
+  name: "chvtrm"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 98
+  sub_index: 44
+}
+layers {
+  name: "chvtrm"
+  purpose {
+    description: "maskAdd"
+  }
+  index: 98
+  sub_index: 43
+}
+layers {
+  name: "chvtrm"
+  purpose {
+    description: "mask"
+  }
+  index: 98
+}
+layers {
+  name: "chvtrm"
+  purpose {
+    description: "maskDrop"
+  }
+  index: 98
+  sub_index: 42
+}
+layers {
+  name: "cldntm"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 11
+  sub_index: 20
+}
+layers {
+  name: "cldntm"
+  purpose {
+    description: "mask"
+  }
+  index: 11
+}
+layers {
+  name: "cli1m"
+  purpose {
+    description: "maskDrop"
+  }
+  index: 115
+  sub_index: 42
+}
+layers {
+  name: "cli1m"
+  purpose {
+    description: "mask"
+  }
+  index: 56
+}
+layers {
+  name: "cli1m"
+  purpose {
+    description: "maskAdd"
+  }
+  index: 115
+  sub_index: 43
+}
+layers {
+  name: "cli1m"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 115
+  sub_index: 44
+}
+layers {
+  name: "clicm1"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 106
+  sub_index: 44
+}
+layers {
+  name: "clicm1"
+  purpose {
+    description: "mask"
+  }
+  index: 43
+}
+layers {
+  name: "clicm1"
+  purpose {
+    description: "maskAdd"
+  }
+  index: 106
+  sub_index: 43
+}
+layers {
+  name: "clicm1"
+  purpose {
+    description: "maskDrop"
+  }
+  index: 106
+  sub_index: 42
+}
+layers {
+  name: "clvom"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 45
+  sub_index: 20
+}
+layers {
+  name: "clvom"
+  purpose {
+    description: "maskDrop"
+  }
+  index: 45
+  sub_index: 22
+}
+layers {
+  name: "clvom"
+  purpose {
+    description: "mask"
+  }
+  index: 46
+}
+layers {
+  name: "clvom"
+  purpose {
+    description: "maskAdd"
+  }
+  index: 45
+  sub_index: 21
+}
+layers {
+  name: "clvtnm"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 25
+  sub_index: 44
+}
+layers {
+  name: "clvtnm"
+  purpose {
+    description: "maskDrop"
+  }
+  index: 25
+  sub_index: 42
+}
+layers {
+  name: "clvtnm"
+  purpose {
+    description: "maskAdd"
+  }
+  index: 25
+  sub_index: 43
+}
+layers {
+  name: "clvtnm"
+  purpose {
+    description: "mask"
+  }
+  index: 25
+}
+layers {
+  name: "cmm1"
+  purpose {
+    description: "maskAdd"
+  }
+  index: 62
+  sub_index: 21
+}
+layers {
+  name: "cmm1"
+  purpose {
+    description: "mask"
+  }
+  index: 36
+}
+layers {
+  name: "cmm1"
+  purpose {
+    description: "maskDrop"
+  }
+  index: 62
+  sub_index: 22
+}
+layers {
+  name: "cmm1"
+  purpose {
+    description: "fill_block"
+  }
+  index: 62
+  sub_index: 24
+}
+layers {
+  name: "cmm1"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 62
+  sub_index: 20
+}
+layers {
+  name: "cmm2"
+  purpose {
+    description: "maskDrop"
+  }
+  index: 105
+  sub_index: 42
+}
+layers {
+  name: "cmm2"
+  purpose {
+    description: "mask"
+  }
+  index: 41
+}
+layers {
+  name: "cmm2"
+  purpose {
+    description: "maskAdd"
+  }
+  index: 105
+  sub_index: 43
+}
+layers {
+  name: "cmm2"
+  purpose {
+    description: "fill_block"
+  }
+  index: 105
+  sub_index: 52
+}
+layers {
+  name: "cmm2"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 105
+  sub_index: 44
+}
+layers {
+  name: "cmm3"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 107
+  sub_index: 20
+}
+layers {
+  name: "cmm3"
+  purpose {
+    description: "fill_block"
+  }
+  index: 107
+  sub_index: 24
+}
+layers {
+  name: "cmm3"
+  purpose {
+    description: "mask"
+  }
+  index: 34
+}
+layers {
+  name: "cmm3"
+  purpose {
+    description: "maskAdd"
+  }
+  index: 107
+  sub_index: 21
+}
+layers {
+  name: "cmm3"
+  purpose {
+    description: "maskDrop"
+  }
+  index: 107
+  sub_index: 22
+}
+layers {
+  name: "cmm4"
+  purpose {
+    description: "maskDrop"
+  }
+  index: 112
+  sub_index: 42
+}
+layers {
+  name: "cmm4"
+  purpose {
+    description: "maskAdd"
+  }
+  index: 112
+  sub_index: 43
+}
+layers {
+  name: "cmm4"
+  purpose {
+    description: "mask"
+  }
+  index: 51
+}
+layers {
+  name: "cmm4"
+  purpose {
+    description: "fill_block"
+  }
+  index: 112
+  sub_index: 4
+}
+layers {
+  name: "cmm5"
+  purpose {
+    description: "fill_block"
+  }
+  index: 117
+  sub_index: 4
+}
+layers {
+  name: "cmm5"
+  purpose {
+    description: "mask"
+  }
+  index: 59
+}
+layers {
+  name: "cmtest"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 74
+  sub_index: 44
+}
+layers {
+  name: "cmtest"
+  purpose {
+    description: "mask"
+  }
+  index: 74
+}
+layers {
+  name: "cmtest"
+  purpose {
+    description: "maskDrop"
+  }
+  index: 74
+  sub_index: 42
+}
+layers {
+  name: "cncm"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 96
+  sub_index: 44
+}
+layers {
+  name: "cncm"
+  purpose {
+    description: "mask"
+  }
+  index: 17
+}
+layers {
+  name: "cnpc"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 44
+  sub_index: 20
+}
+layers {
+  name: "cnpc"
+  purpose {
+    description: "maskDrop"
+  }
+  index: 44
+  sub_index: 42
+}
+layers {
+  name: "cnpc"
+  purpose {
+    description: "maskAdd"
+  }
+  index: 44
+  sub_index: 43
+}
+layers {
+  name: "cnpc"
+  purpose {
+    description: "mask"
+  }
+  index: 49
+}
+layers {
+  name: "cnsdm"
+  purpose {
+    description: "maskDrop"
+  }
+  index: 29
+  sub_index: 22
+}
+layers {
+  name: "cnsdm"
+  purpose {
+    description: "mask"
+  }
+  index: 30
+}
+layers {
+  name: "cnsdm"
+  purpose {
+    description: "maskAdd"
+  }
+  index: 29
+  sub_index: 21
+}
+layers {
+  name: "cnsdm"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 29
+  sub_index: 20
+}
+layers {
+  name: "cnsm"
+  purpose {
+    description: "mask"
+  }
+  index: 22
+}
+layers {
+  name: "cntm"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 26
+  sub_index: 20
+}
+layers {
+  name: "cntm"
+  purpose {
+    description: "maskAdd"
+  }
+  index: 26
+  sub_index: 21
+}
+layers {
+  name: "cntm"
+  purpose {
+    description: "mask"
+  }
+  index: 27
+}
+layers {
+  name: "cntm"
+  purpose {
+    description: "maskDrop"
+  }
+  index: 26
+  sub_index: 22
+}
+layers {
+  name: "cnwm"
+  purpose {
+    description: "maskDrop"
+  }
+  index: 109
+  sub_index: 42
+}
+layers {
+  name: "cnwm"
+  purpose {
+    description: "maskAdd"
+  }
+  index: 109
+  sub_index: 43
+}
+layers {
+  name: "cnwm"
+  purpose {
+    description: "mask"
+  }
+  index: 21
+}
+layers {
+  name: "cnwm"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 109
+  sub_index: 44
+}
+layers {
+  name: "conom"
+  purpose {
+    description: "maskAdd"
+  }
+  index: 87
+  sub_index: 43
+}
+layers {
+  name: "conom"
+  purpose {
+    description: "mask"
+  }
+  index: 88
+}
+layers {
+  name: "conom"
+  purpose {
+    description: "maskDrop"
+  }
+  index: 87
+  sub_index: 42
+}
+layers {
+  name: "conom"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 87
+  sub_index: 44
+}
+layers {
+  name: "cp1m"
+  purpose {
+    description: "fill_block"
+  }
+  index: 33
+  sub_index: 24
+}
+layers {
+  name: "cp1m"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 33
+  sub_index: 44
+}
+layers {
+  name: "cp1m"
+  purpose {
+    description: "maskDrop"
+  }
+  index: 33
+  sub_index: 42
+}
+layers {
+  name: "cp1m"
+  purpose {
+    description: "mask"
+  }
+  index: 28
+}
+layers {
+  name: "cp1m"
+  purpose {
+    description: "maskAdd"
+  }
+  index: 33
+  sub_index: 43
+}
+layers {
+  name: "cpbo"
+  purpose {
+    description: "mask"
+  }
+  index: 99
+}
+layers {
+  name: "cpdm"
+  purpose {
+    description: "mask"
+  }
+  index: 37
+}
+layers {
+  name: "cpdm"
+  purpose {
+    description: "maskAdd"
+  }
+  index: 104
+  sub_index: 43
+}
+layers {
+  name: "cpdm"
+  purpose {
+    description: "maskDrop"
+  }
+  index: 104
+  sub_index: 42
+}
+layers {
+  name: "cpdm"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 104
+  sub_index: 44
+}
+layers {
+  name: "cpmm"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 91
+  sub_index: 44
+}
+layers {
+  name: "cpmm2"
+  purpose {
+    description: "mask"
+  }
+  index: 94
+}
+layers {
+  name: "cpsdm"
+  purpose {
+    description: "maskDrop"
+  }
+  index: 31
+  sub_index: 22
+}
+layers {
+  name: "cpsdm"
+  purpose {
+    description: "maskAdd"
+  }
+  index: 31
+  sub_index: 21
+}
+layers {
+  name: "cpsdm"
+  purpose {
+    description: "mask"
+  }
+  index: 32
+}
+layers {
+  name: "cpsdm"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 31
+  sub_index: 20
+}
+layers {
+  name: "cpwbm"
+  purpose {
+    description: "mask"
+  }
+  index: 19
+}
+layers {
+  name: "cpwdem"
+  purpose {
+    description: "mask"
+  }
+  index: 64
+}
+layers {
+  name: "crpm"
+  purpose {
+    description: "maskDrop"
+  }
+  index: 53
+  sub_index: 42
+}
+layers {
+  name: "crpm"
+  purpose {
+    description: "mask"
+  }
+  index: 96
+}
+layers {
+  name: "crpm"
+  purpose {
+    description: "maskAdd"
+  }
+  index: 53
+  sub_index: 43
+}
+layers {
+  name: "crpm"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 53
+  sub_index: 44
+}
+layers {
+  name: "crrpm"
+  purpose {
+    description: "mask"
+  }
+  index: 102
+}
+layers {
+  name: "ctunm"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 96
+  sub_index: 20
+}
+layers {
+  name: "ctunm"
+  purpose {
+    description: "mask"
+  }
+  index: 20
+}
+layers {
+  name: "ctunm"
+  purpose {
+    description: "maskAdd"
+  }
+  index: 96
+  sub_index: 21
+}
+layers {
+  name: "ctunm"
+  purpose {
+    description: "maskDrop"
+  }
+  index: 96
+  sub_index: 22
+}
+layers {
+  name: "cubm"
+  purpose {
+    description: "mask"
+  }
+  index: 100
+}
+layers {
+  name: "curpm"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 79
+  sub_index: 44
+}
+layers {
+  name: "curpm"
+  purpose {
+    description: "mask"
+  }
+  index: 79
+}
+layers {
+  name: "cviam"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 105
+  sub_index: 20
+}
+layers {
+  name: "cviam"
+  purpose {
+    description: "maskAdd"
+  }
+  index: 105
+  sub_index: 21
+}
+layers {
+  name: "cviam"
+  purpose {
+    description: "mask"
+  }
+  index: 40
+}
+layers {
+  name: "cviam"
+  purpose {
+    description: "maskDrop"
+  }
+  index: 105
+  sub_index: 22
+}
+layers {
+  name: "cviam2"
+  purpose {
+    description: "maskAdd"
+  }
+  index: 108
+  sub_index: 21
+}
+layers {
+  name: "cviam2"
+  purpose {
+    description: "mask"
+  }
+  index: 44
+}
+layers {
+  name: "cviam2"
+  purpose {
+    description: "maskDrop"
+  }
+  index: 108
+  sub_index: 22
+}
+layers {
+  name: "cviam2"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 108
+  sub_index: 20
+}
+layers {
+  name: "cviam3"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 112
+  sub_index: 20
+}
+layers {
+  name: "cviam3"
+  purpose {
+    description: "mask"
+  }
+  index: 50
+}
+layers {
+  name: "cviam3"
+  purpose {
+    description: "maskAdd"
+  }
+  index: 112
+  sub_index: 21
+}
+layers {
+  name: "cviam3"
+  purpose {
+    description: "maskDrop"
+  }
+  index: 112
+  sub_index: 22
+}
+layers {
+  name: "cviam4"
+  purpose {
+    description: "maskDrop"
+  }
+  index: 117
+  sub_index: 22
+}
+layers {
+  name: "cviam4"
+  purpose {
+    description: "maskAdd"
+  }
+  index: 117
+  sub_index: 21
+}
+layers {
+  name: "cviam4"
+  purpose {
+    description: "mask"
+  }
+  index: 58
+}
+layers {
+  name: "cviam4"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 117
+  sub_index: 20
+}
+layers {
+  name: "cviatop"
+  purpose {
+    description: "mask"
+  }
+  index: 72
+}
+layers {
+  name: "diff"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 65
+  sub_index: 20
+}
+layers {
+  name: "diff"
+  purpose {
+    description: "fill"
+  }
+  index: 65
+  sub_index: 99
+}
+layers {
+  name: "diff"
+  purpose {
+    description: "fill_block"
+  }
+  index: 65
+  sub_index: 98
+}
+layers {
+  name: "diff"
+  purpose {
+    description: "hv"
+  }
+  index: 65
+  sub_index: 8
+}
+layers {
+  name: "diff"
+  purpose {
+    description: "pin"
+    type: PIN
+  }
+  index: 65
+  sub_index: 16
+}
+layers {
+  name: "diff"
+  purpose {
+    description: "label"
+    type: LABEL
+  }
+  index: 65
+  sub_index: 6
+}
+layers {
+  name: "diff"
+  purpose {
+    description: "boundary"
+  }
+  index: 65
+  sub_index: 4
+}
+layers {
+  name: "diff"
+  purpose {
+    description: "res"
+  }
+  index: 65
+  sub_index: 13
+}
+layers {
+  name: "diff"
+  purpose {
+    description: "net"
+  }
+  index: 65
+  sub_index: 23
+}
+layers {
+  name: "dnwell"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 64
+  sub_index: 18
+}
+layers {
+  name: "hvntm"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 125
+  sub_index: 20
+}
+layers {
+  name: "hvtp"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 78
+  sub_index: 44
+}
+layers {
+  name: "hvtr"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 18
+  sub_index: 20
+}
+layers {
+  name: "inductor"
+  purpose {
+    description: "term1"
+  }
+  index: 82
+  sub_index: 26
+}
+layers {
+  name: "inductor"
+  purpose {
+    description: "term3"
+  }
+  index: 82
+  sub_index: 28
+}
+layers {
+  name: "inductor"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 82
+  sub_index: 24
+}
+layers {
+  name: "inductor"
+  purpose {
+    description: "label"
+    type: LABEL
+  }
+  index: 82
+  sub_index: 25
+}
+layers {
+  name: "inductor"
+  purpose {
+    description: "term2"
+  }
+  index: 82
+  sub_index: 27
+}
+layers {
+  name: "ldntm"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 11
+  sub_index: 44
+}
+layers {
+  name: "li"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 67
+  sub_index: 20
+}
+layers {
+  name: "li"
+  purpose {
+    description: "blockage"
+    type: OBSTRUCTION
+  }
+  index: 67
+  sub_index: 10
+}
+layers {
+  name: "li"
+  purpose {
+    description: "fill"
+  }
+  index: 67
+  sub_index: 99
+}
+layers {
+  name: "li"
+  purpose {
+    description: "probe"
+  }
+  index: 67
+  sub_index: 25
+}
+layers {
+  name: "li"
+  purpose {
+    description: "res"
+  }
+  index: 67
+  sub_index: 13
+}
+layers {
+  name: "li"
+  purpose {
+    description: "pin"
+    type: PIN
+  }
+  index: 67
+  sub_index: 16
+}
+layers {
+  name: "li"
+  purpose {
+    description: "net"
+  }
+  index: 67
+  sub_index: 23
+}
+layers {
+  name: "li"
+  purpose {
+    description: "label"
+    type: LABEL
+  }
+  index: 67
+  sub_index: 5
+}
+layers {
+  name: "li"
+  purpose {
+    description: "boundary"
+  }
+  index: 67
+  sub_index: 4
+}
+layers {
+  name: "licon"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 66
+  sub_index: 44
+}
+layers {
+  name: "licon"
+  purpose {
+    description: "boundary"
+  }
+  index: 66
+  sub_index: 60
+}
+layers {
+  name: "licon"
+  purpose {
+    description: "pin"
+    type: PIN
+  }
+  index: 66
+  sub_index: 58
+}
+layers {
+  name: "licon"
+  purpose {
+    description: "net"
+  }
+  index: 66
+  sub_index: 41
+}
+layers {
+  name: "lvtn"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 125
+  sub_index: 44
+}
+layers {
+  name: "marker"
+  purpose {
+    description: "warning"
+  }
+  index: 83
+  sub_index: 7
+}
+layers {
+  name: "marker"
+  purpose {
+    description: "error"
+  }
+  index: 83
+  sub_index: 6
+}
+layers {
+  name: "mcon"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 67
+  sub_index: 44
+}
+layers {
+  name: "mcon"
+  purpose {
+    description: "pin"
+    type: PIN
+  }
+  index: 67
+  sub_index: 48
+}
+layers {
+  name: "mcon"
+  purpose {
+    description: "net"
+  }
+  index: 67
+  sub_index: 41
+}
+layers {
+  name: "mcon"
+  purpose {
+    description: "boundary"
+  }
+  index: 67
+  sub_index: 60
+}
+layers {
+  name: "met1"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 68
+  sub_index: 20
+}
+layers {
+  name: "met1"
+  purpose {
+    description: "pin"
+    type: PIN
+  }
+  index: 68
+  sub_index: 16
+}
+layers {
+  name: "met1"
+  purpose {
+    description: "label"
+    type: LABEL
+  }
+  index: 68
+  sub_index: 5
+}
+layers {
+  name: "met1"
+  purpose {
+    description: "res"
+  }
+  index: 68
+  sub_index: 13
+}
+layers {
+  name: "met1"
+  purpose {
+    description: "net"
+  }
+  index: 68
+  sub_index: 23
+}
+layers {
+  name: "met1"
+  purpose {
+    description: "fill"
+  }
+  index: 68
+  sub_index: 99
+}
+layers {
+  name: "met1"
+  purpose {
+    description: "fill_block"
+  }
+  index: 68
+  sub_index: 98
+}
+layers {
+  name: "met1"
+  purpose {
+    description: "boundary"
+  }
+  index: 68
+  sub_index: 4
+}
+layers {
+  name: "met1"
+  purpose {
+    description: "blockage"
+    type: OBSTRUCTION
+  }
+  index: 68
+  sub_index: 10
+}
+layers {
+  name: "met1"
+  purpose {
+    description: "probe"
+  }
+  index: 68
+  sub_index: 25
+}
+layers {
+  name: "met1"
+  purpose {
+    description: "option1"
+  }
+  index: 68
+  sub_index: 32
+}
+layers {
+  name: "met1"
+  purpose {
+    description: "option2"
+  }
+  index: 68
+  sub_index: 33
+}
+layers {
+  name: "met1"
+  purpose {
+    description: "option3"
+  }
+  index: 68
+  sub_index: 34
+}
+layers {
+  name: "met1"
+  purpose {
+    description: "option4"
+  }
+  index: 68
+  sub_index: 35
+}
+layers {
+  name: "met1"
+  purpose {
+    description: "option5"
+  }
+  index: 68
+  sub_index: 36
+}
+layers {
+  name: "met1"
+  purpose {
+    description: "option6"
+  }
+  index: 68
+  sub_index: 37
+}
+layers {
+  name: "met1"
+  purpose {
+    description: "option7"
+  }
+  index: 68
+  sub_index: 38
+}
+layers {
+  name: "met1"
+  purpose {
+    description: "option8"
+  }
+  index: 68
+  sub_index: 39
+}
+layers {
+  name: "met1"
+  purpose {
+    description: "psa1"
+  }
+  index: 68
+  sub_index: 88
+}
+layers {
+  name: "met1"
+  purpose {
+    description: "psa2"
+  }
+  index: 68
+  sub_index: 89
+}
+layers {
+  name: "met1"
+  purpose {
+    description: "psa3"
+  }
+  index: 68
+  sub_index: 90
+}
+layers {
+  name: "met1"
+  purpose {
+    description: "psa4"
+  }
+  index: 68
+  sub_index: 91
+}
+layers {
+  name: "met1"
+  purpose {
+    description: "psa5"
+  }
+  index: 68
+  sub_index: 92
+}
+layers {
+  name: "met1"
+  purpose {
+    description: "psa6"
+  }
+  index: 68
+  sub_index: 93
+}
+layers {
+  name: "met2"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 69
+  sub_index: 20
+}
+layers {
+  name: "met2"
+  purpose {
+    description: "pin"
+    type: PIN
+  }
+  index: 69
+  sub_index: 16
+}
+layers {
+  name: "met2"
+  purpose {
+    description: "label"
+    type: LABEL
+  }
+  index: 69
+  sub_index: 5
+}
+layers {
+  name: "met2"
+  purpose {
+    description: "res"
+  }
+  index: 69
+  sub_index: 13
+}
+layers {
+  name: "met2"
+  purpose {
+    description: "net"
+  }
+  index: 69
+  sub_index: 23
+}
+layers {
+  name: "met2"
+  purpose {
+    description: "fill"
+  }
+  index: 69
+  sub_index: 99
+}
+layers {
+  name: "met2"
+  purpose {
+    description: "fill_block"
+  }
+  index: 69
+  sub_index: 98
+}
+layers {
+  name: "met2"
+  purpose {
+    description: "boundary"
+  }
+  index: 69
+  sub_index: 4
+}
+layers {
+  name: "met2"
+  purpose {
+    description: "blockage"
+    type: OBSTRUCTION
+  }
+  index: 69
+  sub_index: 10
+}
+layers {
+  name: "met2"
+  purpose {
+    description: "probe"
+  }
+  index: 69
+  sub_index: 25
+}
+layers {
+  name: "met2"
+  purpose {
+    description: "option1"
+  }
+  index: 69
+  sub_index: 32
+}
+layers {
+  name: "met2"
+  purpose {
+    description: "option2"
+  }
+  index: 69
+  sub_index: 33
+}
+layers {
+  name: "met2"
+  purpose {
+    description: "option3"
+  }
+  index: 69
+  sub_index: 34
+}
+layers {
+  name: "met2"
+  purpose {
+    description: "option4"
+  }
+  index: 69
+  sub_index: 35
+}
+layers {
+  name: "met2"
+  purpose {
+    description: "option5"
+  }
+  index: 69
+  sub_index: 36
+}
+layers {
+  name: "met2"
+  purpose {
+    description: "option6"
+  }
+  index: 69
+  sub_index: 37
+}
+layers {
+  name: "met2"
+  purpose {
+    description: "option7"
+  }
+  index: 69
+  sub_index: 38
+}
+layers {
+  name: "met2"
+  purpose {
+    description: "option8"
+  }
+  index: 69
+  sub_index: 39
+}
+layers {
+  name: "met2"
+  purpose {
+    description: "psa1"
+  }
+  index: 69
+  sub_index: 88
+}
+layers {
+  name: "met2"
+  purpose {
+    description: "psa2"
+  }
+  index: 69
+  sub_index: 89
+}
+layers {
+  name: "met2"
+  purpose {
+    description: "psa3"
+  }
+  index: 69
+  sub_index: 90
+}
+layers {
+  name: "met2"
+  purpose {
+    description: "psa4"
+  }
+  index: 69
+  sub_index: 91
+}
+layers {
+  name: "met2"
+  purpose {
+    description: "psa5"
+  }
+  index: 69
+  sub_index: 92
+}
+layers {
+  name: "met2"
+  purpose {
+    description: "psa6"
+  }
+  index: 69
+  sub_index: 93
+}
+layers {
+  name: "met3"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 70
+  sub_index: 20
+}
+layers {
+  name: "met3"
+  purpose {
+    description: "pin"
+    type: PIN
+  }
+  index: 70
+  sub_index: 16
+}
+layers {
+  name: "met3"
+  purpose {
+    description: "label"
+    type: LABEL
+  }
+  index: 70
+  sub_index: 5
+}
+layers {
+  name: "met3"
+  purpose {
+    description: "res"
+  }
+  index: 70
+  sub_index: 13
+}
+layers {
+  name: "met3"
+  purpose {
+    description: "net"
+  }
+  index: 70
+  sub_index: 23
+}
+layers {
+  name: "met3"
+  purpose {
+    description: "fuse"
+  }
+  index: 70
+  sub_index: 17
+}
+layers {
+  name: "met3"
+  purpose {
+    description: "fill"
+  }
+  index: 70
+  sub_index: 99
+}
+layers {
+  name: "met3"
+  purpose {
+    description: "fill_block"
+  }
+  index: 70
+  sub_index: 98
+}
+layers {
+  name: "met3"
+  purpose {
+    description: "boundary"
+  }
+  index: 70
+  sub_index: 4
+}
+layers {
+  name: "met3"
+  purpose {
+    description: "blockage"
+    type: OBSTRUCTION
+  }
+  index: 70
+  sub_index: 10
+}
+layers {
+  name: "met3"
+  purpose {
+    description: "probe"
+  }
+  index: 70
+  sub_index: 25
+}
+layers {
+  name: "met3"
+  purpose {
+    description: "option1"
+  }
+  index: 70
+  sub_index: 32
+}
+layers {
+  name: "met3"
+  purpose {
+    description: "option2"
+  }
+  index: 70
+  sub_index: 33
+}
+layers {
+  name: "met3"
+  purpose {
+    description: "option3"
+  }
+  index: 70
+  sub_index: 34
+}
+layers {
+  name: "met3"
+  purpose {
+    description: "option4"
+  }
+  index: 70
+  sub_index: 35
+}
+layers {
+  name: "met3"
+  purpose {
+    description: "option5"
+  }
+  index: 70
+  sub_index: 36
+}
+layers {
+  name: "met3"
+  purpose {
+    description: "option6"
+  }
+  index: 70
+  sub_index: 37
+}
+layers {
+  name: "met3"
+  purpose {
+    description: "option7"
+  }
+  index: 70
+  sub_index: 38
+}
+layers {
+  name: "met3"
+  purpose {
+    description: "option8"
+  }
+  index: 70
+  sub_index: 39
+}
+layers {
+  name: "met3"
+  purpose {
+    description: "psa1"
+  }
+  index: 70
+  sub_index: 88
+}
+layers {
+  name: "met3"
+  purpose {
+    description: "psa2"
+  }
+  index: 70
+  sub_index: 89
+}
+layers {
+  name: "met3"
+  purpose {
+    description: "psa3"
+  }
+  index: 70
+  sub_index: 90
+}
+layers {
+  name: "met3"
+  purpose {
+    description: "psa4"
+  }
+  index: 70
+  sub_index: 91
+}
+layers {
+  name: "met3"
+  purpose {
+    description: "psa5"
+  }
+  index: 70
+  sub_index: 92
+}
+layers {
+  name: "met3"
+  purpose {
+    description: "psa6"
+  }
+  index: 70
+  sub_index: 93
+}
+layers {
+  name: "met4"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 71
+  sub_index: 20
+}
+layers {
+  name: "met4"
+  purpose {
+    description: "pin"
+    type: PIN
+  }
+  index: 71
+  sub_index: 16
+}
+layers {
+  name: "met4"
+  purpose {
+    description: "label"
+    type: LABEL
+  }
+  index: 71
+  sub_index: 5
+}
+layers {
+  name: "met4"
+  purpose {
+    description: "res"
+  }
+  index: 71
+  sub_index: 13
+}
+layers {
+  name: "met4"
+  purpose {
+    description: "net"
+  }
+  index: 71
+  sub_index: 23
+}
+layers {
+  name: "met4"
+  purpose {
+    description: "fuse"
+  }
+  index: 71
+  sub_index: 17
+}
+layers {
+  name: "met4"
+  purpose {
+    description: "fill"
+  }
+  index: 71
+  sub_index: 99
+}
+layers {
+  name: "met4"
+  purpose {
+    description: "fill_block"
+  }
+  index: 71
+  sub_index: 98
+}
+layers {
+  name: "met4"
+  purpose {
+    description: "boundary"
+  }
+  index: 71
+  sub_index: 4
+}
+layers {
+  name: "met4"
+  purpose {
+    description: "blockage"
+    type: OBSTRUCTION
+  }
+  index: 71
+  sub_index: 10
+}
+layers {
+  name: "met4"
+  purpose {
+    description: "probe"
+  }
+  index: 71
+  sub_index: 25
+}
+layers {
+  name: "met4"
+  purpose {
+    description: "option1"
+  }
+  index: 71
+  sub_index: 32
+}
+layers {
+  name: "met4"
+  purpose {
+    description: "option2"
+  }
+  index: 71
+  sub_index: 33
+}
+layers {
+  name: "met4"
+  purpose {
+    description: "option3"
+  }
+  index: 71
+  sub_index: 34
+}
+layers {
+  name: "met4"
+  purpose {
+    description: "option4"
+  }
+  index: 71
+  sub_index: 35
+}
+layers {
+  name: "met4"
+  purpose {
+    description: "option5"
+  }
+  index: 71
+  sub_index: 36
+}
+layers {
+  name: "met4"
+  purpose {
+    description: "option6"
+  }
+  index: 71
+  sub_index: 37
+}
+layers {
+  name: "met4"
+  purpose {
+    description: "option7"
+  }
+  index: 71
+  sub_index: 38
+}
+layers {
+  name: "met4"
+  purpose {
+    description: "option8"
+  }
+  index: 71
+  sub_index: 39
+}
+layers {
+  name: "met4"
+  purpose {
+    description: "psa1"
+  }
+  index: 71
+  sub_index: 88
+}
+layers {
+  name: "met4"
+  purpose {
+    description: "psa2"
+  }
+  index: 71
+  sub_index: 89
+}
+layers {
+  name: "met4"
+  purpose {
+    description: "psa3"
+  }
+  index: 71
+  sub_index: 90
+}
+layers {
+  name: "met4"
+  purpose {
+    description: "psa4"
+  }
+  index: 71
+  sub_index: 91
+}
+layers {
+  name: "met4"
+  purpose {
+    description: "psa5"
+  }
+  index: 71
+  sub_index: 92
+}
+layers {
+  name: "met4"
+  purpose {
+    description: "psa6"
+  }
+  index: 71
+  sub_index: 93
+}
+layers {
+  name: "met5"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 72
+  sub_index: 20
+}
+layers {
+  name: "met5"
+  purpose {
+    description: "pin"
+    type: PIN
+  }
+  index: 72
+  sub_index: 16
+}
+layers {
+  name: "met5"
+  purpose {
+    description: "label"
+    type: LABEL
+  }
+  index: 72
+  sub_index: 5
+}
+layers {
+  name: "met5"
+  purpose {
+    description: "res"
+  }
+  index: 72
+  sub_index: 13
+}
+layers {
+  name: "met5"
+  purpose {
+    description: "net"
+  }
+  index: 72
+  sub_index: 23
+}
+layers {
+  name: "met5"
+  purpose {
+    description: "fuse"
+  }
+  index: 72
+  sub_index: 17
+}
+layers {
+  name: "met5"
+  purpose {
+    description: "fill"
+  }
+  index: 72
+  sub_index: 99
+}
+layers {
+  name: "met5"
+  purpose {
+    description: "fill_block"
+  }
+  index: 72
+  sub_index: 98
+}
+layers {
+  name: "met5"
+  purpose {
+    description: "boundary"
+  }
+  index: 72
+  sub_index: 4
+}
+layers {
+  name: "met5"
+  purpose {
+    description: "blockage"
+    type: OBSTRUCTION
+  }
+  index: 72
+  sub_index: 10
+}
+layers {
+  name: "met5"
+  purpose {
+    description: "probe"
+  }
+  index: 72
+  sub_index: 25
+}
+layers {
+  name: "met5"
+  purpose {
+    description: "option1"
+  }
+  index: 72
+  sub_index: 32
+}
+layers {
+  name: "met5"
+  purpose {
+    description: "option2"
+  }
+  index: 72
+  sub_index: 33
+}
+layers {
+  name: "met5"
+  purpose {
+    description: "option3"
+  }
+  index: 72
+  sub_index: 34
+}
+layers {
+  name: "met5"
+  purpose {
+    description: "option4"
+  }
+  index: 72
+  sub_index: 35
+}
+layers {
+  name: "met5"
+  purpose {
+    description: "option5"
+  }
+  index: 72
+  sub_index: 36
+}
+layers {
+  name: "met5"
+  purpose {
+    description: "option6"
+  }
+  index: 72
+  sub_index: 37
+}
+layers {
+  name: "met5"
+  purpose {
+    description: "option7"
+  }
+  index: 72
+  sub_index: 38
+}
+layers {
+  name: "met5"
+  purpose {
+    description: "option8"
+  }
+  index: 72
+  sub_index: 39
+}
+layers {
+  name: "met5"
+  purpose {
+    description: "psa1"
+  }
+  index: 72
+  sub_index: 88
+}
+layers {
+  name: "met5"
+  purpose {
+    description: "psa2"
+  }
+  index: 72
+  sub_index: 89
+}
+layers {
+  name: "met5"
+  purpose {
+    description: "psa3"
+  }
+  index: 72
+  sub_index: 90
+}
+layers {
+  name: "met5"
+  purpose {
+    description: "psa4"
+  }
+  index: 72
+  sub_index: 91
+}
+layers {
+  name: "met5"
+  purpose {
+    description: "psa5"
+  }
+  index: 72
+  sub_index: 92
+}
+layers {
+  name: "met5"
+  purpose {
+    description: "psa6"
+  }
+  index: 72
+  sub_index: 93
+}
+layers {
+  name: "mtest"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 73
+  sub_index: 20
+}
+layers {
+  name: "ncm"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 92
+  sub_index: 44
+}
+layers {
+  name: "npc"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 95
+  sub_index: 20
+}
+layers {
+  name: "npn"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 82
+  sub_index: 20
+}
+layers {
+  name: "npn"
+  purpose {
+    description: "label"
+    type: LABEL
+  }
+  index: 82
+  sub_index: 5
+}
+layers {
+  name: "nsdm"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 93
+  sub_index: 44
+}
+layers {
+  name: "nsm"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 61
+  sub_index: 20
+}
+layers {
+  name: "nwell"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 64
+  sub_index: 20
+}
+layers {
+  name: "nwell"
+  purpose {
+    description: "pin"
+    type: PIN
+  }
+  index: 64
+  sub_index: 16
+}
+layers {
+  name: "nwell"
+  purpose {
+    description: "label"
+    type: LABEL
+  }
+  index: 64
+  sub_index: 5
+}
+layers {
+  name: "nwell"
+  purpose {
+    description: "net"
+  }
+  index: 84
+  sub_index: 23
+}
+layers {
+  name: "overlap"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 90
+  sub_index: 20
+}
+layers {
+  name: "overlap"
+  purpose {
+    description: "boundary"
+  }
+  index: 90
+  sub_index: 4
+}
+layers {
+  name: "pad"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 76
+  sub_index: 20
+}
+layers {
+  name: "pad"
+  purpose {
+    description: "pin"
+    type: PIN
+  }
+  index: 76
+  sub_index: 16
+}
+layers {
+  name: "pad"
+  purpose {
+    description: "label"
+    type: LABEL
+  }
+  index: 76
+  sub_index: 5
+}
+layers {
+  name: "pmm"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 85
+  sub_index: 44
+}
+layers {
+  name: "pmm2"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 77
+  sub_index: 20
+}
+layers {
+  name: "pnp"
+  purpose {
+    description: "label"
+    type: LABEL
+  }
+  index: 82
+  sub_index: 59
+}
+layers {
+  name: "pnp"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 82
+  sub_index: 44
+}
+layers {
+  name: "poly"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 66
+  sub_index: 20
+}
+layers {
+  name: "poly"
+  purpose {
+    description: "pin"
+    type: PIN
+  }
+  index: 66
+  sub_index: 16
+}
+layers {
+  name: "poly"
+  purpose {
+    description: "label"
+    type: LABEL
+  }
+  index: 66
+  sub_index: 5
+}
+layers {
+  name: "poly"
+  purpose {
+    description: "res"
+  }
+  index: 66
+  sub_index: 13
+}
+layers {
+  name: "poly"
+  purpose {
+    description: "net"
+  }
+  index: 66
+  sub_index: 23
+}
+layers {
+  name: "poly"
+  purpose {
+    description: "boundary"
+  }
+  index: 66
+  sub_index: 4
+}
+layers {
+  name: "poly"
+  purpose {
+    description: "fill"
+  }
+  index: 66
+  sub_index: 99
+}
+layers {
+  name: "poly"
+  purpose {
+    description: "fill_block"
+  }
+  index: 66
+  sub_index: 98
+}
+layers {
+  name: "poly"
+  purpose {
+    description: "probe"
+  }
+  index: 66
+  sub_index: 25
+}
+layers {
+  name: "poly"
+  purpose {
+    description: "gate"
+  }
+  index: 66
+  sub_index: 9
+}
+layers {
+  name: "poly"
+  purpose {
+    description: "model"
+  }
+  index: 66
+  sub_index: 83
+}
+layers {
+  name: "prBoundary"
+  purpose {
+    description: "boundary"
+  }
+  index: 235
+  sub_index: 4
+}
+layers {
+  name: "LVS_exclude"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 84
+  sub_index: 44
+}
+layers {
+  name: "psdm"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 94
+  sub_index: 20
+}
+layers {
+  name: "pwbm"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 19
+  sub_index: 44
+}
+layers {
+  name: "pwde"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 124
+  sub_index: 20
+}
+layers {
+  name: "pwell"
+  purpose {
+    description: "pin"
+    type: PIN
+  }
+  index: 122
+  sub_index: 16
+}
+layers {
+  name: "pwell"
+  purpose {
+    description: "label"
+    type: LABEL
+  }
+  index: 64
+  sub_index: 59
+}
+layers {
+  name: "pwell"
+  purpose {
+    description: "res"
+  }
+  index: 64
+  sub_index: 13
+}
+layers {
+  name: "r1c"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 201
+  sub_index: 20
+}
+layers {
+  name: "r1c"
+  purpose {
+    description: "pin"
+    type: PIN
+  }
+  index: 201
+  sub_index: 251
+}
+layers {
+  name: "r1c"
+  purpose {
+    description: "label"
+    type: LABEL
+  }
+  index: 201
+  sub_index: 237
+}
+layers {
+  name: "r1c"
+  purpose {
+    description: "res"
+  }
+  index: 201
+  sub_index: 16
+}
+layers {
+  name: "r1c"
+  purpose {
+    description: "net"
+  }
+  index: 201
+  sub_index: 253
+}
+layers {
+  name: "r1c"
+  purpose {
+    description: "mask"
+  }
+  index: 201
+}
+layers {
+  name: "r1c"
+  purpose {
+    description: "fill_block"
+  }
+  index: 201
+  sub_index: 24
+}
+layers {
+  name: "r1c"
+  purpose {
+    description: "blockage"
+    type: OBSTRUCTION
+  }
+  index: 201
+  sub_index: 230
+}
+layers {
+  name: "r1c"
+  purpose {
+    description: "boundary"
+  }
+  index: 201
+  sub_index: 4
+}
+layers {
+  name: "r1v"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 202
+  sub_index: 20
+}
+layers {
+  name: "r1v"
+  purpose {
+    description: "pin"
+    type: PIN
+  }
+  index: 202
+  sub_index: 251
+}
+layers {
+  name: "r1v"
+  purpose {
+    description: "label"
+    type: LABEL
+  }
+  index: 202
+  sub_index: 237
+}
+layers {
+  name: "r1v"
+  purpose {
+    description: "res"
+  }
+  index: 202
+  sub_index: 16
+}
+layers {
+  name: "r1v"
+  purpose {
+    description: "net"
+  }
+  index: 202
+  sub_index: 253
+}
+layers {
+  name: "r1v"
+  purpose {
+    description: "mask"
+  }
+  index: 202
+}
+layers {
+  name: "r1v"
+  purpose {
+    description: "fill_block"
+  }
+  index: 202
+  sub_index: 24
+}
+layers {
+  name: "r1v"
+  purpose {
+    description: "blockage"
+    type: OBSTRUCTION
+  }
+  index: 202
+  sub_index: 230
+}
+layers {
+  name: "r1c"
+  purpose {
+    description: "boundary"
+  }
+  index: 202
+  sub_index: 4
+}
+layers {
+  name: "rdl"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 74
+  sub_index: 20
+}
+layers {
+  name: "rdl"
+  purpose {
+    description: "pin"
+    type: PIN
+  }
+  index: 74
+  sub_index: 16
+}
+layers {
+  name: "rdl"
+  purpose {
+    description: "label"
+    type: LABEL
+  }
+  index: 74
+  sub_index: 5
+}
+layers {
+  name: "rdl"
+  purpose {
+    description: "res"
+  }
+  index: 74
+  sub_index: 13
+}
+layers {
+  name: "rdl"
+  purpose {
+    description: "blockage"
+    type: OBSTRUCTION
+  }
+  index: 74
+  sub_index: 10
+}
+layers {
+  name: "rdl"
+  purpose {
+    description: "option1"
+  }
+  index: 89
+  sub_index: 32
+}
+layers {
+  name: "rdl"
+  purpose {
+    description: "option2"
+  }
+  index: 89
+  sub_index: 33
+}
+layers {
+  name: "rdl"
+  purpose {
+    description: "option3"
+  }
+  index: 89
+  sub_index: 34
+}
+layers {
+  name: "rdl"
+  purpose {
+    description: "option4"
+  }
+  index: 89
+  sub_index: 35
+}
+layers {
+  name: "rdl"
+  purpose {
+    description: "option5"
+  }
+  index: 89
+  sub_index: 36
+}
+layers {
+  name: "rdl"
+  purpose {
+    description: "option6"
+  }
+  index: 89
+  sub_index: 37
+}
+layers {
+  name: "rdl"
+  purpose {
+    description: "option7"
+  }
+  index: 89
+  sub_index: 38
+}
+layers {
+  name: "rdl"
+  purpose {
+    description: "option8"
+  }
+  index: 89
+  sub_index: 39
+}
+layers {
+  name: "rdl"
+  purpose {
+    description: "psa1"
+  }
+  index: 74
+  sub_index: 88
+}
+layers {
+  name: "rdl"
+  purpose {
+    description: "psa2"
+  }
+  index: 74
+  sub_index: 89
+}
+layers {
+  name: "rdl"
+  purpose {
+    description: "psa3"
+  }
+  index: 74
+  sub_index: 90
+}
+layers {
+  name: "rdl"
+  purpose {
+    description: "psa4"
+  }
+  index: 74
+  sub_index: 91
+}
+layers {
+  name: "rdl"
+  purpose {
+    description: "psa5"
+  }
+  index: 74
+  sub_index: 92
+}
+layers {
+  name: "rdl"
+  purpose {
+    description: "psa6"
+  }
+  index: 74
+  sub_index: 93
+}
+layers {
+  name: "rpm"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 86
+  sub_index: 20
+}
+layers {
+  name: "rrpm"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 102
+  sub_index: 20
+}
+layers {
+  name: "target"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 76
+  sub_index: 44
+}
+layers {
+  name: "text"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 83
+  sub_index: 44
+}
+layers {
+  name: "thkox"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 75
+  sub_index: 21
+}
+layers {
+  name: "tunm"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 80
+  sub_index: 20
+}
+layers {
+  name: "ubm"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 127
+  sub_index: 21
+}
+layers {
+  name: "urpm"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 79
+  sub_index: 20
+}
+layers {
+  name: "v12"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 74
+  sub_index: 21
+}
+layers {
+  name: "v20"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 74
+  sub_index: 22
+}
+layers {
+  name: "v5"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 75
+  sub_index: 20
+}
+layers {
+  name: "via1"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 68
+  sub_index: 44
+}
+layers {
+  name: "via1"
+  purpose {
+    description: "pin"
+    type: PIN
+  }
+  index: 68
+  sub_index: 58
+}
+layers {
+  name: "via1"
+  purpose {
+    description: "net"
+  }
+  index: 68
+  sub_index: 41
+}
+layers {
+  name: "via1"
+  purpose {
+    description: "boundary"
+  }
+  index: 68
+  sub_index: 60
+}
+layers {
+  name: "via2"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 69
+  sub_index: 44
+}
+layers {
+  name: "via2"
+  purpose {
+    description: "pin"
+    type: PIN
+  }
+  index: 69
+  sub_index: 58
+}
+layers {
+  name: "via2"
+  purpose {
+    description: "net"
+  }
+  index: 69
+  sub_index: 41
+}
+layers {
+  name: "via2"
+  purpose {
+    description: "boundary"
+  }
+  index: 69
+  sub_index: 60
+}
+layers {
+  name: "via3"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 70
+  sub_index: 44
+}
+layers {
+  name: "via3"
+  purpose {
+    description: "pin"
+    type: PIN
+  }
+  index: 70
+  sub_index: 48
+}
+layers {
+  name: "via3"
+  purpose {
+    description: "net"
+  }
+  index: 70
+  sub_index: 41
+}
+layers {
+  name: "via3"
+  purpose {
+    description: "boundary"
+  }
+  index: 70
+  sub_index: 60
+}
+layers {
+  name: "via4"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 71
+  sub_index: 44
+}
+layers {
+  name: "via4"
+  purpose {
+    description: "pin"
+    type: PIN
+  }
+  index: 71
+  sub_index: 48
+}
+layers {
+  name: "via4"
+  purpose {
+    description: "net"
+  }
+  index: 71
+  sub_index: 41
+}
+layers {
+  name: "via4"
+  purpose {
+    description: "boundary"
+  }
+  index: 71
+  sub_index: 60
+}
+layers {
+  name: "viatop"
+  purpose {
+    description: "drawing"
+    type: DRAWING
+  }
+  index: 72
+  sub_index: 44
+}

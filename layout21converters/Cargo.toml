@@ -1,6 +1,6 @@
 [package]
-description = "Converts GDS files to protocol buffer descriptions, using Layout21, and Gds21."
-name = "gds2proto"
+description = "Converters to/from Layout21 formats from/to various legacy formats."
+name = "layout21converters"
 # Shared layout21 attributes
 authors = ["Dan Fritchman <dan@fritch.mn>", "Arya Reais-Parsi <aryap@berkeley.edu>"]
 edition = "2018"
@@ -10,9 +10,30 @@ version = "0.2.1"
 workspace = "../"
 exclude = ["resources",]
 
+[[bin]]
+name = "gds2proto"
+path = "src/gds2proto.rs"
+test = true
+bench = false
+
+[[bin]]
+name = "proto2gds"
+path = "src/proto2gds.rs"
+test = true
+bench = false
+
+# Converts GDS files to protocol buffer descriptions, using Layout21, and Gds21.
+[[bin]]
+name = "lef2yaml"
+path = "src/lef2yaml.rs"
+test = true
+bench = false
+
 [dependencies]
 gds21 = {path = "../gds21"}
+lef21 = {path = "../lef21"}
 layout21protos = {path = "../layout21protos"}
 layout21raw = {path = "../layout21raw"}
 layout21utils = {path = "../layout21utils"}
 clap = { version = "3.0.0-beta.5", features = ["derive"] }
+chrono = {version = "0.4" }

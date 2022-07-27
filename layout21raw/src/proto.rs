@@ -17,8 +17,8 @@ use std::convert::{TryFrom, TryInto};
 use crate::{
     utils::{ErrorContext, ErrorHelper, Ptr},
     Abstract, AbstractPort, Cell, DepOrder, Element, Instance, Int, LayerKey, LayerPurpose, Layers,
-    Layout, LayoutError, LayoutResult, Library, Path, Point, Polygon, Rect, Shape, TextElement,
-    Units,
+    Layer, Layout, LayoutError, LayoutResult, Library, Path, Point, Polygon, Rect, Shape,
+    TextElement, Units,
 };
 pub use layout21protos as proto;
 
@@ -685,6 +685,41 @@ impl ErrorHelper for ProtoImporter {
             stack: self.ctx.clone(),
         }
     }
+}
+impl Layers {
+    /// Load the struct from an external Technology protobuf.
+    pub fn from_proto(library_pb: &proto::Technology) -> LayoutResult<Layers> {
+        let mut layers_by_number = HashMap::new();
+
+        // Generate the Layers data from the given tech proto:
+        for layer_pb in &library_pb.layers {
+            let layer = layers_by_number
+                .entry(layer_pb.index)
+                .or_insert(Layer::from_num(layer_pb.index as i16));
+
+            let sub_index = layer_pb.sub_index as i16;
+            let layer_purpose = match &layer_pb.purpose {
+                Some(purpose) => Layers::proto_to_internal_layer_purpose(sub_index, &purpose.r#type()),
+                None => LayerPurpose::Other(sub_index),
+            };
+            layer.add_purpose(sub_index, layer_purpose)?;
+        }
+
+        let mut layers = Layers::default();
+        for layer in layers_by_number.values() {
+            layers.add(layer.clone());
+        }
+        Ok(layers)
+    }
+
+    fn proto_to_internal_layer_purpose(sub_index: i16, purpose_pb: &proto::LayerPurposeType)
+        -> LayerPurpose {
+        match purpose_pb {
+            proto::LayerPurposeType::Label => LayerPurpose::Label,
+            _ => LayerPurpose::Other(sub_index),
+        }
+    }
+
 }
 
 #[cfg(all(test, feature = "proto"))]
