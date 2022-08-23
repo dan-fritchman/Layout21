@@ -83,7 +83,13 @@ impl<'lib> GdsExporter<'lib> {
         // And convert each of our `cells` into its `structs`
         for cell in self.lib.cells.iter() {
             let cell = cell.read()?;
-            let strukt = self.export_cell(&*cell)?;
+            let strukt = match self.export_cell(&*cell) {
+                Ok(strukt) => strukt,
+                Err(err) => {
+                    println!("Skipping export, {:?}", err);
+                    continue;
+                }
+            };
             gdslib.structs.push(strukt);
         }
         self.ctx.pop();
