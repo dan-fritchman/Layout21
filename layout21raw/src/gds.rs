@@ -9,6 +9,7 @@ use std::collections::{HashMap, HashSet};
 use std::convert::{TryFrom, TryInto};
 use std::hash::Hash;
 
+use gds21::GdsElement;
 // Crates.io
 use slotmap::{new_key_type, SlotMap};
 
@@ -124,9 +125,24 @@ impl<'lib> GdsExporter<'lib> {
 
         let mut elems = Vec::with_capacity(1 + abs.ports.len());
 
+        // Flatten our points-vec, converting to 32-bit along the way
+        let mut xy = abs
+            .outline
+            .points
+            .iter()
+            .map(|p| self.export_point(p))
+            .collect::<Result<Vec<_>, _>>()?;
+        // Add the origin a second time, to "close" the polygon
+        xy.push(self.export_point(&abs.outline.points[0])?);
+        let outline = GdsElement::GdsBoundary(gds21::GdsBoundary {
+            layer: i16::MAX,
+            datatype: i16::MAX,
+            xy,
+            ..Default::default()
+        });
         // Blockages do not map to GDSII elements.
         // Conversion includes the abstract's name, outline and ports.
-        elems.extend(self.export_element(&abs.outline)?);
+        elems.push(outline);
 
         // Convert each [AbstractPort]
         for port in abs.ports.iter() {
@@ -134,10 +150,10 @@ impl<'lib> GdsExporter<'lib> {
         }
 
         // Create and return a [GdsStruct]
-        let mut strukt = gds21::GdsStruct::new(&abs.name);
-        strukt.elems = elems;
+        let mut gds_struct = gds21::GdsStruct::new(&abs.name);
+        gds_struct.elems = elems;
         self.ctx.pop();
-        Ok(strukt)
+        Ok(gds_struct)
     }
     /// Export an [AbstractPort]
     pub fn export_abstract_port(
@@ -360,9 +376,9 @@ impl ErrorHelper for GdsExporter<'_> {
 ///
 /// Trait for calculating the location of text-labels, generally per [Shape].
 ///
-/// Sole function `label_location` calculates an appropriate location, 
-/// or returns a [LayoutError] if one cannot be found. 
-/// 
+/// Sole function `label_location` calculates an appropriate location,
+/// or returns a [LayoutError] if one cannot be found.
+///
 /// While Layout21 formats do not include "placed text", GDSII relies on it for connectivity annotations.
 /// How to place these labels varies by shape type.
 ///

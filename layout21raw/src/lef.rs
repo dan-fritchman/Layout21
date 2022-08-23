@@ -12,7 +12,7 @@ use std::convert::{TryFrom, TryInto};
 use crate::utils::{ErrorContext, ErrorHelper, Ptr};
 use crate::{
     Abstract, AbstractPort, Cell, Element, Int, Layer, LayerKey, LayerPurpose, Layers, LayoutError,
-    LayoutResult, Library, Path, Point, Polygon, Rect, Shape,  Units,
+    LayoutResult, Library, Path, Point, Polygon, Rect, Shape, Units,
 };
 use lef21;
 
@@ -256,7 +256,7 @@ impl LefImporter {
             // Grab a [Point] from the `size` field
             let lefsize = self.unwrap(lefmacro.size.as_ref(), "Missing LEF size")?;
             let lefsize = lef21::LefPoint::new(lefsize.0, lefsize.1);
-            let lefsize = self.import_point(&lefsize)?;
+            let Point { x, y } = self.import_point(&lefsize)?;
 
             // FIXME: what layer this goes on.
             // Grab one named `boundary`.
@@ -271,14 +271,14 @@ impl LefImporter {
                     }
                 }
             };
-            Element {
-                net: None,
-                layer,
-                purpose: LayerPurpose::Outline,
-                inner: Shape::Rect(Rect {
-                    p0: Point::new(0, 0),
-                    p1: lefsize,
-                }),
+
+            Polygon {
+                points: vec![
+                    Point::new(0, 0),
+                    Point::new(x, 0),
+                    Point::new(x, y),
+                    Point::new(0, y),
+                ],
             }
         };
         // Create the [Abstract] to be returned
@@ -483,14 +483,13 @@ mod tests {
         let layers = crate::tests::layers()?;
         let a = Abstract {
             name: "to_lef1".into(),
-            outline: Element {
-                net: None,
-                layer: layers.keyname("boundary").unwrap(),
-                purpose: LayerPurpose::Outline,
-                inner: Shape::Rect(Rect {
-                    p0: Point::new(0, 0),
-                    p1: Point::new(11, 11),
-                }),
+            outline: Polygon {
+                points: vec![
+                    Point::new(0, 0),
+                    Point::new(11, 0),
+                    Point::new(11, 11),
+                    Point::new(0, 11),
+                ],
             },
             ports: vec![AbstractPort {
                 net: "port1".into(),
