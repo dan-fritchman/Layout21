@@ -245,13 +245,12 @@ trait Encode {
     /// Encode a [GdsLibrary]
     fn encode_lib(&mut self, lib: &GdsLibrary) -> GdsResult<()> {
         // Write our header content
+        let dates = self.encode_datetimes(&lib.dates);
         self.encode_records(&[
             GdsRecord::Header {
                 version: lib.version,
             },
-            GdsRecord::BgnLib {
-                dates: lib.dates.encode().to_vec(),
-            },
+            GdsRecord::BgnLib { dates },
             GdsRecord::LibName(lib.name.clone()),
             GdsRecord::Units(lib.units.0, lib.units.1),
         ])?;
@@ -266,10 +265,9 @@ trait Encode {
     /// Encode a [GdsStruct]
     fn encode_struct(&mut self, strukt: &GdsStruct) -> GdsResult<()> {
         // Write the header content
+        let dates = self.encode_datetimes(&strukt.dates);
         self.encode_records(&[
-            GdsRecord::BgnStruct {
-                dates: strukt.dates.encode().to_vec(),
-            },
+            GdsRecord::BgnStruct { dates },
             GdsRecord::StructName(strukt.name.clone()),
         ])?;
         // Write each of our elements
@@ -477,6 +475,30 @@ trait Encode {
         }
         Ok(())
     }
+    /// Encode a [`GdsDateTime`] in GDSII's vector of i16's format
+    fn encode_datetime(&self, dt: &GdsDateTime, dest: &mut [i16]) {
+        match dt {
+            GdsDateTime::Bytes(ref bytes) => dest.copy_from_slice(bytes),
+            GdsDateTime::DateTime(dt) => {
+                let bytes = [
+                    dt.year() as i16 - 1900, // GDSII uses 1900 as the base year
+                    dt.month() as i16,
+                    dt.day() as i16,
+                    dt.hour() as i16,
+                    dt.minute() as i16,
+                    dt.second() as i16,
+                ];
+                dest.copy_from_slice(&bytes)
+            }
+        }
+    }
+    /// Encode [`GdsDateTimes`] in GDSII's vector of i16's format
+    fn encode_datetimes(&self, dts: &GdsDateTimes) -> [i16; 12] {
+        let mut rv = [0; 12];
+        self.encode_datetime(&dts.modified, &mut rv[0..6]);
+        self.encode_datetime(&dts.accessed, &mut rv[6..12]);
+        return rv;
+    }
 }
 
 /// # GdsRecordList
@@ -494,32 +516,5 @@ impl Encode for GdsRecordList {
     /// Add an array of [GdsRecord]s to the list
     fn encode_records(&mut self, records: &[GdsRecord]) -> GdsResult<()> {
         Ok(self.records.extend(records.to_vec()))
-    }
-}
-
-impl GdsDateTime {
-    /// Encode in GDSII's vector of i16's format
-    pub fn encode(&self, dest: &mut [i16]) {
-        let bytes = match self {
-            Self::Bytes(bytes) => bytes.clone(),
-            Self::DateTime(dt) => [
-                dt.year() as i16 - 1900, // GDSII uses 1900 as the base year
-                dt.month() as i16,
-                dt.day() as i16,
-                dt.hour() as i16,
-                dt.minute() as i16,
-                dt.second() as i16,
-            ],
-        };
-        dest.copy_from_slice(&bytes);
-    }
-}
-impl GdsDateTimes {
-    /// Encode in GDSII's vector of i16's format
-    pub fn encode(&self) -> Vec<i16> {
-        let mut rv = vec![0; 12];
-        self.modified.encode(&mut rv[0..6]);
-        self.accessed.encode(&mut rv[6..12]);
-        return rv;
     }
 }

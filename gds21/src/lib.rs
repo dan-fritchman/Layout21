@@ -239,13 +239,13 @@ pub struct GdsRecordHeader {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum GdsRecord {
     Header { version: i16 },
-    BgnLib { dates: Vec<i16> }, // Note: always length 12
+    BgnLib { dates: [i16; 12] },
     LibName(String),
     Units(f64, f64),
     EndLib,
-    BgnStruct { dates: Vec<i16> }, // Note: always length 12
-    StructName(String),            // STRNAME Record
-    StructRefName(String),         // SNAME Record
+    BgnStruct { dates: [i16; 12] },
+    StructName(String),    // STRNAME Record
+    StructRefName(String), // SNAME Record
     EndStruct,
     Boundary,
     Path,
@@ -280,7 +280,7 @@ pub enum GdsRecord {
     BeginExtn(i32),
     EndExtn(i32),
     TapeNum(i16),
-    TapeCode(Vec<i16>), // Note: always length 6
+    TapeCode([i16; 6]),
     Format(i16),
     Mask(String),
     EndMasks,

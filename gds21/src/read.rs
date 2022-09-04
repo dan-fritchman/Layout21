@@ -78,7 +78,8 @@ impl GdsReader {
                 version: self.read_i16(len)?[0],
             },
             (GdsRecordType::BgnLib, I16, 24) => GdsRecord::BgnLib {
-                dates: self.read_i16(len)?,
+                // Note the `try/unwrap` conversion here is infallible, since we know the length is 24 bytes / 12 i16s.
+                dates: self.read_i16(24)?.try_into().unwrap(),
             },
             (GdsRecordType::LibName, Str, _) => GdsRecord::LibName(self.read_str(len)?),
             (GdsRecordType::Units, F64, 16) => {
@@ -89,7 +90,8 @@ impl GdsReader {
 
             // Structure (Cell) Level Records
             (GdsRecordType::BgnStruct, I16, 24) => GdsRecord::BgnStruct {
-                dates: self.read_i16(len)?,
+                // Note the `try/unwrap` conversion here is infallible, since we know the length is 24 bytes / 12 i16s.
+                dates: self.read_i16(24)?.try_into().unwrap(),
             },
             (GdsRecordType::StructName, Str, _) => GdsRecord::StructName(self.read_str(len)?),
             (GdsRecordType::StructRefName, Str, _) => GdsRecord::StructRefName(self.read_str(len)?),
@@ -146,7 +148,10 @@ impl GdsReader {
             (GdsRecordType::BeginExtn, I32, 4) => GdsRecord::BeginExtn(self.read_i32(len)?[0]),
             (GdsRecordType::EndExtn, I32, 4) => GdsRecord::EndExtn(self.read_i32(len)?[0]),
             (GdsRecordType::TapeNum, I16, 2) => GdsRecord::TapeNum(self.read_i16(len)?[0]),
-            (GdsRecordType::TapeCode, I16, 12) => GdsRecord::TapeCode(self.read_i16(len)?),
+            (GdsRecordType::TapeCode, I16, 12) => {
+                // Note the `try/unwrap` combination here is infalliable, since we know the length is 12 bytes / 6 i16s.
+                GdsRecord::TapeCode(self.read_i16(12)?.try_into().unwrap())
+            }
             (GdsRecordType::Format, I16, 2) => GdsRecord::Format(self.read_i16(len)?[0]),
             (GdsRecordType::Mask, Str, _) => GdsRecord::Mask(self.read_str(len)?),
             (GdsRecordType::EndMasks, NoData, 0) => GdsRecord::EndMasks,
@@ -433,7 +438,7 @@ impl GdsParser {
         };
         // Read the begin-lib
         lib = match self.next()? {
-            GdsRecord::BgnLib { dates: d } => lib.dates(self.parse_datetimes(d)?),
+            GdsRecord::BgnLib { dates: d } => lib.dates(self.parse_datetimes(&d)),
             _ => return self.fail("Invalid library: missing GDS BGNLIB record"),
         };
         // Iterate over all others
@@ -444,7 +449,7 @@ impl GdsParser {
                 GdsRecord::LibName(d) => lib.name(d),
                 GdsRecord::Units(d0, d1) => lib.units(GdsUnits(d0, d1)),
                 GdsRecord::BgnStruct { dates } => {
-                    let strukt = self.parse_struct(dates)?;
+                    let strukt = self.parse_struct(&dates)?;
                     structs.push(strukt);
                     lib
                 }
@@ -468,11 +473,11 @@ impl GdsParser {
         Ok(lib.build()?)
     }
     /// Parse a cell ([GdsStruct])
-    fn parse_struct(&mut self, dates: Vec<i16>) -> GdsResult<GdsStruct> {
+    fn parse_struct(&mut self, dates: &[i16; 12]) -> GdsResult<GdsStruct> {
         self.ctx.push(GdsContext::Struct);
         let mut strukt = GdsStructBuilder::default();
         // Parse and store the header information: `dates` and `name`
-        strukt = strukt.dates(self.parse_datetimes(dates)?);
+        strukt = strukt.dates(self.parse_datetimes(dates));
         strukt = match self.next()? {
             GdsRecord::StructName(d) => strukt.name(d),
             _ => return self.fail("Missing Gds StructName"),
@@ -764,14 +769,14 @@ impl GdsParser {
         Ok(GdsProperty { attr, value })
     }
     /// Parse from GDSII's vector of i16's format
-    fn parse_datetimes(&mut self, d: Vec<i16>) -> GdsResult<GdsDateTimes> {
-        if d.len() != 12 {
-            return self.fail("Invalid length GdsDateTimes");
-        }
-        Ok(GdsDateTimes {
+    /// Note this is one of our few parsing methods that *does not* return a `GdsResult`.
+    /// Invalid dates are instead stored as raw bytes in the [`GdsDateTime::Bytes`] variant.
+    fn parse_datetimes(&mut self, d: &[i16; 12]) -> GdsDateTimes {
+        // Note the `try/unwrap` conversions here are infallible, as their lengths are hard-coded.
+        GdsDateTimes {
             modified: self.parse_datetime(&d[0..6].try_into().unwrap()),
             accessed: self.parse_datetime(&d[6..12].try_into().unwrap()),
-        })
+        }
     }
     /// Parse a [`GdsDateTime`]
     /// Note this is one of our few parsing methods that *does not* return a `GdsResult`.
