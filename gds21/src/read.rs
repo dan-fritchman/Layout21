@@ -769,17 +769,28 @@ impl GdsParser {
             return self.fail("Invalid length GdsDateTimes");
         }
         Ok(GdsDateTimes {
-            modified: NaiveDate::from_ymd(d[0] as i32, d[1] as u32, d[2] as u32).and_hms(
-                d[3] as u32,
-                d[4] as u32,
-                d[5] as u32,
-            ),
-            accessed: NaiveDate::from_ymd(d[6] as i32, d[7] as u32, d[8] as u32).and_hms(
-                d[9] as u32,
-                d[10] as u32,
-                d[11] as u32,
-            ),
+            modified: self.parse_datetime(&d[0..6].try_into().unwrap()),
+            accessed: self.parse_datetime(&d[6..12].try_into().unwrap()),
         })
+    }
+    /// Parse a [`GdsDateTime`]
+    /// Note this is one of our few parsing methods that *does not* return a `GdsResult`.
+    /// Invalid dates are instead stored as raw bytes in the [`GdsDateTime::Bytes`] variant.
+    fn parse_datetime(&mut self, d: &[i16; 6]) -> GdsDateTime {
+        // Note GDSII's 1900 offset is applied here
+        let ymd = NaiveDate::from_ymd_opt(d[0] as i32 + 1900, d[1] as u32, d[2] as u32);
+        if ymd.is_none() {
+            // Invalid date; return raw bytes
+            return GdsDateTime::Bytes(d.clone());
+        }
+        let ymd = ymd.unwrap();
+        let dt = ymd.and_hms_opt(d[3] as u32, d[4] as u32, d[5] as u32);
+        if dt.is_none() {
+            // Invalid time; return raw bytes
+            return GdsDateTime::Bytes(d.clone());
+        }
+        let dt = dt.unwrap();
+        return GdsDateTime::DateTime(dt);
     }
     /// Error helper for an invalid record
     fn invalid<T>(&mut self, record: GdsRecord) -> GdsResult<T> {

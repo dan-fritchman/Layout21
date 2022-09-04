@@ -804,25 +804,50 @@ pub struct GdsStats {
     boxes: usize,
 }
 
-/// # Gds Modification Dates & Times
+/// # Gds Date & Time
+///
+/// In typical cases, a wrapper around a [`NaiveDateTime`] with custom serialization.
+/// For existing GDSII files with invalid dates, the raw twelve bytes are stored instead.
+///
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub enum GdsDateTime {
+    /// Valid Date & Time
+    DateTime(NaiveDateTime),
+    /// Raw Bytes as stored in GDSII
+    Bytes([i16; 6]),
+}
+impl GdsDateTime {
+    /// Get the current time
+    pub fn now() -> Self {
+        Self::DateTime(Utc::now().naive_utc().round_subsecs(0))
+    }
+}
+impl Default for GdsDateTime {
+    /// Default dates & times: what better time than now!
+    fn default() -> Self {
+        Self::now()
+    }
+}
+/// # Gds Modification & Access Dates & Times
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct GdsDateTimes {
     /// Last Modification Date & Time
-    pub modified: NaiveDateTime,
+    pub modified: GdsDateTime,
     /// Last Access Date & Time
-    pub accessed: NaiveDateTime,
+    pub accessed: GdsDateTime,
 }
-
 impl Default for GdsDateTimes {
     /// Default dates & times: what better time than now!
+    /// Note this makes a *single* call to `Utc::now()`, so the two dates will be the same.
     fn default() -> Self {
-        let now = Utc::now().naive_utc();
+        let now = GdsDateTime::now();
         Self {
             modified: now.clone(),
-            accessed: now.clone(),
+            accessed: now,
         }
     }
 }
+
 ///
 /// # Gds Struct (Cell) Definition
 ///

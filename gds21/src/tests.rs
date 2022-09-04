@@ -2,7 +2,7 @@ use super::*;
 
 /// Specified creation date for test cases
 fn test_dates() -> GdsDateTimes {
-    let test_date = NaiveDate::from_ymd(1970, 1, 1).and_hms(0, 0, 1);
+    let test_date = GdsDateTime::DateTime(NaiveDate::from_ymd(1970, 1, 1).and_hms(0, 0, 1));
     GdsDateTimes {
         modified: test_date.clone(),
         accessed: test_date.clone(),
@@ -167,11 +167,34 @@ fn record_too_long() -> GdsResult<()> {
     }
 }
 
+#[test]
+fn empty_lib() -> GdsResult<()> {
+    // Test empty library
+    let lib = GdsLibrary::new("empty");
+    roundtrip(&lib)?;
+    check(&lib, &resource("empty.gds.json"));
+    Ok(())
+}
+
+#[test]
+fn test_invalid_dates() -> GdsResult<()> {
+    // Test loading a library with invalid dates
+    let lib = GdsLibrary::load(&resource("invalid_dates.gds"))?;
+    assert_eq!(
+        lib.dates,
+        GdsDateTimes {
+            modified: GdsDateTime::Bytes([0, 0, 0, 17, 49, 18]),
+            accessed: GdsDateTime::Bytes([0, 0, 0, 17, 49, 18])
+        }
+    );
+    Ok(())
+}
+
 /// Compare `lib` to "golden" data loaded from JSON at path `golden`.
-fn check(lib: &GdsLibrary, fname: impl AsRef<Path>) {
-    use layout21utils::ser::SerializationFormat::Json;
+fn check(lib: &GdsLibrary, fname: &impl AsRef<Path>) {
+    use crate::utils::ser::SerializationFormat::Json;
     // Uncomment this bit to over-write the golden data
-    // Json::save(lib, fname);
+    Json.save(lib, fname).unwrap();
 
     let golden = Json.open(fname).unwrap();
     assert_eq!(*lib, golden);

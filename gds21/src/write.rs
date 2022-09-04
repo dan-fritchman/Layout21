@@ -497,22 +497,29 @@ impl Encode for GdsRecordList {
     }
 }
 
+impl GdsDateTime {
+    /// Encode in GDSII's vector of i16's format
+    pub fn encode(&self, dest: &mut [i16]) {
+        let bytes = match self {
+            Self::Bytes(bytes) => bytes.clone(),
+            Self::DateTime(dt) => [
+                dt.year() as i16 - 1900, // GDSII uses 1900 as the base year
+                dt.month() as i16,
+                dt.day() as i16,
+                dt.hour() as i16,
+                dt.minute() as i16,
+                dt.second() as i16,
+            ],
+        };
+        dest.copy_from_slice(&bytes);
+    }
+}
 impl GdsDateTimes {
     /// Encode in GDSII's vector of i16's format
-    pub fn encode(&self) -> [i16; 12] {
-        [
-            self.modified.date().year() as i16,
-            self.modified.date().month() as i16,
-            self.modified.date().day() as i16,
-            self.modified.time().hour() as i16,
-            self.modified.time().minute() as i16,
-            self.modified.time().second() as i16,
-            self.accessed.date().year() as i16,
-            self.accessed.date().month() as i16,
-            self.accessed.date().day() as i16,
-            self.accessed.time().hour() as i16,
-            self.accessed.time().minute() as i16,
-            self.accessed.time().second() as i16,
-        ]
+    pub fn encode(&self) -> Vec<i16> {
+        let mut rv = vec![0; 12];
+        self.modified.encode(&mut rv[0..6]);
+        self.accessed.encode(&mut rv[6..12]);
+        return rv;
     }
 }
