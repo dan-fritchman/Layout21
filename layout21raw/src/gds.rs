@@ -200,7 +200,7 @@ impl<'lib> GdsExporter<'lib> {
         if inst.reflect_vert || inst.angle.is_some() {
             let angle = inst.angle.map(|a| f64::from(a));
             strans = Some(gds21::GdsStrans {
-                reflected: true,
+                reflected: inst.reflect_vert,
                 angle,
                 ..Default::default()
             });
