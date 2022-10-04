@@ -135,6 +135,7 @@ impl<'lib> ProtoExporter<'lib> {
             for shape in shapes.iter() {
                 self.export_and_add_shape(shape, &mut pshapes)?;
             }
+            pport.shapes.push(pshapes);
         }
         Ok(pport)
     }
