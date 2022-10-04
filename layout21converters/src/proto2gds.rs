@@ -91,7 +91,7 @@ mod tests {
             Ok(bytes) => bytes,
             Err(_err) => panic!("Could not read golden output file"),
         };
-        let mut golden_gds = match GdsLibrary::from_bytes(golden_bytes) {
+        let mut golden_gds = match GdsLibrary::from_bytes(&golden_bytes) {
             Ok(lib) => lib,
             Err(_err) => panic!("Could not create golden GDS library"),
         };
@@ -114,7 +114,7 @@ mod tests {
             Err(_err) => panic!("Could not read test output file"),
         };
 
-        let mut output_gds = match GdsLibrary::from_bytes(output_bytes) {
+        let mut output_gds = match GdsLibrary::from_bytes(&output_bytes) {
             Ok(lib) => lib,
             Err(_err) => panic!("Could not create GDS library from test output"),
         };
@@ -124,7 +124,7 @@ mod tests {
         let date = NaiveDateTime::from_timestamp(0, 0);
         golden_gds.set_all_dates(&date);
         output_gds.set_all_dates(&date);
-        
+
         assert_eq!(output_gds, golden_gds);
     }
 
