@@ -169,8 +169,14 @@ fn record_too_long() -> GdsResult<()> {
 
 #[test]
 fn empty_lib() -> GdsResult<()> {
-    // Test empty library
-    let lib = GdsLibrary::new("empty");
+    // Test round-tripping an empty library
+    let mut lib = GdsLibrary::new("empty");
+
+    // Set its dates to some known value, so we can check it round-trips
+    // This equals the very nanosecond of the "UNIX timestamp" epoch.
+    lib.set_all_dates(&NaiveDateTime::from_timestamp(0, 0));
+
+    // OK now the actual test
     roundtrip(&lib)?;
     check(&lib, &resource("empty.gds.json"));
     Ok(())
