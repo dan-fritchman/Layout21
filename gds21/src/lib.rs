@@ -977,7 +977,7 @@ impl GdsLibrary {
         GdsParser::open(fname)?.parse_lib()
     }
     /// Read a [GdsLibrary] from byte-vector `bytes`
-    pub fn from_bytes(bytes: Vec<u8>) -> GdsResult<GdsLibrary> {
+    pub fn from_bytes(bytes: &[u8]) -> GdsResult<GdsLibrary> {
         // Create the parser, and parse a Library
         GdsParser::from_bytes(bytes)?.parse_lib()
     }
@@ -1006,6 +1006,16 @@ impl GdsLibrary {
     pub fn write(&self, file: impl Write) -> GdsResult<()> {
         let mut wr = GdsWriter::new(file);
         wr.write_lib(self)
+    }
+    pub fn set_all_dates(&mut self, time: &NaiveDateTime) {
+        let forced_gds_date = GdsDateTimes {
+            modified: time.clone(),
+            accessed: time.clone(),
+        };
+        self.dates = forced_gds_date.clone();
+        for gds_struct in &mut self.structs {
+            gds_struct.dates = forced_gds_date.clone();
+        }
     }
 }
 // Enable [GdsLibrary] and [GdsStruct] serialization to file, in each of `utils` supported formats.
@@ -1150,7 +1160,7 @@ pub fn roundtrip(lib: &GdsLibrary) -> GdsResult<()> {
     file.seek(SeekFrom::Start(0))?;
     let mut bytes = Vec::new();
     file.read_to_end(&mut bytes)?;
-    let lib2 = GdsLibrary::from_bytes(bytes)?;
+    let lib2 = GdsLibrary::from_bytes(&bytes)?;
 
     // And check the two line up
     assert_eq!(*lib, lib2);

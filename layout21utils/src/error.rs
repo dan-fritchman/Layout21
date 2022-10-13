@@ -23,10 +23,10 @@ pub trait ErrorHelper {
         }
     }
     /// Assert boolean condition `b`. Returns through `self.fail` if not.
-    fn assert(&self, b: bool) -> Result<(), Self::Error> {
+    fn assert(&self, b: bool, msg: impl Into<String>) -> Result<(), Self::Error> {
         match b {
             true => Ok(()),
-            false => self.fail("assertion failed"),
+            false => self.fail(msg),
         }
     }
     /// Unwrap the [Result] `res`. Return through our failure method if it is [Err].

@@ -10,110 +10,12 @@
 use derive_more;
 
 // Local imports
-use crate::bbox::{BoundBox, HasBoundBox};
 use crate::coords::{PrimPitches, Xy};
-use crate::placement::{Place, Placeable};
-use crate::raw::{Dir, LayoutError, LayoutResult};
-use crate::stack::{Assign, RelZ};
-use crate::utils::{Ptr, PtrList};
-use crate::{abs, interface, outline, raw, tracks};
+use crate::layout::Layout;
+use crate::raw::{LayoutError, LayoutResult};
+use crate::utils::Ptr;
+use crate::{abs, interface, outline, raw};
 
-/// # Layout Cell Implementation
-///
-/// A combination of lower-level cell instances and net-assignments to tracks.
-///
-#[derive(Debug, Clone, Builder)]
-#[builder(pattern = "owned", setter(into))]
-pub struct Layout {
-    /// Cell Name
-    pub name: String,
-    /// Number of Metal Layers Used
-    pub metals: usize,
-    /// Outline shape, counted in x and y pitches of `stack`
-    pub outline: outline::Outline,
-
-    /// Layout Instances
-    #[builder(default)]
-    pub instances: PtrList<Instance>,
-    /// Net-to-track assignments
-    #[builder(default)]
-    pub assignments: Vec<Assign>,
-    /// Track cuts
-    #[builder(default)]
-    pub cuts: Vec<tracks::TrackIntersection>,
-    /// Placeable objects
-    #[builder(default)]
-    pub places: Vec<Placeable>,
-}
-impl Layout {
-    /// Create a new [Layout]
-    pub fn new(name: impl Into<String>, metals: usize, outline: outline::Outline) -> Self {
-        let name = name.into();
-        Layout {
-            name,
-            metals,
-            outline,
-            instances: PtrList::new(),
-            assignments: Vec::new(),
-            cuts: Vec::new(),
-            places: Vec::new(),
-        }
-    }
-    /// Create a [LayoutBuilder], a struct created by the [Builder] macro.
-    pub fn builder() -> LayoutBuilder {
-        LayoutBuilder::default()
-    }
-    /// Assign a net at the given coordinates.
-    pub fn assign(
-        &mut self,
-        net: impl Into<String>,
-        layer: usize,
-        track: usize,
-        at: usize,
-        relz: RelZ,
-    ) {
-        let net = net.into();
-        self.assignments.push(Assign {
-            net,
-            at: tracks::TrackIntersection {
-                layer,
-                track,
-                at,
-                relz,
-            },
-        })
-    }
-    /// Add a cut at the specified coordinates.
-    pub fn cut(&mut self, layer: usize, track: usize, at: usize, relz: RelZ) {
-        self.cuts.push(tracks::TrackIntersection {
-            layer,
-            track,
-            at,
-            relz,
-        })
-    }
-    /// Get a temporary handle for net assignments
-    pub fn net<'h>(&'h mut self, net: impl Into<String>) -> NetHandle<'h> {
-        let name = net.into();
-        NetHandle { name, parent: self }
-    }
-}
-/// A short-term handle for chaining multiple assignments to a net
-/// Typically used as: `mycell.net("name").at(/* args */).at(/* more args */)`
-/// Takes an exclusive reference to its parent [Layout],
-/// so generally must be dropped quickly to avoid locking it up.
-pub struct NetHandle<'h> {
-    name: String,
-    parent: &'h mut Layout,
-}
-impl<'h> NetHandle<'h> {
-    /// Assign our net at the given coordinates.
-    /// Consumes and returns `self` to enable chaining.
-    pub fn at(self, layer: usize, track: usize, at: usize, relz: RelZ) -> Self {
-        self.parent.assign(&self.name, layer, track, at, relz);
-        self
-    }
-}
 /// "Pointer" to a raw (lib, cell) combination.
 /// Wraps with basic [Outline] and `metals` information to enable bounded placement.
 #[derive(Debug, Clone)]
@@ -202,7 +104,10 @@ impl Cell {
         } else if let Some(ref x) = self.raw {
             Ok(&x.outline)
         } else {
-            Err(LayoutError::Validation)
+            LayoutError::fail(format!(
+                "Failed to retrieve outline of cell {} with no abstract or implementation",
+                self.name,
+            ))
         }
     }
     /// Size of the [Cell]'s rectangular `boundbox`.
@@ -220,7 +125,10 @@ impl Cell {
         } else if let Some(ref x) = self.raw {
             Ok(x.metals)
         } else {
-            Err(LayoutError::Validation)
+            LayoutError::fail(format!(
+                "Failed to retrieve metal-layers of cell {} with no abstract or implementation",
+                self.name,
+            ))
         }
     }
     /// Get the cell's top metal layer (numer).
@@ -282,69 +190,5 @@ impl From<RawLayoutPtr> for Cell {
             raw: Some(src),
             ..Default::default()
         }
-    }
-}
-
-/// Instance of another Cell
-#[derive(Debug, Clone)]
-pub struct Instance {
-    /// Instance Name
-    pub inst_name: String,
-    /// Cell Definition Reference
-    pub cell: Ptr<Cell>,
-    /// Location of the Instance origin
-    /// This origin-position holds regardless of either `reflect` field.
-    /// If specified in absolute coordinates, location-units are [PrimPitches].
-    pub loc: Place<Xy<PrimPitches>>,
-    /// Horizontal Reflection
-    pub reflect_horiz: bool,
-    /// Vertical Reflection
-    pub reflect_vert: bool,
-}
-impl Instance {
-    /// Boolean indication of whether this Instance is reflected in direction `dir`
-    pub fn reflected(&self, dir: Dir) -> bool {
-        match dir {
-            Dir::Horiz => self.reflect_horiz,
-            Dir::Vert => self.reflect_vert,
-        }
-    }
-    /// Size of the Instance's rectangular `boundbox`, i.e. the zero-origin `boundbox` of its `cell`.
-    pub fn boundbox_size(&self) -> LayoutResult<Xy<PrimPitches>> {
-        let cell = self.cell.read()?;
-        cell.boundbox_size()
-    }
-}
-impl std::fmt::Display for Instance {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let cell_name = {
-            let cell = self.cell.read().unwrap();
-            cell.name.clone()
-        };
-        write!(
-            f,
-            "Instance(name={}, cell={}, loc={:?})",
-            self.inst_name, cell_name, self.loc
-        )
-    }
-}
-impl HasBoundBox for Instance {
-    type Units = PrimPitches;
-    type Error = LayoutError;
-    /// Retrieve this Instance's bounding rectangle, specified in [PrimPitches].
-    /// Instance location must be resolved to absolute coordinates, or this method will fail.
-    fn boundbox(&self) -> LayoutResult<BoundBox<PrimPitches>> {
-        let loc = self.loc.abs()?;
-        let cell = self.cell.read()?;
-        let outline = cell.outline()?;
-        let (x0, x1) = match self.reflect_horiz {
-            false => (loc.x, loc.x + outline.xmax()),
-            true => (loc.x - outline.xmax(), loc.x),
-        };
-        let (y0, y1) = match self.reflect_vert {
-            false => (loc.y, loc.y + outline.ymax()),
-            true => (loc.y - outline.ymax(), loc.y),
-        };
-        Ok(BoundBox::new(Xy::new(x0, y0), Xy::new(x1, y1)))
     }
 }

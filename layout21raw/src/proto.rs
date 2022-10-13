@@ -14,14 +14,25 @@ use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 
 // Local imports
-use crate::utils::Ptr;
-use crate::utils::{ErrorContext, ErrorHelper};
 use crate::{
-    Abstract, AbstractPort, Cell, DepOrder, Element, Instance, LayerKey, LayerPurpose, Layers,
-    Layout, LayoutError, LayoutResult, Library, Point, Shape, TextElement, Units,
+    utils::{ErrorContext, ErrorHelper, Ptr},
+    Abstract, AbstractPort, Cell, DepOrder, Element, Instance, Int, LayerKey, LayerPurpose, Layers,
+    Layer, Layout, LayoutError, LayoutResult, Library, Path, Point, Polygon, Rect, Shape,
+    TextElement, Units,
 };
 pub use layout21protos as proto;
 
+/// Additional [Library] methods for converting to/from proto-format
+impl Library {
+    /// Convert to ProtoBuf
+    pub fn to_proto(&self) -> LayoutResult<proto::Library> {
+        ProtoExporter::export(&self)
+    }
+    /// Create from ProtoBuf
+    pub fn from_proto(plib: proto::Library, layers: Option<Ptr<Layers>>) -> LayoutResult<Library> {
+        ProtoImporter::import(&plib, layers)
+    }
+}
 /// # ProtoBuf Exporter
 #[derive(Debug)]
 pub struct ProtoExporter<'lib> {
@@ -95,20 +106,10 @@ impl<'lib> ProtoExporter<'lib> {
                 .push(self.export_abstract_blockages(layerkey, shapes)?);
         }
         // Convert its outline
-        pabs.outline = Some(self.export_abstract_outline(&abs.outline)?);
+        pabs.outline = Some(self.export_polygon(&abs.outline)?);
         // And we're done - pop the context and return
         self.ctx.pop();
         Ok(pabs)
-    }
-    /// Export an abstract's outline to a [proto::Polygon]
-    fn export_abstract_outline(&mut self, outline: &Element) -> LayoutResult<proto::Polygon> {
-        // Convert to a [ProtoShape] enum
-        let poutline = self.export_element(outline)?;
-        // And if it's (the supported) rect-variant, return it
-        match poutline {
-            ProtoShape::Poly(p) => Ok(p),
-            _ => self.fail("abstract outline is not a polygon"),
-        }
     }
     /// Export an abstract's blockages for layer `layer`
     fn export_abstract_blockages(
@@ -134,6 +135,7 @@ impl<'lib> ProtoExporter<'lib> {
             for shape in shapes.iter() {
                 self.export_and_add_shape(shape, &mut pshapes)?;
             }
+            pport.shapes.push(pshapes);
         }
         Ok(pport)
     }
@@ -228,41 +230,50 @@ impl<'lib> ProtoExporter<'lib> {
     /// Export a [Shape]
     fn export_shape(&mut self, shape: &Shape) -> LayoutResult<ProtoShape> {
         match shape {
-            Shape::Rect { ref p0, ref p1 } => {
-                let minx = p0.x.min(p1.x) as i64;
-                let miny = p0.y.min(p1.y) as i64;
-                let width = p0.x.max(p1.x) as i64 - minx;
-                let height = p0.y.max(p1.y) as i64 - miny;
-                Ok(ProtoShape::Rect(proto::Rectangle {
-                    net: "".into(),
-                    lower_left: Some(proto::Point::new(minx, miny)),
-                    width,
-                    height,
-                }))
-            }
-            Shape::Poly { ref pts } => {
-                let vertices = pts
-                    .iter()
-                    .map(|p| self.export_point(p))
-                    .collect::<Result<Vec<_>, _>>()?;
-                Ok(ProtoShape::Poly(proto::Polygon {
-                    net: "".into(),
-                    vertices,
-                }))
-            }
-            Shape::Path { ref width, ref pts } => {
-                let width = i64::try_from(*width)?;
-                let points = pts
-                    .iter()
-                    .map(|p| self.export_point(p))
-                    .collect::<Result<Vec<_>, _>>()?;
-                Ok(ProtoShape::Path(proto::Path {
-                    net: "".into(),
-                    width,
-                    points,
-                }))
-            }
+            Shape::Rect(ref r) => Ok(ProtoShape::Rect(self.export_rect(r)?)),
+            Shape::Polygon(ref p) => Ok(ProtoShape::Poly(self.export_polygon(p)?)),
+            Shape::Path(ref p) => Ok(ProtoShape::Path(self.export_path(p)?)),
         }
+    }
+    /// Export a [Rect]
+    fn export_rect(&mut self, rect: &Rect) -> LayoutResult<proto::Rectangle> {
+        let (p0, p1) = (&rect.p0, &rect.p1);
+        let minx = p0.x.min(p1.x) as i64;
+        let miny = p0.y.min(p1.y) as i64;
+        let width = p0.x.max(p1.x) as i64 - minx;
+        let height = p0.y.max(p1.y) as i64 - miny;
+        Ok(proto::Rectangle {
+            net: "".into(),
+            lower_left: Some(proto::Point::new(minx, miny)),
+            width,
+            height,
+        })
+    }
+    /// Export a [Polygon]
+    fn export_polygon(&mut self, poly: &Polygon) -> LayoutResult<proto::Polygon> {
+        let vertices = poly
+            .points
+            .iter()
+            .map(|p| self.export_point(p))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(proto::Polygon {
+            net: "".into(),
+            vertices,
+        })
+    }
+    /// Export a [Path]
+    fn export_path(&mut self, path: &Path) -> LayoutResult<proto::Path> {
+        let width = i64::try_from(path.width)?;
+        let points = path
+            .points
+            .iter()
+            .map(|p| self.export_point(p))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(proto::Path {
+            net: "".into(),
+            width,
+            points,
+        })
     }
     /// Convert `shape` and add it to `pshapes`
     fn export_and_add_shape(
@@ -270,13 +281,11 @@ impl<'lib> ProtoExporter<'lib> {
         shape: &Shape,
         pshapes: &mut proto::LayerShapes,
     ) -> LayoutResult<()> {
-        // Convert the shape
-        let pshape = self.export_shape(shape)?;
-        // And add it to the appropriate list
-        match pshape {
-            ProtoShape::Rect(rect) => pshapes.rectangles.push(rect),
-            ProtoShape::Poly(poly) => pshapes.polygons.push(poly),
-            ProtoShape::Path(path) => pshapes.paths.push(path),
+        // Convert the shape, and add it to the appropriate list
+        match shape {
+            Shape::Rect(rect) => pshapes.rectangles.push(self.export_rect(rect)?),
+            Shape::Polygon(poly) => pshapes.polygons.push(self.export_polygon(poly)?),
+            Shape::Path(path) => pshapes.paths.push(self.export_path(path)?),
         };
         Ok(())
     }
@@ -327,6 +336,7 @@ impl ErrorHelper for ProtoExporter<'_> {
     }
 }
 /// Helper enumeration for converting to several proto-primitives
+#[derive(Debug, Clone, PartialEq)]
 enum ProtoShape {
     Rect(proto::Rectangle),
     Poly(proto::Polygon),
@@ -408,24 +418,71 @@ impl ProtoImporter {
         Ok(cell)
     }
     /// Import a [Abstract]
-    #[allow(dead_code)] // FIXME!
-    fn import_abstract(&mut self, _pcell: &proto::Abstract) -> LayoutResult<Abstract> {
-        todo!()
+    fn import_abstract(&mut self, pabs: &proto::Abstract) -> LayoutResult<Abstract> {
+        self.ctx.push(ErrorContext::Abstract);
+
+        let mut abs = Abstract::default();
+
+        abs.name = pabs.name.clone();
+
+        for port in pabs.ports.iter() {
+            abs.ports.push(self.import_abstract_port(port)?);
+        }
+
+        for layershapes in pabs.blockages.iter() {
+            let proto::Layer { number, purpose } = layershapes.layer.as_ref().unwrap();
+            let (layerkey, _) = self
+                .layers
+                .write()
+                .unwrap()
+                .get_or_insert(*number as i16, *purpose as i16)
+                .unwrap();
+            let shapes = self.import_abstract_layer_shapes(layershapes)?;
+            abs.blockages.insert(layerkey, shapes);
+        }
+
+        abs.outline = match self.import_polygon(&pabs.outline.as_ref().unwrap())? {
+            Shape::Polygon(p) => p,
+            _ => unreachable!(
+                "import_polygon only returns the Shape::Polygon(Polygon) enum variant."
+            ),
+        };
+
+        Ok(abs)
+    }
+    /// Import an [AbstractPort]
+    fn import_abstract_port(&mut self, pport: &proto::AbstractPort) -> LayoutResult<AbstractPort> {
+        let mut port = AbstractPort::default();
+        port.net = pport.net.clone();
+
+        for layershapes in pport.shapes.iter() {
+            let proto::Layer { number, purpose } = layershapes.layer.as_ref().unwrap();
+            let (layerkey, _) = self
+                .layers
+                .write()
+                .unwrap()
+                .get_or_insert(*number as i16, *purpose as i16)
+                .unwrap();
+            let shapes = self.import_abstract_layer_shapes(layershapes)?;
+            port.shapes.insert(layerkey, shapes);
+        }
+
+        Ok(port)
     }
     /// Import a [Layout]
-    fn import_layout(&mut self, pcell: &proto::Layout) -> LayoutResult<Layout> {
+    fn import_layout(&mut self, playout: &proto::Layout) -> LayoutResult<Layout> {
         let mut cell = Layout::default();
-        let name = pcell.name.clone();
+        let name = playout.name.clone();
         cell.name = name.clone();
         self.ctx.push(ErrorContext::Impl);
 
-        for inst in &pcell.instances {
+        for inst in &playout.instances {
             cell.insts.push(self.import_instance(inst)?);
         }
-        for s in &pcell.shapes {
+        for s in &playout.shapes {
             cell.elems.extend(self.import_layer_shapes(s)?);
         }
-        for txt in &pcell.annotations {
+        for txt in &playout.annotations {
             cell.annotations.push(self.import_annotation(txt)?);
         }
         self.ctx.pop();
@@ -459,6 +516,34 @@ impl ProtoImporter {
         self.ctx.pop();
         Ok(elems)
     }
+    /// Import a layer's-worth of shapes
+    fn import_abstract_layer_shapes(
+        &mut self,
+        player: &proto::LayerShapes,
+    ) -> LayoutResult<Vec<Shape>> {
+        // Import the layer
+        let (layer, purpose) = match player.layer {
+            Some(ref l) => self.import_layer(l),
+            None => self.fail("Invalid proto::LayerShapes with no Layer"),
+        }?;
+        // Import all the shapes
+        self.ctx.push(ErrorContext::Geometry);
+        let mut shapes = Vec::new();
+        for shape in &player.rectangles {
+            let s = self.import_rect(shape)?;
+            shapes.push(s);
+        }
+        for shape in &player.polygons {
+            let s = self.import_polygon(shape)?;
+            shapes.push(s);
+        }
+        for shape in &player.paths {
+            let s = self.import_path(shape)?;
+            shapes.push(s);
+        }
+        self.ctx.pop();
+        Ok(shapes)
+    }
     /// Import a text annotation
     fn import_annotation(&mut self, x: &proto::TextElement) -> LayoutResult<TextElement> {
         let mut e = TextElement::default();
@@ -476,8 +561,8 @@ impl ProtoImporter {
     }
     /// Import a [Shape::Poly]
     fn import_polygon(&mut self, ppoly: &proto::Polygon) -> LayoutResult<Shape> {
-        let pts: Vec<Point> = self.import_point_vec(&ppoly.vertices)?;
-        Ok(Shape::Poly { pts })
+        let points: Vec<Point> = self.import_point_vec(&ppoly.vertices)?;
+        Ok(Shape::Polygon(Polygon { points }))
     }
     /// Import a [Shape::Rect]
     fn import_rect(&mut self, prect: &proto::Rectangle) -> LayoutResult<Shape> {
@@ -485,16 +570,16 @@ impl ProtoImporter {
             Some(ref p) => self.import_point(p),
             None => self.fail("Invalid proto::Rectangle with no location"),
         }?;
-        let width = isize::try_from(prect.width)?;
-        let height = isize::try_from(prect.height)?;
+        let width = Int::try_from(prect.width)?;
+        let height = Int::try_from(prect.height)?;
         let p1 = Point::new(p0.x + width, p0.y + height);
-        Ok(Shape::Rect { p0, p1 })
+        Ok(Shape::Rect(Rect { p0, p1 }))
     }
     /// Import a [Shape::Path]
     fn import_path(&mut self, x: &proto::Path) -> LayoutResult<Shape> {
-        let pts = self.import_point_vec(&x.points)?;
+        let points = self.import_point_vec(&x.points)?;
         let width = usize::try_from(x.width)?;
-        Ok(Shape::Path { width, pts })
+        Ok(Shape::Path(Path { width, points }))
     }
     /// Add the finishing touches to convert a [Shape] to an [Element]
     fn convert_shape(
@@ -576,8 +661,9 @@ impl ProtoImporter {
         Ok(Point::new(x, y))
     }
     /// Import a vector of [Point]s
-    fn import_point_vec(&mut self, pts: &Vec<proto::Point>) -> LayoutResult<Vec<Point>> {
-        pts.iter()
+    fn import_point_vec(&mut self, points: &Vec<proto::Point>) -> LayoutResult<Vec<Point>> {
+        points
+            .iter()
             .map(|p| self.import_point(p))
             .collect::<Result<Vec<_>, _>>()
     }
@@ -601,6 +687,41 @@ impl ErrorHelper for ProtoImporter {
         }
     }
 }
+impl Layers {
+    /// Load the struct from an external Technology protobuf.
+    pub fn from_proto(library_pb: &proto::Technology) -> LayoutResult<Layers> {
+        let mut layers_by_number = HashMap::new();
+
+        // Generate the Layers data from the given tech proto:
+        for layer_pb in &library_pb.layers {
+            let layer = layers_by_number
+                .entry(layer_pb.index)
+                .or_insert(Layer::from_num(layer_pb.index as i16));
+
+            let sub_index = layer_pb.sub_index as i16;
+            let layer_purpose = match &layer_pb.purpose {
+                Some(purpose) => Layers::proto_to_internal_layer_purpose(sub_index, &purpose.r#type()),
+                None => LayerPurpose::Other(sub_index),
+            };
+            layer.add_purpose(sub_index, layer_purpose)?;
+        }
+
+        let mut layers = Layers::default();
+        for layer in layers_by_number.values() {
+            layers.add(layer.clone());
+        }
+        Ok(layers)
+    }
+
+    fn proto_to_internal_layer_purpose(sub_index: i16, purpose_pb: &proto::LayerPurposeType)
+        -> LayerPurpose {
+        match purpose_pb {
+            proto::LayerPurposeType::Label => LayerPurpose::Label,
+            _ => LayerPurpose::Other(sub_index),
+        }
+    }
+
+}
 
 #[cfg(all(test, feature = "proto"))]
 #[test]
@@ -618,27 +739,27 @@ fn proto1() -> LayoutResult<()> {
                 net: Some("prt_rect_net".to_string()),
                 layer,
                 purpose: purpose.clone(),
-                inner: Shape::Rect {
+                inner: Shape::Rect(Rect {
                     p0: Point::default(),
                     p1: Point::default(),
-                },
+                }),
             },
             Element {
                 net: Some("prt_poly_net".to_string()),
                 layer,
                 purpose: purpose.clone(),
-                inner: Shape::Poly {
-                    pts: vec![Point::default(), Point::default(), Point::default()],
-                },
+                inner: Shape::Polygon(Polygon {
+                    points: vec![Point::default(), Point::default(), Point::default()],
+                }),
             },
             Element {
                 net: Some("prt_path_net".to_string()),
                 layer,
                 purpose: purpose.clone(),
-                inner: Shape::Path {
+                inner: Shape::Path(Path {
                     width: 5,
-                    pts: vec![Point::default(), Point::default(), Point::default()],
-                },
+                    points: vec![Point::default(), Point::default(), Point::default()],
+                }),
             },
         ],
         insts: Vec::new(),

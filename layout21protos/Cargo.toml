@@ -6,15 +6,8 @@ authors = ["Dan Fritchman <dan@fritch.mn>"]
 edition = "2018"
 license = "BSD-3-Clause"
 repository = "https://github.com/dan-fritchman/Layout21"
-version = "0.2.0"
+version = "0.2.1"
 workspace = "../"
 
 [dependencies]
-prost = "0.8.0"
-prost-types = "0.6.1"
-serde = {version = "1.0", features = ["derive"]}
-serde_derive = "1.0.88"
-
-[build-dependencies]
-prost-build = "0.6.1"
-serde_derive = "1.0.88"
+vlsir = { path = "vlsir/bindings/rust", version = "2.0.1" }

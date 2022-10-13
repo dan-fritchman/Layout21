@@ -1,0 +1,29 @@
+---
+macros:
+  - name: macro_name
+    pins:
+      - name: pin_name
+        ports:
+          - layers:
+              - layer_name: layer_name
+                geometries:
+                  - Shape:
+                      Rect:
+                        - x: "88.4"
+                          y: "0.0"
+                        - x: "88.78"
+                          y: "1.06"
+        direction: Input
+    class:
+      Block:
+        tp: ~
+    size:
+      - "999.9"
+      - "111.1"
+    symmetry:
+      - X
+      - Y
+      - R90
+version: "5.4"
+units:
+  database_microns: 2000

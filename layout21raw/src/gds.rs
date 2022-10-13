@@ -9,17 +9,35 @@ use std::collections::{HashMap, HashSet};
 use std::convert::{TryFrom, TryInto};
 use std::hash::Hash;
 
+use gds21::GdsElement;
 // Crates.io
 use slotmap::{new_key_type, SlotMap};
 
 // Local imports
-use crate::utils::{ErrorContext, ErrorHelper, Ptr};
-use crate::{Abstract, AbstractPort, LayerKey, TextElement};
 use crate::{
-    Cell, Dir, Element, Instance, LayerPurpose, Layers, Layout, Library, Point, Shape, Units,
+    bbox::BoundBoxTrait,
+    error::{LayoutError, LayoutResult},
+    geom::{Path, Point, Polygon, Rect, Shape, ShapeTrait},
+    utils::{ErrorContext, ErrorHelper, Ptr},
+    Abstract, AbstractPort, Cell, Dir, Element, Instance, Int, LayerKey, LayerPurpose, Layers,
+    Layout, Library, TextElement, Units,
 };
-use crate::{LayoutError, LayoutResult};
 pub use gds21;
+
+/// Additional [Library] methods for GDSII conversion
+impl Library {
+    /// Convert to a GDSII Library
+    pub fn to_gds(&self) -> LayoutResult<gds21::GdsLibrary> {
+        GdsExporter::export(&self)
+    }
+    /// Create from GDSII
+    pub fn from_gds(
+        gdslib: &gds21::GdsLibrary,
+        layers: Option<Ptr<Layers>>,
+    ) -> LayoutResult<Library> {
+        GdsImporter::import(&gdslib, layers)
+    }
+}
 
 new_key_type! {
     /// Keys for [Element] entries
@@ -101,9 +119,24 @@ impl<'lib> GdsExporter<'lib> {
 
         let mut elems = Vec::with_capacity(1 + abs.ports.len());
 
+        // Flatten our points-vec, converting to 32-bit along the way
+        let mut xy = abs
+            .outline
+            .points
+            .iter()
+            .map(|p| self.export_point(p))
+            .collect::<Result<Vec<_>, _>>()?;
+        // Add the origin a second time, to "close" the polygon
+        xy.push(self.export_point(&abs.outline.points[0])?);
+        let outline = GdsElement::GdsBoundary(gds21::GdsBoundary {
+            layer: i16::MAX,
+            datatype: i16::MAX,
+            xy,
+            ..Default::default()
+        });
         // Blockages do not map to GDSII elements.
         // Conversion includes the abstract's name, outline and ports.
-        elems.extend(self.export_element(&abs.outline)?);
+        elems.push(outline);
 
         // Convert each [AbstractPort]
         for port in abs.ports.iter() {
@@ -111,10 +144,10 @@ impl<'lib> GdsExporter<'lib> {
         }
 
         // Create and return a [GdsStruct]
-        let mut strukt = gds21::GdsStruct::new(&abs.name);
-        strukt.elems = elems;
+        let mut gds_struct = gds21::GdsStruct::new(&abs.name);
+        gds_struct.elems = elems;
         self.ctx.pop();
-        Ok(strukt)
+        Ok(gds_struct)
     }
     /// Export an [AbstractPort]
     pub fn export_abstract_port(
@@ -167,7 +200,7 @@ impl<'lib> GdsExporter<'lib> {
         if inst.reflect_vert || inst.angle.is_some() {
             let angle = inst.angle.map(|a| f64::from(a));
             strans = Some(gds21::GdsStrans {
-                reflected: true,
+                reflected: inst.reflect_vert,
                 angle,
                 ..Default::default()
             });
@@ -234,7 +267,8 @@ impl<'lib> GdsExporter<'lib> {
         layerspec: &gds21::GdsLayerSpec,
     ) -> LayoutResult<gds21::GdsElement> {
         let elem = match shape {
-            Shape::Rect { p0, p1 } => {
+            Shape::Rect(r) => {
+                let (p0, p1) = (&r.p0, &r.p1);
                 let x0 = p0.x.try_into()?;
                 let y0 = p0.y.try_into()?;
                 let x1 = p1.x.try_into()?;
@@ -249,14 +283,15 @@ impl<'lib> GdsExporter<'lib> {
                 }
                 .into()
             }
-            Shape::Poly { pts } => {
+            Shape::Polygon(poly) => {
                 // Flatten our points-vec, converting to 32-bit along the way
-                let mut xy = pts
+                let mut xy = poly
+                    .points
                     .iter()
                     .map(|p| self.export_point(p))
                     .collect::<Result<Vec<_>, _>>()?;
                 // Add the origin a second time, to "close" the polygon
-                xy.push(self.export_point(&pts[0])?);
+                xy.push(self.export_point(&poly.points[0])?);
                 gds21::GdsBoundary {
                     layer: layerspec.layer,
                     datatype: layerspec.xtype,
@@ -265,18 +300,18 @@ impl<'lib> GdsExporter<'lib> {
                 }
                 .into()
             }
-            Shape::Path { pts, width } => {
+            Shape::Path(path) => {
                 // Flatten our points-vec, converting to 32-bit along the way
                 let mut xy = Vec::new();
-                for p in pts.iter() {
+                for p in path.points.iter() {
                     xy.push(self.export_point(p)?);
                 }
                 // Add the origin a second time, to "close" the polygon
-                xy.push(self.export_point(&pts[0])?);
+                xy.push(self.export_point(&path.points[0])?);
                 gds21::GdsPath {
                     layer: layerspec.layer,
                     datatype: layerspec.xtype,
-                    width: Some(i32::try_from(*width)?),
+                    width: Some(i32::try_from(path.width)?),
                     xy,
                     ..Default::default()
                 }
@@ -292,8 +327,9 @@ impl<'lib> GdsExporter<'lib> {
         shape: &Shape,
         layerspec: &gds21::GdsLayerSpec,
     ) -> LayoutResult<gds21::GdsElement> {
-        // Text is placed in the shape's (at least rough) center
-        let loc = shape.center();
+        // Sort out a location to place the text
+        let loc = shape.label_location()?;
+
         // Rotate that text 90 degrees for mostly-vertical shapes
         let strans = match shape.orientation() {
             Dir::Horiz => None,
@@ -327,6 +363,77 @@ impl ErrorHelper for GdsExporter<'_> {
             message: msg.into(),
             stack: self.ctx.clone(),
         }
+    }
+}
+
+/// # PlaceLabels
+///
+/// Trait for calculating the location of text-labels, generally per [Shape].
+///
+/// Sole function `label_location` calculates an appropriate location,
+/// or returns a [LayoutError] if one cannot be found.
+///
+/// While Layout21 formats do not include "placed text", GDSII relies on it for connectivity annotations.
+/// How to place these labels varies by shape type.
+///
+trait PlaceLabels {
+    fn label_location(&self) -> LayoutResult<Point>;
+}
+impl PlaceLabels for Shape {
+    fn label_location(&self) -> LayoutResult<Point> {
+        // Dispatch based on shape-type
+        match self {
+            Shape::Rect(ref r) => r.label_location(),
+            Shape::Polygon(ref p) => p.label_location(),
+            Shape::Path(ref p) => p.label_location(),
+        }
+    }
+}
+impl PlaceLabels for Rect {
+    fn label_location(&self) -> LayoutResult<Point> {
+        // Place rectangle-labels in the center of the rectangle
+        Ok(self.center())
+    }
+}
+impl PlaceLabels for Path {
+    fn label_location(&self) -> LayoutResult<Point> {
+        // Place on the center of the first segment
+        let p0 = &self.points[0];
+        let p1 = &self.points[1];
+        Ok(Point::new((p0.x + p1.x) / 2, (p0.y + p1.y) / 2))
+    }
+}
+impl PlaceLabels for Polygon {
+    fn label_location(&self) -> LayoutResult<Point> {
+        // Where, oh where, to place a label on an arbitrary polygon? Let us count the ways.
+
+        // Priority 1: if the center of our bounding box lies within the polygon, use that.
+        // In simple-polygon cases, this is most likely our best choice.
+        // In many other cases, e.g. for "U-shaped" polygons, this will fall outside the polygon and be invalid.
+        let bbox_center = self.points.bbox().center();
+        if self.contains(&bbox_center) {
+            return Ok(bbox_center);
+        }
+
+        // Priority 2: try the four coordinates immediately above, below, left, and right of the polygon's first point.
+        // At least one must lie within the polygon for it to be a valid layout shape.
+        // If none are, fail.
+        let pt0 = self.point0();
+        let candidates = vec![
+            Point::new(pt0.x, pt0.y - 1),
+            Point::new(pt0.x - 1, pt0.y),
+            Point::new(pt0.x, pt0.y + 1),
+            Point::new(pt0.x + 1, pt0.y),
+        ];
+        for pt in candidates {
+            if self.contains(&pt) {
+                return Ok(pt);
+            }
+        }
+        Err(LayoutError::msg(format!(
+            "No valid label location found for polygon {:?}",
+            self,
+        )))
     }
 }
 
@@ -617,13 +724,13 @@ impl GdsImporter {
                     && pts[3].x == pts[0].x))
         {
             // That makes this a Rectangle.
-            Shape::Rect {
+            Shape::Rect(Rect {
                 p0: pts[0].clone(),
                 p1: pts[2].clone(),
-            }
+            })
         } else {
             // Otherwise, it's a polygon
-            Shape::Poly { pts }
+            Shape::Polygon(Polygon { points: pts })
         };
 
         // Grab (or create) its [Layer]
@@ -646,10 +753,10 @@ impl GdsImporter {
         // This does not check fox "box validity", and imports the
         // first and third of those five coordinates,
         // which are by necessity for a valid [GdsBox] located at opposite corners.
-        let inner = Shape::Rect {
+        let inner = Shape::Rect(Rect {
             p0: self.import_point(&x.xy[0])?,
             p1: self.import_point(&x.xy[2])?,
-        };
+        });
 
         // Grab (or create) its [Layer]
         let (layer, purpose) = self.import_element_layer(x)?;
@@ -674,7 +781,7 @@ impl GdsImporter {
             return self.fail("Invalid nonspecifed GDS Path width ");
         };
         // Create the shape
-        let inner = Shape::Path { width, pts };
+        let inner = Shape::Path(Path { width, points: pts });
 
         // Grab (or create) its [Layer]
         let (layer, purpose) = self.import_element_layer(x)?;
@@ -759,8 +866,8 @@ impl GdsImporter {
             self.fail("Unsupported Non-Rectangular GDS Array")?;
         }
         // Sort out the inter-element spacing
-        let mut xstep = (p1.x - p0.x) / isize::from(aref.cols);
-        let mut ystep = (p2.y - p0.y) / isize::from(aref.rows);
+        let mut xstep = (p1.x - p0.x) / Int::from(aref.cols);
+        let mut ystep = (p2.y - p0.y) / Int::from(aref.rows);
 
         // Incorporate the reflection/ rotation settings
         let mut angle = None;
@@ -780,8 +887,8 @@ impl GdsImporter {
                 let prev_xy = (i32::try_from(xstep)?, i32::try_from(ystep)?);
                 let prev_xy = (f64::from(prev_xy.0), f64::from(prev_xy.1));
                 let a = a.to_radians(); // Rust `sin` and `cos` take radians, convert first
-                xstep = (prev_xy.0 * a.cos() - prev_xy.1 * a.sin()) as isize;
-                ystep = (prev_xy.0 * a.sin() + prev_xy.1 * a.cos()) as isize;
+                xstep = (prev_xy.0 * a.cos() - prev_xy.1 * a.sin()) as Int;
+                ystep = (prev_xy.0 * a.sin() + prev_xy.1 * a.cos()) as Int;
 
                 // Set the same angle to each generated Instance
                 angle = Some(a);
@@ -791,9 +898,9 @@ impl GdsImporter {
         }
         // Create the Instances
         let mut insts = Vec::with_capacity((aref.rows * aref.cols) as usize);
-        for ix in 0..isize::from(aref.cols) {
+        for ix in 0..Int::from(aref.cols) {
             let x = p0.x + ix * xstep;
-            for iy in 0..isize::from(aref.rows) {
+            for iy in 0..Int::from(aref.rows) {
                 let y = p0.y + iy * ystep;
                 insts.push(Instance {
                     inst_name: format!("{}[{}][{}]", cname, ix, iy), // `{array.name}[{col}][{row}]`

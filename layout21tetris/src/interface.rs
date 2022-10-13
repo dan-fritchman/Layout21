@@ -1,6 +1,18 @@
-/// Interfaces Module,
-/// Describing Cells in terms of their IO Interfaces
+//!
+//! # Interfaces Module
+//!
+//! Describing Cells in terms of their IO Interfaces
+//!
+
+// Crates.io Imports
 use serde::{Deserialize, Serialize};
+
+/// # Port
+///
+/// Logical port, as in a netlist or HDL description.
+/// Includes scalar, vector (bus), and bundle-valued ports.
+/// Does not include physical/ geometric information.
+///
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Port {
     /// Port Name

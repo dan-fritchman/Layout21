@@ -8,7 +8,7 @@ use std::collections::HashSet;
 // Local imports
 use crate::raw::LayoutResult;
 use crate::utils::{Ptr, PtrList};
-use crate::{cell, raw, rawconv, validate};
+use crate::{cell, conv, raw, validate};
 
 /// # Layout Library
 ///
@@ -33,7 +33,7 @@ impl Library {
     }
     /// Export to a [raw::Library]
     pub fn to_raw(self, stack: validate::ValidStack) -> LayoutResult<Ptr<raw::Library>> {
-        rawconv::RawExporter::convert(self, stack)
+        conv::raw::RawExporter::convert(self, stack)
     }
     /// Add a [Cell]
     pub fn add_cell(&mut self, cell: cell::Cell) -> Ptr<cell::Cell> {

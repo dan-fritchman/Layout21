@@ -9,18 +9,19 @@ use std::convert::TryFrom;
 
 // Local imports
 use crate::bbox::HasBoundBox;
-use crate::cell::{self, Instance, Layout};
+use crate::{instance::Instance, layout::Layout};
 use crate::coords::{LayerPitches, PrimPitches, UnitSpeced, Xy};
 use crate::library::Library;
+use crate::array::{Array, ArrayInstance, Arrayable};
 use crate::placement::{
-    Align, Array, ArrayInstance, Arrayable, Place, Placeable, RelativePlace, SepBy, Side,
+    Align, Place, Placeable, RelativePlace, SepBy, Side,
 };
 use crate::raw::{Dir, LayoutError, LayoutResult};
 use crate::utils::{DepOrder, DepOrderer, ErrorContext, ErrorHelper, Ptr};
 use crate::validate::ValidStack;
 use crate::{
     abs, stack,
-    tracks::{TrackIntersection, TrackRef},
+    tracks::{TrackCross, TrackRef},
 };
 
 /// # Placer
@@ -97,7 +98,7 @@ impl Placer {
                 }
                 Placeable::Assign(ref ptr) => {
                     let assn = ptr.read()?;
-                    let abs: TrackIntersection = self.resolve_assign_place(&assn.loc)?;
+                    let abs: TrackCross = self.resolve_assign_place(&assn.loc)?;
                     let new_assn = stack::Assign {
                         net: assn.net.clone(),
                         at: abs,
@@ -116,7 +117,7 @@ impl Placer {
     fn flatten_array_inst(
         &mut self,
         array_inst: &ArrayInstance,
-    ) -> LayoutResult<Vec<cell::Instance>> {
+    ) -> LayoutResult<Vec<Instance>> {
         // Read the child-Instances from the underlying [Array] definition
         let mut children = {
             let array = array_inst.array.read()?;
@@ -322,7 +323,7 @@ impl Placer {
         Ok(res)
     }
     /// Resolve the location of a track-crossing at `rel`
-    fn resolve_assign_place(&mut self, rel: &RelativePlace) -> LayoutResult<TrackIntersection> {
+    fn resolve_assign_place(&mut self, rel: &RelativePlace) -> LayoutResult<TrackCross> {
         let port_loc = match &rel.to {
             Placeable::Port { inst, port } => self.locate_instance_port(&*inst.read()?, port)?,
             Placeable::Instance(_) => unimplemented!(),
@@ -379,30 +380,14 @@ impl Placer {
             } else if newlayer_dir == self.stack.metal(ref_cross.1.layer)?.spec.dir {
                 (ref_cross.1, ref_cross.0)
             } else {
-                unreachable!()
+                return self.fail("Invalid non-crossing TrackCross");
             }
         };
 
         // Get the track on `newlayer` closest to `par`
         let new_track: TrackRef = self.convert_track_layer(&par, newlayer)?;
-
-        // And get the above/below indicator required for `TrackIntersection`
-        let relz = if cross.layer == new_track.layer + 1 {
-            Ok(stack::RelZ::Above)
-        } else if cross.layer == new_track.layer - 1 {
-            Ok(stack::RelZ::Below)
-        } else {
-            self.fail(format!(
-                "Invalid track crossing {:?} x {:?}",
-                new_track, cross
-            ))
-        }?;
-        let rv = TrackIntersection {
-            layer: new_track.layer,
-            track: new_track.track,
-            at: cross.track,
-            relz,
-        };
+        // And turn the combination into our result [TrackCross]
+        let rv = TrackCross::new(new_track, cross);
         Ok(rv)
     }
     /// Resolve a location of [Instance] `inst` relative to its [RelativePlace] `rel`.
@@ -634,6 +619,7 @@ impl DepOrder for PlaceOrder {
 mod tests {
     use super::*;
     use crate::outline::Outline;
+    use crate::cell::Cell;
     use crate::placement::{Place, Placeable, RelAssign, RelativePlace, SepBy, Separation, Side};
     use crate::tests::{exports, stacks::SampleStacks};
 
@@ -955,18 +941,18 @@ mod tests {
             assert_eq!(parent_layout.assignments.len(), 1);
             let assn = &parent_layout.assignments[0];
             assert_eq!(assn.net, "NETPPP");
-            assert_eq!(assn.at.layer, 2);
-            assert_eq!(assn.at.track, 0);
-            assert_eq!(assn.at.at, 1);
-            assert_eq!(assn.at.relz, stack::RelZ::Below);
+            assert_eq!(assn.at.track.layer, 2);
+            assert_eq!(assn.at.track.track, 0);
+            assert_eq!(assn.at.cross.layer, 1);
+            assert_eq!(assn.at.cross.track, 1);
         }
         exports(lib, stack)
     }
     pub struct SampleLib {
         pub lib: Library,
-        pub big: Ptr<cell::Cell>,
-        pub ibig: Ptr<cell::Instance>,
-        pub lil: Ptr<cell::Cell>,
+        pub big: Ptr<Cell>,
+        pub ibig: Ptr<Instance>,
+        pub lil: Ptr<Cell>,
         pub parent: Layout,
     }
     impl SampleLib {
@@ -989,7 +975,7 @@ mod tests {
             };
             let ibig = parent.instances.add(ibig);
             // Create a unit cell which we'll instantiate a few times around `ibig`
-            let mut lil = cell::Cell::new("lil");
+            let mut lil = Cell::new("lil");
             lil.layout = Some(Layout::new("lil", 1, Outline::rect(2, 1)?));
             let mut lil_abs = abs::Abstract::new("lil", 1, Outline::rect(2, 1)?);
             lil_abs.ports.push(abs::Port {

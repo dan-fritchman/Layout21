@@ -30,7 +30,7 @@ impl SampleStacks {
             units: Units::default(),
             boundary_layer,
             prim: PrimitiveLayer::new((100, 100).into()),
-            layers: Vec::new(), // No metal layers
+            metals: Vec::new(), // No metal layers
             vias: Vec::new(),   // No vias
             rawlayers: Some(Ptr::new(rawlayers)),
         };
@@ -66,8 +66,8 @@ impl SampleStacks {
             prim: PrimitiveLayer {
                 pitches: (460, 2720).into(),
             },
-            layers: vec![
-                Layer {
+            metals: vec![
+                MetalLayer {
                     name: "met1".into(),
                     entries: vec![
                         TrackSpec::gnd(480),
@@ -83,7 +83,7 @@ impl SampleStacks {
                     flip: FlipMode::EveryOther,
                     prim: PrimitiveMode::Split,
                 },
-                Layer {
+                MetalLayer {
                     name: "met2".into(),
                     entries: vec![TrackSpec::sig(140), TrackSpec::gap(320)],
                     dir: Dir::Vert,
@@ -94,7 +94,7 @@ impl SampleStacks {
                     flip: FlipMode::None,
                     prim: PrimitiveMode::Stack,
                 },
-                Layer {
+                MetalLayer {
                     name: "met3".into(),
                     entries: vec![
                         TrackSpec::gnd(480),
@@ -110,7 +110,7 @@ impl SampleStacks {
                     flip: FlipMode::EveryOther,
                     prim: PrimitiveMode::Stack,
                 },
-                Layer {
+                MetalLayer {
                     name: "met4".into(),
                     entries: vec![
                         TrackSpec::gnd(510),
@@ -126,7 +126,7 @@ impl SampleStacks {
                     flip: FlipMode::EveryOther,
                     prim: PrimitiveMode::Stack,
                 },
-                Layer {
+                MetalLayer {
                     name: "met5".into(),
                     entries: vec![
                         TrackSpec::gnd(480),

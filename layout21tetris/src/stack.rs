@@ -5,8 +5,8 @@ use std::fmt::Debug;
 use serde::{Deserialize, Serialize};
 
 // Local imports
-use crate::cell::Instance;
 use crate::coords::{DbUnits, Xy};
+use crate::instance::Instance;
 use crate::raw::{self, Dir, LayoutResult, Units};
 use crate::utils::Ptr;
 use crate::{tracks::*, validate};
@@ -21,7 +21,7 @@ pub struct Stack {
     /// Primitive Layer
     pub prim: PrimitiveLayer,
     /// Set of metal layers
-    pub layers: Vec<Layer>,
+    pub metals: Vec<MetalLayer>,
     /// Set of via layers
     pub vias: Vec<ViaLayer>,
     /// [raw::Layer] Mappings
@@ -30,20 +30,19 @@ pub struct Stack {
     pub boundary_layer: Option<raw::LayerKey>,
 }
 impl Stack {
-    /// Run validation, consuming `self` and creating a `ValidStack`
+    /// Run validation, consuming `self` and creating a [validate::ValidStack]
     pub fn validate(self) -> LayoutResult<validate::ValidStack> {
-        use validate::StackValidator;
-        StackValidator::validate(self)
+        validate::validate_stack(self)
     }
 }
-/// # Layer
+/// # MetalLayer
 ///
 /// Metal layer in a [Stack]
 /// Each layer is effectively infinite-spanning in one dimension, and periodic in the other.
 /// Layers with `dir=Dir::Horiz` extend to infinity in x, and repeat in y, and vice-versa.
 ///
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Layer {
+pub struct MetalLayer {
     /// Layer Name
     pub name: String,
     /// Direction Enumeration (Horizontal/ Vertical)
@@ -68,7 +67,7 @@ pub struct LayerPeriodData {
     pub signals: Vec<TrackData>,
     pub rails: Vec<TrackData>,
 }
-impl Layer {
+impl MetalLayer {
     /// Convert this [Layer]'s track-info into a [LayerPeriodData]
     pub(crate) fn to_layer_period_data(&self) -> LayoutResult<LayerPeriodData> {
         let mut period = LayerPeriodData::default();
@@ -225,7 +224,7 @@ impl<'lib> LayerPeriod<'lib> {
         &mut self,
         start: DbUnits,
         stop: DbUnits,
-        src: &'lib TrackIntersection,
+        src: &'lib TrackCross,
     ) -> TrackResult<()> {
         for t in self.rails.iter_mut() {
             t.cut(start, stop, src)?;
@@ -293,7 +292,16 @@ pub struct Assign {
     /// Net Name
     pub net: String,
     /// Track Intersection Location
-    pub at: TrackIntersection,
+    pub at: TrackCross,
+}
+impl Assign {
+    /// Create a new [Assign]
+    pub fn new(net: impl Into<String>, at: impl Into<TrackCross>) -> Self {
+        Self {
+            net: net.into(),
+            at: at.into(),
+        }
+    }
 }
 /// Relative Z-Axis Reference to one Layer `Above` or `Below` another
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

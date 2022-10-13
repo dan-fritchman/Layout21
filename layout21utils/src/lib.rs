@@ -13,3 +13,6 @@ pub use error::*;
 
 pub mod dep_order;
 pub use dep_order::*;
+
+pub mod enumstr;
+pub use enumstr::*;

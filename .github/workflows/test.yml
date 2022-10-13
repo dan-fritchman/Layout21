@@ -18,6 +18,27 @@ jobs:
           toolchain: stable
           override: true
 
+      - name: Install protoc
+        uses: arduino/setup-protoc@v1
+        with:
+          version: '3.x'
+
+      - name: Setup python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x' 
+
+      - name: Install 2to3, protobuf and black
+        run: pip3 install 2to3 protobuf black
+
+      - name: Check out latest Vlsir dependencies
+        working-directory: layout21protos
+        run: |
+          git clone https://github.com/Vlsir/Vlsir.git vlsir
+          cd vlsir
+          scripts/build.sh
+          cd -
+
       - name: Run cargo test
         run: cargo test --all --verbose -- --show-output 
 

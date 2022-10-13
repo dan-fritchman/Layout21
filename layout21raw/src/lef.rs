@@ -11,8 +11,8 @@ use std::convert::{TryFrom, TryInto};
 // Local imports
 use crate::utils::{ErrorContext, ErrorHelper, Ptr};
 use crate::{
-    Abstract, AbstractPort, Cell, Element, Layer, LayerKey, LayerPurpose, Layers, LayoutError,
-    LayoutResult, Library, Point, Shape, Units,
+    Abstract, AbstractPort, Cell, Element, Int, Layer, LayerKey, LayerPurpose, Layers, LayoutError,
+    LayoutResult, Library, Path, Point, Polygon, Rect, Shape, Units,
 };
 use lef21;
 
@@ -133,18 +133,19 @@ impl<'lib> LefExporter<'lib> {
     fn export_shape(&self, shape: &Shape) -> LayoutResult<lef21::LefGeometry> {
         // Conver to a [LefShape]
         let inner: lef21::LefShape = match shape {
-            Shape::Rect { ref p0, ref p1 } => {
-                lef21::LefShape::Rect(self.export_point(p0)?, self.export_point(p1)?)
+            Shape::Rect(ref r) => {
+                lef21::LefShape::Rect(self.export_point(&r.p0)?, self.export_point(&r.p1)?)
             }
-            Shape::Poly { ref pts } => {
-                let points = pts
+            Shape::Polygon(ref poly) => {
+                let points = poly
+                    .points
                     .iter()
                     .map(|p| self.export_point(p))
                     .collect::<Result<Vec<_>, _>>()?;
                 lef21::LefShape::Polygon(points)
             }
             Shape::Path { .. } => {
-                todo!();
+                unimplemented!("LefExporter::PATH");
             }
         };
         // Wrap it in the [LefGeometry] enum (which also includes repetitions) and return it
@@ -255,7 +256,7 @@ impl LefImporter {
             // Grab a [Point] from the `size` field
             let lefsize = self.unwrap(lefmacro.size.as_ref(), "Missing LEF size")?;
             let lefsize = lef21::LefPoint::new(lefsize.0, lefsize.1);
-            let lefsize = self.import_point(&lefsize)?;
+            let Point { x, y } = self.import_point(&lefsize)?;
 
             // FIXME: what layer this goes on.
             // Grab one named `boundary`.
@@ -270,14 +271,14 @@ impl LefImporter {
                     }
                 }
             };
-            Element {
-                net: None,
-                layer,
-                purpose: LayerPurpose::Outline,
-                inner: Shape::Rect {
-                    p0: Point::new(0, 0),
-                    p1: lefsize,
-                },
+
+            Polygon {
+                points: vec![
+                    Point::new(0, 0),
+                    Point::new(x, 0),
+                    Point::new(x, y),
+                    Point::new(0, y),
+                ],
             }
         };
         // Create the [Abstract] to be returned
@@ -387,7 +388,7 @@ impl LefImporter {
     /// Import a [Shape::Poly]
     fn import_polygon(&mut self, lefpoints: &Vec<lef21::LefPoint>) -> LayoutResult<Shape> {
         let pts: Vec<Point> = self.import_point_vec(lefpoints)?;
-        Ok(Shape::Poly { pts })
+        Ok(Shape::Polygon(Polygon { points: pts }))
     }
     /// Import a [Shape::Rect]
     fn import_rect(
@@ -396,7 +397,7 @@ impl LefImporter {
     ) -> LayoutResult<Shape> {
         let p0 = self.import_point(lefpoints.0)?;
         let p1 = self.import_point(lefpoints.1)?;
-        Ok(Shape::Rect { p0, p1 })
+        Ok(Shape::Rect(Rect { p0, p1 }))
     }
     /// Import a [Shape::Path]
     fn import_path(
@@ -412,7 +413,7 @@ impl LefImporter {
         // Convert each of the Points
         let pts = self.import_point_vec(pts)?;
         // And return the path
-        Ok(Shape::Path { width, pts })
+        Ok(Shape::Path(Path { width, points: pts }))
     }
     /// Import a vector of [Point]s
     fn import_point_vec(&mut self, pts: &Vec<lef21::LefPoint>) -> LayoutResult<Vec<Point>> {
@@ -428,7 +429,7 @@ impl LefImporter {
         ))
     }
     /// Import a distance coordinate, converting between units
-    fn import_dist(&mut self, lefdec: &lef21::LefDecimal) -> LayoutResult<isize> {
+    fn import_dist(&mut self, lefdec: &lef21::LefDecimal) -> LayoutResult<Int> {
         let scaled = lefdec * lef21::LefDecimal::from(self.dist_scale);
         if !scaled.fract().is_zero() {
             self.fail(format!(
@@ -482,24 +483,23 @@ mod tests {
         let layers = crate::tests::layers()?;
         let a = Abstract {
             name: "to_lef1".into(),
-            outline: Element {
-                net: None,
-                layer: layers.keyname("boundary").unwrap(),
-                purpose: LayerPurpose::Outline,
-                inner: Shape::Rect {
-                    p0: Point::new(0, 0),
-                    p1: Point::new(11, 11),
-                },
+            outline: Polygon {
+                points: vec![
+                    Point::new(0, 0),
+                    Point::new(11, 0),
+                    Point::new(11, 11),
+                    Point::new(0, 11),
+                ],
             },
             ports: vec![AbstractPort {
                 net: "port1".into(),
                 // Collect a hashmap of shapes from (LayerKey, Vec<Shape>) pairs
                 shapes: vec![(
                     layers.keyname("met1").unwrap(),
-                    vec![Shape::Rect {
+                    vec![Shape::Rect(Rect {
                         p0: Point::new(1, 1),
                         p1: Point::new(2, 2),
-                    }],
+                    })],
                 )]
                 .into_iter()
                 .collect(),
@@ -507,10 +507,10 @@ mod tests {
             // Collect a hashmap of shapes from (LayerKey, Vec<Shape>) pairs
             blockages: vec![(
                 layers.keyname("met1").unwrap(),
-                vec![Shape::Rect {
+                vec![Shape::Rect(Rect {
                     p0: Point::new(0, 0),
                     p1: Point::new(10, 10),
-                }],
+                })],
             )]
             .into_iter()
             .collect(),
