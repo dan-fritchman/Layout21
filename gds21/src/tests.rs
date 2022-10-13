@@ -194,7 +194,7 @@ fn test_invalid_dates() -> GdsResult<()> {
 fn check(lib: &GdsLibrary, fname: &impl AsRef<Path>) {
     use crate::utils::ser::SerializationFormat::Json;
     // Uncomment this bit to over-write the golden data
-    Json.save(lib, fname).unwrap();
+    // Json.save(lib, fname).unwrap();
 
     let golden = Json.open(fname).unwrap();
     assert_eq!(*lib, golden);
