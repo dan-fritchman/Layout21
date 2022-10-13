@@ -952,7 +952,7 @@ impl GdsLibrary {
         GdsParser::open(fname)?.parse_lib()
     }
     /// Read a [GdsLibrary] from byte-vector `bytes`
-    pub fn from_bytes(bytes: Vec<u8>) -> GdsResult<GdsLibrary> {
+    pub fn from_bytes(bytes: &[u8]) -> GdsResult<GdsLibrary> {
         // Create the parser, and parse a Library
         GdsParser::from_bytes(bytes)?.parse_lib()
     }
@@ -1135,7 +1135,7 @@ pub fn roundtrip(lib: &GdsLibrary) -> GdsResult<()> {
     file.seek(SeekFrom::Start(0))?;
     let mut bytes = Vec::new();
     file.read_to_end(&mut bytes)?;
-    let lib2 = GdsLibrary::from_bytes(bytes)?;
+    let lib2 = GdsLibrary::from_bytes(&bytes)?;
 
     // And check the two line up
     assert_eq!(*lib, lib2);
