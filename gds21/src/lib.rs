@@ -1009,8 +1009,8 @@ impl GdsLibrary {
     }
     pub fn set_all_dates(&mut self, time: &NaiveDateTime) {
         let forced_gds_date = GdsDateTimes {
-            modified: time.clone(),
-            accessed: time.clone(),
+            modified: GdsDateTime::DateTime(time.clone()),
+            accessed: GdsDateTime::DateTime(time.clone()),
         };
         self.dates = forced_gds_date.clone();
         for gds_struct in &mut self.structs {
