@@ -1,4 +1,14 @@
-use super::*;
+#[allow(unused_imports)]
+use std::io::prelude::*;
+use std::path::Path;
+use std::str;
+
+// Crates.io
+use chrono::NaiveDate;
+
+// Local Imports
+use crate::data::*;
+use crate::read::*;
 
 /// Specified creation date for test cases
 fn test_dates() -> GdsDateTimes {
@@ -197,7 +207,7 @@ fn test_invalid_dates() -> GdsResult<()> {
 
 /// Compare `lib` to "golden" data loaded from JSON at path `golden`.
 fn check(lib: &GdsLibrary, fname: &impl AsRef<Path>) {
-    use crate::utils::ser::SerializationFormat::Json;
+    use layout21utils::SerializationFormat::Json;
     // Uncomment this bit to over-write the golden data
     // Json.save(lib, fname).unwrap();
 
