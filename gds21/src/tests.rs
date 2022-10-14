@@ -173,8 +173,7 @@ fn empty_lib() -> GdsResult<()> {
     let mut lib = GdsLibrary::new("empty");
 
     // Set its dates to some known value, so we can check it round-trips
-    // This equals the very nanosecond of the "UNIX timestamp" epoch.
-    lib.set_all_dates(&NaiveDateTime::from_timestamp(0, 0));
+    lib.dates = test_dates();
 
     // OK now the actual test
     roundtrip(&lib)?;
