@@ -222,13 +222,14 @@ impl<'lib> GdsExporter<'lib> {
         purpose: &LayerPurpose,
     ) -> LayoutResult<gds21::GdsLayerSpec> {
         let layers = self.lib.layers.read()?;
-        let layer = layers.get(*layer).or_handle(
+        let layer = layers.get(*layer).unwrapper(
             self,
             format!("Layer {:?} Not Defined in Library {}", layer, self.lib.name),
-        )?; 
-        let xtype = self
-            .unwrap(
-                layer.num(purpose),
+        )?;
+        let xtype = layer
+            .num(purpose)
+            .unwrapper(
+                self,
                 format!("LayerPurpose Not Defined for {:?}, {:?}", layer, purpose),
             )?
             .clone();
@@ -800,10 +801,11 @@ impl GdsImporter {
         let cname = sref.name.clone();
         self.ctx.push(ErrorContext::Instance(cname.clone()));
         // Look up the cell-key, which must be imported by now
-        let cell = self.unwrap(
-            self.cell_map.get(&sref.name),
-            format!("Instance of invalid cell {}", cname),
-        )?;
+        let cell = self
+            .cell_map
+            .get(&sref.name)
+            .unwrapper(self, format!("Instance of invalid cell {}", cname))?;
+
         let cell = Ptr::clone(cell);
         // Convert its location
         let loc = self.import_point(&sref.xy)?;
@@ -851,10 +853,10 @@ impl GdsImporter {
         self.ctx.push(ErrorContext::Array(cname.clone()));
 
         // Look up the cell, which must be imported by now
-        let cell = self.unwrap(
-            self.cell_map.get(&aref.name),
-            format!("Instance Array of invalid cell {}", cname),
-        )?;
+        let cell = self
+            .cell_map
+            .get(&aref.name)
+            .unwrapper(self, format!("Instance Array of invalid cell {}", cname))?;
         let cell = Ptr::clone(cell);
 
         // Convert its three (x,y) coordinates

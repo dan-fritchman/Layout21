@@ -15,9 +15,9 @@ use std::convert::{TryFrom, TryInto};
 
 // Local imports
 use crate::{
-    utils::{ErrorContext, ErrorHelper, Ptr},
-    Abstract, AbstractPort, Cell, DepOrder, Element, Instance, Int, LayerKey, LayerPurpose, Layers,
-    Layer, Layout, LayoutError, LayoutResult, Library, Path, Point, Polygon, Rect, Shape,
+    utils::{ErrorContext, ErrorHelper, Ptr, Unwrapper},
+    Abstract, AbstractPort, Cell, DepOrder, Element, Instance, Int, Layer, LayerKey, LayerPurpose,
+    Layers, Layout, LayoutError, LayoutResult, Library, Path, Point, Polygon, Rect, Shape,
     TextElement, Units,
 };
 pub use layout21protos as proto;
@@ -303,13 +303,14 @@ impl<'lib> ProtoExporter<'lib> {
         purpose: &LayerPurpose,
     ) -> LayoutResult<proto::Layer> {
         let layers = self.lib.layers.read()?;
-        let layer = self.unwrap(
-            layers.get(*layer),
+        let layer = layers.get(*layer).unwrapper(
+            self,
             format!("Layer {:?} Not Defined in Library {}", layer, self.lib.name),
         )?;
-        let purpose = self
-            .unwrap(
-                layer.num(purpose),
+        let purpose = layer
+            .num(purpose)
+            .unwrapper(
+                self,
                 format!("LayerPurpose Not Defined for {:?}, {:?}", layer, purpose),
             )?
             .clone();
@@ -605,12 +606,12 @@ impl ProtoImporter {
     /// Import a proto-defined pointer, AKA [proto::Reference]
     fn import_reference(&mut self, pinst: &proto::Instance) -> LayoutResult<Ptr<Cell>> {
         // Mostly wind through protobuf-generated structures' layers of [Option]s
-        let pref = self.unwrap(
-            pinst.cell.as_ref(),
+        let pref = pinst.cell.as_ref().unwrapper(
+            self,
             format!("Invalid proto::Instance with null Cell: {}", pinst.name),
         )?;
-        let pref_to = self.unwrap(
-            pref.to.as_ref(),
+        let pref_to = pref.to.as_ref().unwrapper(
+            self,
             format!("Invalid proto::Instance with null Cell: {}", pinst.name),
         )?;
         use proto::reference::To::{External, Local};
@@ -619,8 +620,8 @@ impl ProtoImporter {
             External(_) => self.fail("Import of external proto-references not supported"),
         }?;
         // Now look that up in our hashmap
-        let cellkey = self.unwrap(
-            self.cell_map.get(cellname),
+        let cellkey = self.cell_map.get(cellname).unwrapper(
+            self,
             format!("Instance proto::Instance of undefined cell {}", cellname),
         )?;
         Ok(cellkey.clone())
@@ -632,8 +633,8 @@ impl ProtoImporter {
         // Look up the cell-pointer, which must be imported by now, or we fail
         let cell = self.import_reference(&pinst)?;
         // Unwrap the [Option] over (not really optional) location `origin_location`
-        let origin_location = self.unwrap(
-            pinst.origin_location.as_ref(),
+        let origin_location = pinst.origin_location.as_ref().unwrapper(
+            self,
             format!("Invalid proto::Instance with no Location: {}", pinst.name),
         )?;
         // And convert it
@@ -700,7 +701,9 @@ impl Layers {
 
             let sub_index = layer_pb.sub_index as i16;
             let layer_purpose = match &layer_pb.purpose {
-                Some(purpose) => Layers::proto_to_internal_layer_purpose(sub_index, &purpose.r#type()),
+                Some(purpose) => {
+                    Layers::proto_to_internal_layer_purpose(sub_index, &purpose.r#type())
+                }
                 None => LayerPurpose::Other(sub_index),
             };
             layer.add_purpose(sub_index, layer_purpose)?;
@@ -713,14 +716,15 @@ impl Layers {
         Ok(layers)
     }
 
-    fn proto_to_internal_layer_purpose(sub_index: i16, purpose_pb: &proto::LayerPurposeType)
-        -> LayerPurpose {
+    fn proto_to_internal_layer_purpose(
+        sub_index: i16,
+        purpose_pb: &proto::LayerPurposeType,
+    ) -> LayerPurpose {
         match purpose_pb {
             proto::LayerPurposeType::Label => LayerPurpose::Label,
             _ => LayerPurpose::Other(sub_index),
         }
     }
-
 }
 
 #[cfg(all(test, feature = "proto"))]

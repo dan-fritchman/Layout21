@@ -21,7 +21,7 @@ use crate::{
     raw::{self, Dir, LayoutError, LayoutResult, Point},
     stack::{LayerPeriod, RelZ},
     tracks::{Track, TrackCross, TrackSegmentType},
-    utils::{ErrorContext, ErrorHelper, Ptr, PtrList},
+    utils::{ErrorContext, ErrorHelper, Ptr, PtrList, Unwrapper},
     validate,
 };
 
@@ -332,8 +332,8 @@ impl<'lib> RawExporter {
             let start = self.db_units(*n1);
             let stop = self.db_units(*n2);
             let res = layer_period.block(start, stop, &inst_ptr);
-            self.ok(
-                res,
+            let res = res.unwrapper(
+                self,
                 format!(
                     "Could not insert blockage on Layer {:?}, period {} from {:?} to {:?}",
                     layer, temp_period.periodnum, start, stop
@@ -347,15 +347,16 @@ impl<'lib> RawExporter {
             let track = &mut layer_period.signals[cut.track.track % nsig];
             let cut_loc = self.track_cross_xy(cut)?;
             let dist = cut_loc[layer.spec.dir];
-            let res = track.cut(
-                dist - layer.spec.cutsize / 2, // start
-                dist + layer.spec.cutsize / 2, // stop
-                cut,                           // src
-            );
-            self.ok(
-                res,
-                format!("Could not make track-cut {:?} in {:?}", cut, temp_period),
-            )?;
+            let res = track
+                .cut(
+                    dist - layer.spec.cutsize / 2, // start
+                    dist + layer.spec.cutsize / 2, // stop
+                    cut,                           // src
+                )
+                .unwrapper(
+                    self,
+                    format!("Could not make track-cut {:?} in {:?}", cut, temp_period),
+                )?;
         }
         // Handle Net Assignments
         // Start with those for which we're the lower of the two layers.
@@ -429,8 +430,9 @@ impl<'lib> RawExporter {
         let track = &mut layer_period.signals[track % nsig];
         // And set the net at the assignment's location
         let assn_loc = self.track_cross_xy(&assn.src.at)?;
-        let res = track.set_net(assn_loc[layer.spec.dir], &assn.src);
-        self.ok(res, "Error Assigning Track")?;
+        let res = track
+            .set_net(assn_loc[layer.spec.dir], &assn.src)
+            .unwrapper(self, "Error Assigning Track")?;
         Ok(())
     }
     /// Convert a [Abstract] into raw form.
@@ -822,20 +824,6 @@ impl ErrorHelper for RawExporter {
         LayoutError::Export {
             message: msg.into(),
             stack: self.ctx.clone(),
-        }
-    }
-    fn ok<T, E: std::error::Error + 'static>(
-        &self,
-        res: Result<T, E>,
-        msg: impl Into<String>,
-    ) -> Result<T, Self::Error> {
-        match res {
-            Ok(t) => Ok(t),
-            Err(e) => Err(LayoutError::Conversion {
-                message: msg.into(),
-                err: Box::new(e),
-                stack: self.ctx.clone(),
-            }),
         }
     }
 }

@@ -9,10 +9,10 @@ use std::collections::hash_map::Entry;
 use std::convert::{TryFrom, TryInto};
 
 // Local imports
-use crate::utils::{ErrorContext, ErrorHelper, Ptr};
+use crate::utils::{ErrorContext, ErrorHelper, Ptr, Unwrapper};
 use crate::{
-    Abstract, AbstractPort, Cell, Int, Layer, LayerKey, Layers, LayoutError,
-    LayoutResult, Library, Path, Point, Polygon, Rect, Shape, Units,
+    Abstract, AbstractPort, Cell, Int, Layer, LayerKey, Layers, LayoutError, LayoutResult, Library,
+    Path, Point, Polygon, Rect, Shape, Units,
 };
 use lef21;
 
@@ -123,10 +123,9 @@ impl<'lib> LefExporter<'lib> {
     /// Lef layers are just string identifiers, returned here as-is.
     fn export_layer(&self, layerkey: LayerKey) -> LayoutResult<String> {
         let layers = self.lib.layers.read()?;
-        let name = self.unwrap(
-            layers.get_name(layerkey),
-            format!("Invalid un-named layer for LEF export"),
-        )?;
+        let name = layers
+            .get_name(layerkey)
+            .unwrapper(self, format!("Invalid un-named layer for LEF export"))?;
         Ok(name.to_string())
     }
     /// Export a [Shape] to a [lef21::LefGeometry]
@@ -254,7 +253,7 @@ impl LefImporter {
         // Create an outline-rectangle.
         let outline = {
             // Grab a [Point] from the `size` field
-            let lefsize = self.unwrap(lefmacro.size.as_ref(), "Missing LEF size")?;
+            let lefsize = lefmacro.size.as_ref().unwrapper(self, "Missing LEF size")?;
             let lefsize = lef21::LefPoint::new(lefsize.0, lefsize.1);
             let Point { x, y } = self.import_point(&lefsize)?;
 
@@ -407,7 +406,9 @@ impl LefImporter {
     ) -> LayoutResult<Shape> {
         // Paths require that `layer` have a `width` attribute.
         // And *our* paths are integer-width'ed, so they better have a zero-valued fractional part.
-        let width = self.unwrap(layer.width, "Invalid LEF Path with no Width")?;
+        let width = layer
+            .width
+            .unwrapper(self, "Invalid LEF Path with no Width")?;
         let width = self.import_dist(&width)?;
         let width = usize::try_from(width)?;
         // Convert each of the Points
@@ -475,7 +476,6 @@ impl ErrorHelper for LefImporter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
 
     #[test]
     fn test_lef1() -> LayoutResult<()> {
