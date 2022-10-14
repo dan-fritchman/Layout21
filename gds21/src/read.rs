@@ -3,12 +3,8 @@
 //!
 
 // Std-Lib Imports
-#[allow(unused_imports)]
-use std::io::prelude::*;
-
 use std::convert::TryInto;
 use std::io::{Cursor, SeekFrom};
-use std::mem;
 use std::path::Path;
 
 // Crates.io
@@ -315,7 +311,7 @@ where
         }
         // Decode a new header and swap it with our `nxt`
         let mut rv = self.rdr.read_record_header()?;
-        mem::swap(&mut rv, &mut self.nxt);
+        std::mem::swap(&mut rv, &mut self.nxt);
         Ok(rv)
     }
     /// Skip over the current record's content, if any, and load the next.
@@ -447,7 +443,7 @@ impl GdsParser<std::fs::File> {
     /// Open a GDS file `gds` and write all GdsRecords to JSON file `json`
     #[cfg(test)]
     pub fn dump(gds: &str, json: &str) -> GdsResult<()> {
-        use std::io::BufWriter;
+        use std::io::{BufWriter, Write};
 
         // This streams one record at a time, rather than loading all into memory.
         // Create a ReaderIter from `gds`
@@ -495,7 +491,7 @@ where
         }
         // Decode a new Record and swap it with our `nxt`
         let mut rv = self.rdr.read_record()?;
-        mem::swap(&mut rv, &mut self.nxt);
+        std::mem::swap(&mut rv, &mut self.nxt);
         self.numread += 1;
         Ok(rv)
     }

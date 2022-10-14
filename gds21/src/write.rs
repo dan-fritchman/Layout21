@@ -3,19 +3,14 @@
 //!
 
 // Std-Lib Imports
-#[allow(unused_imports)]
-use std::io::prelude::*;
-
 use std::convert::TryFrom;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
-use std::str;
 
 // Crates.io
 use byteorder::{BigEndian, WriteBytesExt};
-use chrono::prelude::*;
-use chrono::{Datelike, };
+use chrono::{Datelike, Timelike};
 use serde::{Deserialize, Serialize};
 
 // Local imports

@@ -4,14 +4,11 @@
 
 // Std-Lib Imports
 use std::error::Error;
-#[allow(unused_imports)]
-use std::io::prelude::*;
 use std::io::Write;
 use std::path::Path;
 
 // Crates.io
-use chrono::prelude::*;
-use chrono::NaiveDateTime;
+use chrono::{NaiveDateTime, SubsecRound, Utc};
 use derive_builder::Builder;
 use derive_more::{self, Add, AddAssign, Sub, SubAssign};
 use num_derive::FromPrimitive;
@@ -729,6 +726,10 @@ pub enum GdsDateTime {
 }
 impl GdsDateTime {
     /// Get the current time
+    ///
+    /// Note GDSII's time format is specified in seconds, whereas `NaiveDateTime` has nanosecond precision.
+    /// Always round to the nearest second to match data coming in from GDSII files.
+    ///
     pub fn now() -> Self {
         Self::DateTime(Utc::now().naive_utc().round_subsecs(0))
     }
@@ -782,7 +783,7 @@ impl Default for GdsDateTimes {
 pub struct GdsStruct {
     /// Struct Name
     pub name: String,
-    /// Creation/ Modification-Date Info
+    /// Modification & Access Dates & Times
     pub dates: GdsDateTimes,
     /// Elements List
     pub elems: Vec<GdsElement>,
@@ -840,7 +841,7 @@ pub struct GdsLibrary {
     pub name: String,
     /// Gds Spec Version
     pub version: i16,
-    // Modification Date(s)
+    /// Modification & Access Dates & Times
     pub dates: GdsDateTimes,
     /// Spatial Units    
     pub units: GdsUnits,
@@ -883,13 +884,15 @@ impl GdsLibrary {
         }
     }
     /// Read a GDS loaded from file at path `fname`
-    pub fn load(fname: impl AsRef<Path>) -> GdsResult<GdsLibrary> {
-        // Create the parser, and parse a Library
+    pub fn open(fname: impl AsRef<Path>) -> GdsResult<GdsLibrary> {
         GdsParser::open(fname)?.parse_lib()
+    }
+    /// Alias for [`GdsLibrary::open`]. To be deprecated.
+    pub fn load(fname: impl AsRef<Path>) -> GdsResult<GdsLibrary> {
+        GdsLibrary::open(fname)
     }
     /// Read a [GdsLibrary] from byte-vector `bytes`
     pub fn from_bytes(bytes: &[u8]) -> GdsResult<GdsLibrary> {
-        // Create the parser, and parse a Library
         GdsParser::from_bytes(bytes)?.parse_lib()
     }
     /// Run a first-pass scan of GDSII data in `fname`.
@@ -918,6 +921,7 @@ impl GdsLibrary {
         let mut wr = GdsWriter::new(file);
         wr.write_lib(self)
     }
+    /// Set the library and all its structs' modification and access times
     pub fn set_all_dates(&mut self, time: &NaiveDateTime) {
         let forced_gds_date = GdsDateTimes {
             modified: GdsDateTime::DateTime(time.clone()),
@@ -1064,7 +1068,7 @@ impl From<&str> for GdsError {
 #[cfg(any(test, feature = "selftest"))]
 /// Check `lib` matches across a write-read round-trip cycle
 pub fn roundtrip(lib: &GdsLibrary) -> GdsResult<()> {
-    use std::io::SeekFrom;
+    use std::io::{Read, Seek, SeekFrom};
     use tempfile::tempfile;
 
     // Write to a temporary file
