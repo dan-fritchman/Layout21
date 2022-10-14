@@ -522,7 +522,7 @@ impl ProtoImporter {
         player: &proto::LayerShapes,
     ) -> LayoutResult<Vec<Shape>> {
         // Import the layer
-        let (layer, purpose) = match player.layer {
+        let (_layer, _purpose) = match player.layer {
             Some(ref l) => self.import_layer(l),
             None => self.fail("Invalid proto::LayerShapes with no Layer"),
         }?;

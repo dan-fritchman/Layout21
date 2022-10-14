@@ -3,7 +3,7 @@ description = "Layout21 Integrated Circuit Layout. Meta-crate, re-exporting seve
 name = "layout21"
 # Shared layout21 attributes
 authors = ["Dan Fritchman <dan@fritch.mn>"]
-edition = "2018"
+edition = "2021"
 license = "BSD-3-Clause"
 repository = "https://github.com/dan-fritchman/Layout21"
 version = "0.2.1"
