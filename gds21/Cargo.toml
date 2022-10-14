@@ -15,7 +15,7 @@ exclude = ["resources",]
 layout21utils = {path = "../layout21utils", version="0.2.1"}
 # External dependencies
 byteorder = "1.3.4"
-chrono = {version = "0.4", features = ["serde"]}
+chrono = {version = "0.4.20", features = ["serde"]}
 derive_builder = "0.9.0"
 derive_more = "0.99.16"
 num-derive = "0.3"
