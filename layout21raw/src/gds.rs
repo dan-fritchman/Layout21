@@ -84,34 +84,40 @@ impl<'lib> GdsExporter<'lib> {
         // And convert each of our `cells` into its `structs`
         for cell in self.lib.cells.iter() {
             let cell = cell.read()?;
-            let strukt = self.export_cell(&*cell)?;
-            gdslib.structs.push(strukt);
+            if let Some(strukt) = self.export_cell(&*cell)? {
+                gdslib.structs.push(strukt);
+            }
         }
         self.ctx.pop();
         Ok(gdslib)
     }
-    /// Convert a [Cell] to a [gds21::GdsStruct] cell-definition
-    /// Adds to the running list `structs`.
-    fn export_cell(&mut self, cell: &Cell) -> LayoutResult<gds21::GdsStruct> {
+    /// Convert a [Cell] to a [gds21::GdsStruct] cell-definition, if the cell has an implementation or abstract.
+    ///
+    /// Priorities for the exported content are:
+    /// * If the Cell has a layout implementation, it is converted to a [gds21::GdsStruct]
+    /// * If not, and it has a layout abstract, that abstract is converted to a [gds21::GdsStruct]
+    /// * If the cell has neither an abstract nor implementation, `export_cell` returns `Ok(None)`, and no data is exported.
+    fn export_cell(&mut self, cell: &Cell) -> LayoutResult<Option<gds21::GdsStruct>> {
         self.ctx.push(ErrorContext::Cell(cell.name.clone()));
 
-        // Convert the primary implementation-data
-        let strukt = if let Some(ref lay) = cell.layout {
-            self.export_layout(lay)
+        let strukt_option = if let Some(ref lay) = cell.layout {
+            // If the cell has a layout implementation, export that
+            Some(self.export_layout(lay)?)
         } else if let Some(ref a) = cell.abs {
+            // Otherwise if the cell has an abstract, export that. Add a warning.
             println!(
                 "No implementation for Cell {}, exporting abstract to GDSII",
                 cell.name
             );
-            self.export_abstract(a)
+            Some(self.export_abstract(a)?)
         } else {
-            self.fail(format!(
-                "No abstract or implementation for cell {}",
-                cell.name
-            ))
-        }?;
+            // And if we have neither, return `None`
+            println!("No abstract or implementation for cell {}", cell.name);
+            None
+        };
+
         self.ctx.pop();
-        Ok(strukt)
+        Ok(strukt_option)
     }
     /// Convert a [Abstract]
     fn export_abstract(&mut self, abs: &Abstract) -> LayoutResult<gds21::GdsStruct> {

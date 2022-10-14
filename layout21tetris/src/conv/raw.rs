@@ -331,8 +331,8 @@ impl<'lib> RawExporter {
             // Convert primitive-pitch-based blockages to db units
             let start = self.db_units(*n1);
             let stop = self.db_units(*n2);
-            let res = layer_period.block(start, stop, &inst_ptr);
-            let res = res.unwrapper(
+            // And insert the blockage
+            layer_period.block(start, stop, &inst_ptr).unwrapper(
                 self,
                 format!(
                     "Could not insert blockage on Layer {:?}, period {} from {:?} to {:?}",
