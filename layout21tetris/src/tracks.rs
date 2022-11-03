@@ -246,12 +246,7 @@ impl<'lib> Track<'lib> {
     }
     /// Cut from `start` to `stop`.
     /// Fails if the region is not a contiguous wire segment.
-    pub fn cut(
-        &mut self,
-        start: DbUnits,
-        stop: DbUnits,
-        src: &'lib TrackCross,
-    ) -> TrackResult<()> {
+    pub fn cut(&mut self, start: DbUnits, stop: DbUnits, src: &'lib TrackCross) -> TrackResult<()> {
         self.cut_or_block(start, stop, TrackSegmentType::Cut { src })
     }
     /// Set the stop position for our last [TrackSegment] to `stop`

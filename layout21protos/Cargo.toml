@@ -11,3 +11,4 @@ workspace = "../"
 
 [dependencies]
 vlsir = { path = "vlsir/bindings/rust", version = "2.0.1" }
+

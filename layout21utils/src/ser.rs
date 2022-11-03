@@ -86,7 +86,7 @@ pub trait SerdeFile: Serialize + DeserializeOwned {
 
 /// Wrapper over other errors
 #[derive(Debug)]
-pub struct Error(Box<dyn std::error::Error>);
+pub struct Error(Box<dyn std::error::Error + Send + Sync>);
 impl std::fmt::Display for Error {
     /// Delegate [std::fmt::Display] to the (derived) [std::fmt::Debug] implementation.
     /// Maybe more info that wanted in some cases. But certainly enough.

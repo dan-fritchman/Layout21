@@ -1114,7 +1114,7 @@ pub enum GdsError {
         ctx: Vec<GdsContext>,
     },
     /// Boxed (External) Errors
-    Boxed(Box<dyn Error>),
+    Boxed(Box<dyn Error + Send + Sync>),
     /// Other errors
     Str(String),
 }

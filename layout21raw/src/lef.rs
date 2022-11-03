@@ -147,6 +147,9 @@ impl<'lib> LefExporter<'lib> {
             Shape::Path { .. } => {
                 unimplemented!("LefExporter::PATH");
             }
+            Shape::Point(_) => {
+                unimplemented!("LefExporter::POINT");
+            }
         };
         // Wrap it in the [LefGeometry] enum (which also includes repetitions) and return it
         Ok(lef21::LefGeometry::Shape(inner))
@@ -282,7 +285,8 @@ impl LefImporter {
             }
         };
         // Create the [Abstract] to be returned
-        let mut abs = Abstract::new(&lefmacro.name, outline);
+        let mut abs = Abstract::new(&lefmacro.name);
+        abs.outline = Some(outline);
         // Import all pins
         for lefpin in &lefmacro.pins {
             let abs_port = self.import_pin(lefpin)?;
@@ -483,14 +487,14 @@ mod tests {
         let layers = crate::tests::layers()?;
         let a = Abstract {
             name: "to_lef1".into(),
-            outline: Polygon {
+            outline: Some(Polygon {
                 points: vec![
                     Point::new(0, 0),
                     Point::new(11, 0),
                     Point::new(11, 11),
                     Point::new(0, 11),
                 ],
-            },
+            }),
             ports: vec![AbstractPort {
                 net: "port1".into(),
                 // Collect a hashmap of shapes from (LayerKey, Vec<Shape>) pairs

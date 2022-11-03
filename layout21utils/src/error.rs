@@ -34,7 +34,7 @@ pub trait ErrorHelper {
     /// The default implementation simply returns an error via `self.fail`.
     fn ok<T, E>(&self, _res: Result<T, E>, msg: impl Into<String>) -> Result<T, Self::Error>
     where
-        E: std::error::Error + 'static,
+        E: std::error::Error + Send + Sync + 'static,
     {
         self.fail(msg) // Default version always fails.
     }

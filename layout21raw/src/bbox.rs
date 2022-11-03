@@ -28,6 +28,14 @@ impl BoundBox {
     fn new(p0: Point, p1: Point) -> Self {
         Self { p0, p1 }
     }
+    #[inline]
+    pub fn width(&self) -> Int {
+        self.p1.x - self.p0.x
+    }
+    #[inline]
+    pub fn height(&self) -> Int {
+        self.p1.y - self.p0.y
+    }
     /// Create a new [BoundBox] from a single [Point].
     /// The resultant [BoundBox] comprises solely the point, having zero area.
     pub fn from_point(pt: &Point) -> Self {
@@ -73,6 +81,19 @@ impl BoundBox {
     pub fn center(&self) -> Point {
         Point::new((self.p0.x + self.p1.x) / 2, (self.p0.y + self.p1.y) / 2)
     }
+
+    #[inline]
+    pub fn into_rect(self) -> Rect {
+        Rect::from(self)
+    }
+}
+
+impl From<Rect> for BoundBox {
+    fn from(r: Rect) -> Self {
+        debug_assert!(r.p0.x <= r.p1.x);
+        debug_assert!(r.p0.y <= r.p1.y);
+        Self { p0: r.p0, p1: r.p1 }
+    }
 }
 
 ///
@@ -115,6 +136,12 @@ impl BoundBoxTrait for BoundBox {
         BoundBox::new(pmin, pmax)
     }
     fn union(&self, bbox: &BoundBox) -> BoundBox {
+        if bbox.is_empty() {
+            return *self;
+        }
+        if self.is_empty() {
+            return *bbox;
+        }
         // Take the minimum and maximum of the two bounding boxes
         BoundBox::new(
             Point::new(self.p0.x.min(bbox.p0.x), self.p0.y.min(bbox.p0.y)),
@@ -146,6 +173,7 @@ impl BoundBoxTrait for Shape {
             Shape::Rect(ref r) => BoundBox::from_points(&r.p0, &r.p1),
             Shape::Polygon(ref p) => (&p.points).bbox(),
             Shape::Path(ref p) => (&p.points).bbox(),
+            Shape::Point(ref p) => BoundBox::from_point(p),
         }
     }
 }
