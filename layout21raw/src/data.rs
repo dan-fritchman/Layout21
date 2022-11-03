@@ -335,16 +335,16 @@ impl Layers {
     pub fn get_new_purpose(&self, num: i16, purpose: i16, to: LayerPurpose) -> Option<LayerKey> {
         let lay = self.get_layer_from_spec(num, purpose)?;
         let purpose = lay.num(&to)?;
-        let (key, _) = self.get_from_spec(num, purpose)?;
+        let (key, _) = self.get_from_spec(LayerSpec(num, purpose))?;
         Some(key)
     }
 
     pub fn get_layer_from_spec(&self, num: i16, purpose: i16) -> Option<&Layer> {
-        let (key, _) = self.get_from_spec(num, purpose)?;
+        let (key, _) = self.get_from_spec(LayerSpec(num, purpose))?;
         self.get(key)
     }
 
-    pub fn get_from_spec(&self, num: i16, purpose: i16) -> Option<(LayerKey, LayerPurpose)> {
+    pub fn get_from_spec(&self, spec: LayerSpec) -> Option<(LayerKey, LayerPurpose)> {
         for (k, layer) in self.slots().iter() {
             if layer.layernum != spec.0 {
                 continue;
@@ -387,7 +387,7 @@ impl Default for LayerPurpose {
 /// # Layer Specification
 /// As in seemingly every layout system, this uses two numbers to identify each layer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub struct LayerSpec(i16, i16);
+pub struct LayerSpec(pub i16, pub i16);
 impl LayerSpec {
     pub fn new(n1: i16, n2: i16) -> Self {
         Self(n1, n2)

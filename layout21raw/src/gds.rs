@@ -123,12 +123,14 @@ impl<'lib> GdsExporter<'lib> {
         // Flatten our points-vec, converting to 32-bit along the way
         let mut xy = abs
             .outline
+            .as_ref()
+            .expect("tried to export an abstract with an outline")
             .points
             .iter()
             .map(|p| self.export_point(p))
             .collect::<Result<Vec<_>, _>>()?;
         // Add the origin a second time, to "close" the polygon
-        xy.push(self.export_point(&abs.outline.points[0])?);
+        xy.push(self.export_point(&abs.outline.as_ref().unwrap().points[0])?);
         let outline = GdsElement::GdsBoundary(gds21::GdsBoundary {
             layer: i16::MAX,
             datatype: i16::MAX,
@@ -137,9 +139,7 @@ impl<'lib> GdsExporter<'lib> {
         });
         // Blockages do not map to GDSII elements.
         // Conversion includes the abstract's name, outline and ports.
-        if let Some(outline) = abs.outline {
-            elems.push(outline);
-        }
+        elems.push(outline);
 
         // Convert each [AbstractPort]
         for port in abs.ports.iter() {

@@ -13,13 +13,13 @@
 use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 
-use crate::LayerSpec;
 // Local imports
 use crate::{
     utils::{ErrorContext, ErrorHelper, Ptr},
     Abstract, AbstractPort, Cell, DepOrder, Element, Instance, Int, LayerKey, LayerPurpose, Layers,
     Layer, Layout, LayoutError, LayoutResult, Library, Path, Point, Polygon, Rect, Shape,
     TextElement, Units,
+    LayerSpec
 };
 pub use layout21protos as proto;
 
@@ -440,14 +440,14 @@ impl ProtoImporter {
                 .layers
                 .write()
                 .unwrap()
-                .get_or_insert(*number as i16, *purpose as i16)
+                .get_from_spec(LayerSpec(*number as i16, *purpose as i16))
                 .unwrap();
             let shapes = self.import_abstract_layer_shapes(layershapes)?;
             abs.blockages.insert(layerkey, shapes);
         }
 
         abs.outline = match self.import_polygon(&pabs.outline.as_ref().unwrap())? {
-            Shape::Polygon(p) => p,
+            Shape::Polygon(p) => Some(p),
             _ => unreachable!(
                 "import_polygon only returns the Shape::Polygon(Polygon) enum variant."
             ),
@@ -466,7 +466,7 @@ impl ProtoImporter {
                 .layers
                 .write()
                 .unwrap()
-                .get_or_insert(*number as i16, *purpose as i16)
+                .get_from_spec(LayerSpec(*number as i16, *purpose as i16))
                 .unwrap();
             let shapes = self.import_abstract_layer_shapes(layershapes)?;
             port.shapes.insert(layerkey, shapes);
