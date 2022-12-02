@@ -29,6 +29,13 @@ path = "src/lef2yaml.rs"
 test = true
 bench = false
 
+# Converts VLSIR layout proto-format files to LEF descriptions using Layout21.
+[[bin]]
+name = "proto2lef"
+path = "src/proto2lef.rs"
+test = true
+bench = false
+
 [dependencies]
 gds21 = {path = "../gds21"}
 lef21 = {path = "../lef21"}
