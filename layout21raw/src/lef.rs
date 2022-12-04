@@ -125,7 +125,7 @@ impl<'lib> LefExporter<'lib> {
         let layers = self.lib.layers.read()?;
         let name = self.unwrap(
             layers.get_name(layerkey),
-            format!("Invalid un-named layer for LEF export"),
+            format!("Invalid un-named layer for LEF export: {:?}", layerkey),
         )?;
         Ok(name.to_string())
     }

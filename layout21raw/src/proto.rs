@@ -698,6 +698,8 @@ impl Layers {
                 .entry(layer_pb.index)
                 .or_insert(Layer::from_num(layer_pb.index as i16));
 
+            layer.name = Some(layer_pb.name.clone());
+
             let sub_index = layer_pb.sub_index as i16;
             let layer_purpose = match &layer_pb.purpose {
                 Some(purpose) => Layers::proto_to_internal_layer_purpose(sub_index, &purpose.r#type()),

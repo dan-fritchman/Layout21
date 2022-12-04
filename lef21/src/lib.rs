@@ -112,6 +112,7 @@ mod data;
 pub use data::*;
 mod read;
 mod write;
+pub use write::save;
 
 // Unit tests
 #[cfg(test)]
