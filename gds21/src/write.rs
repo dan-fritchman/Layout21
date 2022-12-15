@@ -2,8 +2,19 @@
 //! # Gds21 Byte-Encoding and Writing
 //!
 
+// Std-Lib Imports
+use std::convert::TryFrom;
+use std::fs::File;
+use std::io::{BufWriter, Write};
+use std::path::Path;
+
+// Crates.io
+use byteorder::{BigEndian, WriteBytesExt};
+use chrono::{Datelike, Timelike};
+use serde::{Deserialize, Serialize};
+
 // Local imports
-use super::*;
+use crate::data::*;
 
 /// Gds Writing Helper
 pub struct GdsWriter<'wr> {

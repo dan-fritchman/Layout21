@@ -3,7 +3,7 @@ description = "Converters to/from Layout21 formats from/to various legacy format
 name = "layout21converters"
 # Shared layout21 attributes
 authors = ["Dan Fritchman <dan@fritch.mn>", "Arya Reais-Parsi <aryap@berkeley.edu>"]
-edition = "2018"
+edition = "2021"
 license = "BSD-3-Clause"
 repository = "https://github.com/dan-fritchman/Layout21"
 version = "0.2.1"
@@ -36,4 +36,4 @@ layout21protos = {path = "../layout21protos"}
 layout21raw = {path = "../layout21raw"}
 layout21utils = {path = "../layout21utils"}
 clap = { version = "3.0.0-beta.5", features = ["derive"] }
-chrono = {version = "0.4" }
+chrono = {version = "0.4.20" }

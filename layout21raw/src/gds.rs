@@ -18,7 +18,7 @@ use crate::{
     bbox::BoundBoxTrait,
     error::{LayoutError, LayoutResult},
     geom::{Path, Point, Polygon, Rect, Shape, ShapeTrait},
-    utils::{ErrorContext, ErrorHelper, Ptr},
+    utils::{ErrorContext, ErrorHelper, Ptr, Unwrapper},
     Abstract, AbstractPort, Cell, Dir, Element, Instance, Int, LayerKey, LayerPurpose, Layers,
     Layout, Library, TextElement, Units,
 };
@@ -84,34 +84,40 @@ impl<'lib> GdsExporter<'lib> {
         // And convert each of our `cells` into its `structs`
         for cell in self.lib.cells.iter() {
             let cell = cell.read()?;
-            let strukt = self.export_cell(&*cell)?;
-            gdslib.structs.push(strukt);
+            if let Some(strukt) = self.export_cell(&*cell)? {
+                gdslib.structs.push(strukt);
+            }
         }
         self.ctx.pop();
         Ok(gdslib)
     }
-    /// Convert a [Cell] to a [gds21::GdsStruct] cell-definition
-    /// Adds to the running list `structs`.
-    fn export_cell(&mut self, cell: &Cell) -> LayoutResult<gds21::GdsStruct> {
+    /// Convert a [Cell] to a [gds21::GdsStruct] cell-definition, if the cell has an implementation or abstract.
+    ///
+    /// Priorities for the exported content are:
+    /// * If the Cell has a layout implementation, it is converted to a [gds21::GdsStruct]
+    /// * If not, and it has a layout abstract, that abstract is converted to a [gds21::GdsStruct]
+    /// * If the cell has neither an abstract nor implementation, `export_cell` returns `Ok(None)`, and no data is exported.
+    fn export_cell(&mut self, cell: &Cell) -> LayoutResult<Option<gds21::GdsStruct>> {
         self.ctx.push(ErrorContext::Cell(cell.name.clone()));
 
-        // Convert the primary implementation-data
-        let strukt = if let Some(ref lay) = cell.layout {
-            self.export_layout(lay)
+        let strukt_option = if let Some(ref lay) = cell.layout {
+            // If the cell has a layout implementation, export that
+            Some(self.export_layout(lay)?)
         } else if let Some(ref a) = cell.abs {
+            // Otherwise if the cell has an abstract, export that. Add a warning.
             println!(
                 "No implementation for Cell {}, exporting abstract to GDSII",
                 cell.name
             );
-            self.export_abstract(a)
+            Some(self.export_abstract(a)?)
         } else {
-            self.fail(format!(
-                "No abstract or implementation for cell {}",
-                cell.name
-            ))
-        }?;
+            // And if we have neither, return `None`
+            println!("No abstract or implementation for cell {}", cell.name);
+            None
+        };
+
         self.ctx.pop();
-        Ok(strukt)
+        Ok(strukt_option)
     }
     /// Convert a [Abstract]
     fn export_abstract(&mut self, abs: &Abstract) -> LayoutResult<gds21::GdsStruct> {
@@ -222,13 +228,14 @@ impl<'lib> GdsExporter<'lib> {
         purpose: &LayerPurpose,
     ) -> LayoutResult<gds21::GdsLayerSpec> {
         let layers = self.lib.layers.read()?;
-        let layer = self.unwrap(
-            layers.get(*layer),
+        let layer = layers.get(*layer).unwrapper(
+            self,
             format!("Layer {:?} Not Defined in Library {}", layer, self.lib.name),
         )?;
-        let xtype = self
-            .unwrap(
-                layer.num(purpose),
+        let xtype = layer
+            .num(purpose)
+            .unwrapper(
+                self,
                 format!("LayerPurpose Not Defined for {:?}, {:?}", layer, purpose),
             )?
             .clone();
@@ -800,10 +807,11 @@ impl GdsImporter {
         let cname = sref.name.clone();
         self.ctx.push(ErrorContext::Instance(cname.clone()));
         // Look up the cell-key, which must be imported by now
-        let cell = self.unwrap(
-            self.cell_map.get(&sref.name),
-            format!("Instance of invalid cell {}", cname),
-        )?;
+        let cell = self
+            .cell_map
+            .get(&sref.name)
+            .unwrapper(self, format!("Instance of invalid cell {}", cname))?;
+
         let cell = Ptr::clone(cell);
         // Convert its location
         let loc = self.import_point(&sref.xy)?;
@@ -851,10 +859,10 @@ impl GdsImporter {
         self.ctx.push(ErrorContext::Array(cname.clone()));
 
         // Look up the cell, which must be imported by now
-        let cell = self.unwrap(
-            self.cell_map.get(&aref.name),
-            format!("Instance Array of invalid cell {}", cname),
-        )?;
+        let cell = self
+            .cell_map
+            .get(&aref.name)
+            .unwrapper(self, format!("Instance Array of invalid cell {}", cname))?;
         let cell = Ptr::clone(cell);
 
         // Convert its three (x,y) coordinates

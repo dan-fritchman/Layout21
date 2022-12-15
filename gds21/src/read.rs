@@ -2,11 +2,22 @@
 //! # Gds21 Reading & Scanning
 //!
 
+// Std-Lib Imports
+use std::convert::TryInto;
+use std::io::{Cursor, SeekFrom};
+use std::path::Path;
+
+// Crates.io
+use byteorder::{BigEndian, ReadBytesExt};
+use chrono::NaiveDate;
+use num_traits::FromPrimitive;
+
 // Local imports
-use super::*;
+use crate::data::*;
 
 /// Size (in bytes) of the read/decode buffer array
 const READER_BUFSIZE: usize = 65537;
+
 /// # GdsReader
 /// Helper for parsing and scanning GDS coming from files and similar sources.
 pub struct GdsReader<R> {
@@ -300,7 +311,7 @@ where
         }
         // Decode a new header and swap it with our `nxt`
         let mut rv = self.rdr.read_record_header()?;
-        mem::swap(&mut rv, &mut self.nxt);
+        std::mem::swap(&mut rv, &mut self.nxt);
         Ok(rv)
     }
     /// Skip over the current record's content, if any, and load the next.
@@ -416,7 +427,7 @@ impl GdsParser<std::fs::File> {
 
     /// JSON-Serialize and write (all) contents of the Iterator to `writer`
     #[cfg(test)]
-    pub fn write_records(&mut self, writer: &mut impl Write) -> GdsResult<()> {
+    pub fn write_records(&mut self, writer: &mut impl std::io::Write) -> GdsResult<()> {
         loop {
             let r = self.next()?;
             if r == GdsRecord::EndLib {
@@ -432,11 +443,13 @@ impl GdsParser<std::fs::File> {
     /// Open a GDS file `gds` and write all GdsRecords to JSON file `json`
     #[cfg(test)]
     pub fn dump(gds: &str, json: &str) -> GdsResult<()> {
+        use std::io::{BufWriter, Write};
+
         // This streams one record at a time, rather than loading all into memory.
         // Create a ReaderIter from `gds`
         let mut me = GdsParser::open(gds)?;
         // Create the JSON file
-        let mut w = BufWriter::new(File::create(json)?);
+        let mut w = BufWriter::new(std::fs::File::create(json)?);
         // Write it as a JSON list/sequence; add the opening bracket
         write!(w, "[\n")?;
         // Write all the records
@@ -478,7 +491,7 @@ where
         }
         // Decode a new Record and swap it with our `nxt`
         let mut rv = self.rdr.read_record()?;
-        mem::swap(&mut rv, &mut self.nxt);
+        std::mem::swap(&mut rv, &mut self.nxt);
         self.numread += 1;
         Ok(rv)
     }
