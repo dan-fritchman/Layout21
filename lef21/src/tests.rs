@@ -1,6 +1,8 @@
-use super::read::{parse_str, LefLexer, LefParser, Token};
 use super::*;
+use super::read::{parse_str, LefLexer, LefParser, Token};
 use std::path::Path;
+use crate::utils::SerializationFormat::{Yaml, Json, Toml};
+
 
 #[test]
 fn test_points() -> LefResult<()> {
@@ -93,12 +95,24 @@ fn it_parses_lib2() -> LefResult<()> {
     Ok(())
 }
 
+#[test]
+fn empty_lib_to_yaml() {
+    Yaml.save(&LefLibrary::new(), &resource("empty_lib.lef.yaml")).unwrap();
+}
+#[test]
+fn empty_lib_to_json() {
+    Json.save(&LefLibrary::new(), &resource("empty_lib.lef.json")).unwrap();
+}
+#[test]
+fn empty_lib_to_toml() {
+    Toml.save(&LefLibrary::new(), &resource("empty_lib.lef.toml")).unwrap();
+}
+
 /// Helper function: Assert that `data` equals the content in YAML file `fname`
 fn check_yaml<T>(data: &T, fname: impl AsRef<Path>)
 where
     T: Eq + std::fmt::Debug + serde::de::DeserializeOwned,
 {
-    use crate::utils::SerializationFormat::Yaml;
     let golden: T = Yaml.open(fname).unwrap();
     assert_eq!(*data, golden);
 }

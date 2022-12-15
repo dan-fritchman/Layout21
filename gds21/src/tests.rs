@@ -9,6 +9,7 @@ use chrono::NaiveDate;
 // Local Imports
 use crate::data::*;
 use crate::read::*;
+use layout21utils::SerializationFormat::{Json, Yaml, Toml};
 
 /// Specified creation date for test cases
 fn test_dates() -> GdsDateTimes {
@@ -177,17 +178,42 @@ fn record_too_long() -> GdsResult<()> {
     }
 }
 
-#[test]
-fn empty_lib() -> GdsResult<()> {
-    // Test round-tripping an empty library
+/// Create an empty library with known dates
+fn empty_lib() -> GdsLibrary {
+    // Create an empty library
     let mut lib = GdsLibrary::new("empty");
-
     // Set its dates to some known value, so we can check it round-trips
     lib.dates = test_dates();
+    // And return it for other test
+    lib 
+}
+#[test]
+fn empty_lib_roundtrip() -> GdsResult<()> {
+    // Create an empty, testable library
+    let lib = empty_lib();
 
     // OK now the actual test
     roundtrip(&lib)?;
     check(&lib, &resource("empty.gds.json"));
+    Ok(())
+}
+#[test]
+fn empty_lib_to_json() -> GdsResult<()> {
+    let lib = empty_lib();
+    Json.save(&lib, &resource("empty.gds.json")).expect("save failed");
+    Ok(())
+}
+#[test]
+fn empty_lib_to_yaml() -> GdsResult<()> {
+    let lib = empty_lib();
+    Yaml.save(&lib, &resource("empty.gds.yaml")).expect("save failed");
+    Ok(())
+}
+#[test]
+#[ignore] // https://github.com/dan-fritchman/Layout21/issues/33
+fn empty_lib_to_toml() -> GdsResult<()> {
+    let lib = empty_lib();
+    Toml.save(&lib, &resource("empty.gds.toml")).expect("save failed");
     Ok(())
 }
 
@@ -207,7 +233,6 @@ fn test_invalid_dates() -> GdsResult<()> {
 
 /// Compare `lib` to "golden" data loaded from JSON at path `golden`.
 fn check(lib: &GdsLibrary, fname: &impl AsRef<Path>) {
-    use layout21utils::SerializationFormat::Json;
     // Uncomment this bit to over-write the golden data
     // Json.save(lib, fname).unwrap();
 
