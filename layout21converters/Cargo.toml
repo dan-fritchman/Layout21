@@ -10,31 +10,6 @@ version = "0.2.1"
 workspace = "../"
 exclude = ["resources",]
 
-# Converts GDS files to protocol buffer descriptions, using Layout21, and Gds21.
-[[bin]]
-name = "gds2proto"
-path = "src/gds2proto.rs"
-test = true
-bench = false
-
-[[bin]]
-name = "proto2gds"
-path = "src/proto2gds.rs"
-test = true
-bench = false
-
-[[bin]]
-name = "lef2yaml"
-path = "src/lef2yaml.rs"
-test = true
-bench = false
-
-[[bin]]
-name = "gds2ser"
-path = "src/gds2ser.rs"
-test = true
-bench = false
-
 [dependencies]
 gds21 = {path = "../gds21"}
 lef21 = {path = "../lef21"}

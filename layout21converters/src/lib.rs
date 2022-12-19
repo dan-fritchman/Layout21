@@ -1,1 +1,1 @@
-mod gds_serialization;
+pub mod gds_serialization;
