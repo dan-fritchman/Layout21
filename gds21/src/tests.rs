@@ -3,9 +3,6 @@ use std::io::prelude::*;
 use std::path::Path;
 use std::str;
 
-// Crates.io
-use chrono::NaiveDate;
-
 // Local Imports
 use crate::data::*;
 use crate::read::*;
@@ -13,7 +10,7 @@ use layout21utils::SerializationFormat::{Json, Toml, Yaml};
 
 /// Specified creation date for test cases
 fn test_dates() -> GdsDateTimes {
-    let test_date = GdsDateTime::DateTime(NaiveDate::from_ymd(1970, 1, 1).and_hms(0, 0, 1).into());
+    let test_date = GdsDateTime::from(&[70, 1, 1, 0, 0, 1]);
     GdsDateTimes {
         modified: test_date.clone(),
         accessed: test_date.clone(),
@@ -227,8 +224,8 @@ fn test_invalid_dates() -> GdsResult<()> {
     assert_eq!(
         lib.dates,
         GdsDateTimes {
-            modified: GdsDateTime::Bytes([0, 0, 0, 17, 49, 18]),
-            accessed: GdsDateTime::Bytes([0, 0, 0, 17, 49, 18])
+            modified: GdsDateTime::from(&[0, 0, 0, 17, 49, 18]),
+            accessed: GdsDateTime::from(&[0, 0, 0, 17, 49, 18])
         }
     );
     Ok(())

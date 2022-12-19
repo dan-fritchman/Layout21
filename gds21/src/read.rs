@@ -9,7 +9,6 @@ use std::path::Path;
 
 // Crates.io
 use byteorder::{BigEndian, ReadBytesExt};
-use chrono::NaiveDate;
 use num_traits::FromPrimitive;
 
 // Local imports
@@ -855,19 +854,7 @@ where
     /// Note this is one of our few parsing methods that *does not* return a `GdsResult`.
     /// Invalid dates are instead stored as raw bytes in the [`GdsDateTime::Bytes`] variant.
     fn parse_datetime(&mut self, d: &[i16; 6]) -> GdsDateTime {
-        // Note GDSII's 1900 offset is applied here
-        let ymd = NaiveDate::from_ymd_opt(d[0] as i32 + 1900, d[1] as u32, d[2] as u32);
-        if ymd.is_none() {
-            // Invalid date; return raw bytes
-            return GdsDateTime::Bytes(d.clone());
-        }
-        let ymd = ymd.unwrap();
-        let dt = ymd.and_hms_opt(d[3] as u32, d[4] as u32, d[5] as u32);
-        if dt.is_none() {
-            // Invalid time; return raw bytes
-            return GdsDateTime::Bytes(d.clone());
-        }
-        return GdsDateTime::DateTime(dt.unwrap().into());
+        GdsDateTime::from(d)
     }
     /// Error helper for an invalid record
     fn invalid<T>(&mut self, record: GdsRecord) -> GdsResult<T> {

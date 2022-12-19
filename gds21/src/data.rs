@@ -8,7 +8,7 @@ use std::io::Write;
 use std::path::Path;
 
 // Crates.io
-use chrono::{Datelike, NaiveDateTime, SubsecRound, Timelike, Utc};
+use chrono::{Datelike, NaiveDate, NaiveDateTime, SubsecRound, Timelike, Utc};
 use derive_builder::Builder;
 use derive_more::{self, Add, AddAssign, Sub, SubAssign};
 use num_derive::FromPrimitive;
@@ -717,52 +717,28 @@ pub struct GdsStats {
 
 /// # Gds Date & Time
 ///
-/// In typical cases, a wrapper around a [`NaiveDateTime`] with custom serialization.
-/// For existing GDSII files with invalid dates, the raw twelve bytes are stored instead.
+/// From the spec:
+/// ```text
+/// Two-Byte Signed Integer
+/// Contains last modification time of library (two bytes
+/// each for year, month, day, hour, minute, and second)
+/// as well as time of last access (same format) and
+/// marks beginning of library.
+/// ```
+///
+/// In which more specifically:
+/// * Years are referenced to **1900**
+/// * Days are valued 1-31
+/// * Months are valued 1-12
+/// * Hours are valued 1-12
+///
+/// When reading from GDSII file, [`GdsDateTime`] accepts any twelve bytes and stores them as-is;
+/// no validation for real dates & times, e.g. month 30 or hour 99, is performed.
+/// The default [`GdsDateTime`] when creating a new [`GdsLibrary`] is its creation time,
+/// as produced by [`chrono::Utc::now()`]. Such dates & times are always valid.
 ///
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
-pub enum GdsDateTime {
-    /// Valid Date & Time
-    DateTime(GdsValidDateTime),
-    /// Raw Bytes as stored in GDSII
-    Bytes([i16; 6]),
-}
-impl GdsDateTime {
-    /// Get the current time
-    ///
-    /// Note GDSII's time format is specified in seconds, whereas `NaiveDateTime` has nanosecond precision.
-    /// Always round to the nearest second to match data coming in from GDSII files.
-    ///
-    pub fn now() -> Self {
-        let naive_datetime = Utc::now().naive_utc().round_subsecs(0);
-        Self::DateTime(naive_datetime.into())
-    }
-}
-impl Default for GdsDateTime {
-    /// Default dates & times: what better time than now!
-    fn default() -> Self {
-        Self::now()
-    }
-}
-// Convert to the [`GdsDateTime`] enum for either variant's inner type
-impl From<GdsValidDateTime> for GdsDateTime {
-    fn from(dt: GdsValidDateTime) -> Self {
-        Self::DateTime(dt)
-    }
-}
-impl From<[i16; 6]> for GdsDateTime {
-    fn from(bytes: [i16; 6]) -> Self {
-        Self::Bytes(bytes)
-    }
-}
-
-/// # Valid Date & Time
-///
-/// In which each of the (year, month, day, hour, minute, second) fields are valid.
-/// Uses GDSII's convention of 1900 as the base year.
-///
-#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
-pub struct GdsValidDateTime {
+pub struct GdsDateTime {
     pub year: i16, // GDSII uses 1900 as the base year
     pub month: i16,
     pub day: i16,
@@ -770,7 +746,7 @@ pub struct GdsValidDateTime {
     pub minute: i16,
     pub second: i16,
 }
-impl From<NaiveDateTime> for GdsValidDateTime {
+impl From<NaiveDateTime> for GdsDateTime {
     fn from(dt: NaiveDateTime) -> Self {
         Self {
             year: dt.year() as i16 - 1900, // GDSII uses 1900 as the base year
@@ -782,10 +758,59 @@ impl From<NaiveDateTime> for GdsValidDateTime {
         }
     }
 }
-impl From<NaiveDateTime> for GdsDateTime {
-    fn from(dt: NaiveDateTime) -> Self {
-        let valid: GdsValidDateTime = dt.into();
-        Self::DateTime(valid)
+impl TryInto<NaiveDateTime> for GdsDateTime {
+    type Error = GdsError;
+
+    /// Try converting a [`GdsDateTime`] to a [`chrono::NaiveDateTime`].
+    /// Fails if any of the GDSII values are invalid. e.g. "month 30" or "hour 99".
+    fn try_into(self: GdsDateTime) -> GdsResult<NaiveDateTime> {
+        // Note GDSII's 1900 offset is applied here
+        let ymd = match NaiveDate::from_ymd_opt(
+            self.year as i32 + 1900,
+            self.month as u32,
+            self.day as u32,
+        ) {
+            Some(y) => y,
+            None => return Err(GdsError::Str("Invalid Date".to_string())),
+        };
+        let dt = match ymd.and_hms_opt(self.hour as u32, self.minute as u32, self.second as u32) {
+            Some(t) => t,
+            None => return Err(GdsError::Str("Invalid Time".to_string())),
+        };
+        Ok(dt)
+    }
+}
+impl GdsDateTime {
+    /// Get the current time
+    ///
+    /// Note GDSII's time format is specified in seconds, whereas `NaiveDateTime` has nanosecond precision.
+    /// Always round to the nearest second to match data coming in from GDSII files.
+    ///
+    pub fn now() -> Self {
+        // Create a [`chrono::NaiveDateTime`] from the current time, rounded to the nearest second,
+        // and convert it via the `From` implementation below.
+        let naive_datetime = Utc::now().naive_utc().round_subsecs(0);
+        naive_datetime.into()
+    }
+}
+impl Default for GdsDateTime {
+    /// Default dates & times: what better time than now!
+    fn default() -> Self {
+        Self::now()
+    }
+}
+impl From<&[i16; 6]> for GdsDateTime {
+    /// Convert from a 6-element array of i16s to a [`GdsDateTime`],
+    /// in the order prescribed in the GDSII spec.
+    fn from(bytes: &[i16; 6]) -> Self {
+        Self {
+            year: bytes[0],
+            month: bytes[1],
+            day: bytes[2],
+            hour: bytes[3],
+            minute: bytes[4],
+            second: bytes[5],
+        }
     }
 }
 

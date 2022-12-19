@@ -10,7 +10,6 @@ use std::path::Path;
 
 // Crates.io
 use byteorder::{BigEndian, WriteBytesExt};
-use chrono::{Datelike, Timelike};
 use serde::{Deserialize, Serialize};
 
 // Local imports
@@ -488,13 +487,8 @@ trait Encode {
     }
     /// Encode a [`GdsDateTime`] in GDSII's vector of i16's format
     fn encode_datetime(&self, dt: &GdsDateTime, dest: &mut [i16]) {
-        match dt {
-            GdsDateTime::Bytes(ref bytes) => dest.copy_from_slice(bytes),
-            GdsDateTime::DateTime(dt) => {
-                let bytes = [dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second];
-                dest.copy_from_slice(&bytes)
-            }
-        }
+        let bytes = [dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second];
+        dest.copy_from_slice(&bytes)
     }
     /// Encode [`GdsDateTimes`] in GDSII's vector of i16's format
     fn encode_datetimes(&self, dts: &GdsDateTimes) -> [i16; 12] {

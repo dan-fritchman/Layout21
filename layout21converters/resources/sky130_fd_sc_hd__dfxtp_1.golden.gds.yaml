@@ -3,21 +3,19 @@ name: sky130_fd_sc_hd__dfxtp_1
 version: 3
 dates:
   modified:
-    DateTime:
-      year: 70
-      month: 1
-      day: 1
-      hour: 0
-      minute: 0
-      second: 1
+    year: 70
+    month: 1
+    day: 1
+    hour: 0
+    minute: 0
+    second: 1
   accessed:
-    DateTime:
-      year: 70
-      month: 1
-      day: 1
-      hour: 0
-      minute: 0
-      second: 1
+    year: 70
+    month: 1
+    day: 1
+    hour: 0
+    minute: 0
+    second: 1
 units:
   - 0.001
   - 1e-9
@@ -25,21 +23,19 @@ structs:
   - name: sky130_fd_sc_hd__dfxtp_1
     dates:
       modified:
-        DateTime:
-          year: 70
-          month: 1
-          day: 1
-          hour: 0
-          minute: 0
-          second: 1
+        year: 70
+        month: 1
+        day: 1
+        hour: 0
+        minute: 0
+        second: 1
       accessed:
-        DateTime:
-          year: 70
-          month: 1
-          day: 1
-          hour: 0
-          minute: 0
-          second: 1
+        year: 70
+        month: 1
+        day: 1
+        hour: 0
+        minute: 0
+        second: 1
     elems:
       - GdsBoundary:
           layer: 236
