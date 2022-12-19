@@ -126,7 +126,6 @@ fn it_writes_schema() -> LefResult<()> {
     // Create the [schemars] JSON-Schema for [LefLibrary].
     // Compare it against golden data on disk.
 
-    use crate::utils::SerializationFormat::Json;
     use schemars::schema_for;
 
     // Create the schema

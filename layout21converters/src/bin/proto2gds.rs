@@ -123,8 +123,8 @@ mod tests {
         // newly-minted version. To avoid this we load both GDS libraries and zero the date fields,
         // then do the comparison.
         let date = NaiveDateTime::from_timestamp(0, 0);
-        golden_gds.set_all_dates(&date);
-        output_gds.set_all_dates(&date);
+        golden_gds.set_all_dates(date.clone());
+        output_gds.set_all_dates(date.clone());
 
         assert_eq!(output_gds, golden_gds);
     }

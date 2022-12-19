@@ -1,1 +1,31 @@
-{"name":"empty","version":3,"dates":{"modified":{"DateTime":"1970-01-01T00:00:01"},"accessed":{"DateTime":"1970-01-01T00:00:01"}},"units":[0.001,1e-9],"structs":[]}
+{
+  "name": "empty",
+  "version": 3,
+  "dates": {
+    "modified": {
+      "DateTime": {
+        "year": 70,
+        "month": 1,
+        "day": 1,
+        "hour": 0,
+        "minute": 0,
+        "second": 1
+      }
+    },
+    "accessed": {
+      "DateTime": {
+        "year": 70,
+        "month": 1,
+        "day": 1,
+        "hour": 0,
+        "minute": 0,
+        "second": 1
+      }
+    }
+  },
+  "units": [
+    0.001,
+    1e-9
+  ],
+  "structs": []
+}

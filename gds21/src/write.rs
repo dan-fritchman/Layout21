@@ -491,14 +491,7 @@ trait Encode {
         match dt {
             GdsDateTime::Bytes(ref bytes) => dest.copy_from_slice(bytes),
             GdsDateTime::DateTime(dt) => {
-                let bytes = [
-                    dt.year() as i16 - 1900, // GDSII uses 1900 as the base year
-                    dt.month() as i16,
-                    dt.day() as i16,
-                    dt.hour() as i16,
-                    dt.minute() as i16,
-                    dt.second() as i16,
-                ];
+                let bytes = [dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second];
                 dest.copy_from_slice(&bytes)
             }
         }

@@ -9,11 +9,11 @@ use chrono::NaiveDate;
 // Local Imports
 use crate::data::*;
 use crate::read::*;
-use layout21utils::SerializationFormat::{Json, Yaml, Toml};
+use layout21utils::SerializationFormat::{Json, Toml, Yaml};
 
 /// Specified creation date for test cases
 fn test_dates() -> GdsDateTimes {
-    let test_date = GdsDateTime::DateTime(NaiveDate::from_ymd(1970, 1, 1).and_hms(0, 0, 1));
+    let test_date = GdsDateTime::DateTime(NaiveDate::from_ymd(1970, 1, 1).and_hms(0, 0, 1).into());
     GdsDateTimes {
         modified: test_date.clone(),
         accessed: test_date.clone(),
@@ -185,7 +185,7 @@ fn empty_lib() -> GdsLibrary {
     // Set its dates to some known value, so we can check it round-trips
     lib.dates = test_dates();
     // And return it for other test
-    lib 
+    lib
 }
 #[test]
 fn empty_lib_roundtrip() -> GdsResult<()> {
@@ -200,20 +200,23 @@ fn empty_lib_roundtrip() -> GdsResult<()> {
 #[test]
 fn empty_lib_to_json() -> GdsResult<()> {
     let lib = empty_lib();
-    Json.save(&lib, &resource("empty.gds.json")).expect("save failed");
+    Json.save(&lib, &resource("empty.gds.json"))
+        .expect("save failed");
     Ok(())
 }
 #[test]
 fn empty_lib_to_yaml() -> GdsResult<()> {
     let lib = empty_lib();
-    Yaml.save(&lib, &resource("empty.gds.yaml")).expect("save failed");
+    Yaml.save(&lib, &resource("empty.gds.yaml"))
+        .expect("save failed");
     Ok(())
 }
 #[test]
 #[ignore] // https://github.com/dan-fritchman/Layout21/issues/33
 fn empty_lib_to_toml() -> GdsResult<()> {
     let lib = empty_lib();
-    Toml.save(&lib, &resource("empty.gds.toml")).expect("save failed");
+    Toml.save(&lib, &resource("empty.gds.toml"))
+        .expect("save failed");
     Ok(())
 }
 
@@ -228,6 +231,26 @@ fn test_invalid_dates() -> GdsResult<()> {
             accessed: GdsDateTime::Bytes([0, 0, 0, 17, 49, 18])
         }
     );
+    Ok(())
+}
+
+#[test]
+fn it_writes_schema() -> GdsResult<()> {
+    // Create the [schemars] JSON-Schema for [GdsLibrary].
+    // Compare it against golden data on disk.
+
+    use schemars::schema_for;
+
+    // Create the schema
+    let schema = schema_for!(GdsLibrary);
+
+    // NOTE: uncomment to overwrite golden data
+    // Json.save(&schema, resource("gds21.schema.json"))?;
+
+    // Load the golden version, and ensure they match
+    let golden = Json.open(resource("gds21.schema.json"))?;
+    assert_eq!(schema, golden);
+
     Ok(())
 }
 

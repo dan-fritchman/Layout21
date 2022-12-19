@@ -224,32 +224,101 @@
   "definitions": {
     "LefAntennaModel": {
       "description": "Antenna Models",
-      "type": "string",
-      "enum": [
-        "Oxide1",
-        "Oxide2",
-        "Oxide3",
-        "Oxide4"
+      "oneOf": [
+        {
+          "description": "OXIDE1",
+          "type": "string",
+          "enum": [
+            "Oxide1"
+          ]
+        },
+        {
+          "description": "OXIDE2",
+          "type": "string",
+          "enum": [
+            "Oxide2"
+          ]
+        },
+        {
+          "description": "OXIDE3",
+          "type": "string",
+          "enum": [
+            "Oxide3"
+          ]
+        },
+        {
+          "description": "OXIDE4",
+          "type": "string",
+          "enum": [
+            "Oxide4"
+          ]
+        }
       ]
     },
     "LefBlockClassType": {
       "description": "Sub-Types for Macros of Class [LefMacroClass::Block]",
-      "type": "string",
-      "enum": [
-        "BlackBox",
-        "Soft"
+      "oneOf": [
+        {
+          "description": "BLACKBOX",
+          "type": "string",
+          "enum": [
+            "BlackBox"
+          ]
+        },
+        {
+          "description": "SOFT",
+          "type": "string",
+          "enum": [
+            "Soft"
+          ]
+        }
       ]
     },
     "LefCoreClassType": {
       "description": "Sub-Types for Macros of Class [LefMacroClass::Core]",
-      "type": "string",
-      "enum": [
-        "FeedThru",
-        "TieHigh",
-        "TieLow",
-        "Spacer",
-        "AntennaCell",
-        "WellTap"
+      "oneOf": [
+        {
+          "description": "FEEDTHRU",
+          "type": "string",
+          "enum": [
+            "FeedThru"
+          ]
+        },
+        {
+          "description": "TIEHIGH",
+          "type": "string",
+          "enum": [
+            "TieHigh"
+          ]
+        },
+        {
+          "description": "TIELOW",
+          "type": "string",
+          "enum": [
+            "TieLow"
+          ]
+        },
+        {
+          "description": "SPACER",
+          "type": "string",
+          "enum": [
+            "Spacer"
+          ]
+        },
+        {
+          "description": "ANTENNACELL",
+          "type": "string",
+          "enum": [
+            "AntennaCell"
+          ]
+        },
+        {
+          "description": "WELLTAP",
+          "type": "string",
+          "enum": [
+            "WellTap"
+          ]
+        }
       ]
     },
     "LefDbuPerMicron": {
@@ -262,24 +331,82 @@
     "LefDefSource": {
       "title": "Lef/ Def `SOURCE`",
       "description": "Specifies the source of a component In all versions since at least 5.7 (2009), SOURCE is a DEF-only field on COMPONENT definitions. Prior versions also include this as a field for LEF MACRO definitions.",
-      "type": "string",
-      "enum": [
-        "Netlist",
-        "Dist",
-        "Timing",
-        "User"
+      "oneOf": [
+        {
+          "description": "NETLIST",
+          "type": "string",
+          "enum": [
+            "Netlist"
+          ]
+        },
+        {
+          "description": "DIST",
+          "type": "string",
+          "enum": [
+            "Dist"
+          ]
+        },
+        {
+          "description": "TIMING",
+          "type": "string",
+          "enum": [
+            "Timing"
+          ]
+        },
+        {
+          "description": "USER",
+          "type": "string",
+          "enum": [
+            "User"
+          ]
+        }
       ]
     },
     "LefEndCapClassType": {
       "description": "Sub-Types for Macros of Class [LefMacroClass::EndCap]",
-      "type": "string",
-      "enum": [
-        "Pre",
-        "Post",
-        "TopLeft",
-        "TopRight",
-        "BottomLeft",
-        "BottomRight"
+      "oneOf": [
+        {
+          "description": "PRE",
+          "type": "string",
+          "enum": [
+            "Pre"
+          ]
+        },
+        {
+          "description": "POST",
+          "type": "string",
+          "enum": [
+            "Post"
+          ]
+        },
+        {
+          "description": "TOPLEFT",
+          "type": "string",
+          "enum": [
+            "TopLeft"
+          ]
+        },
+        {
+          "description": "TOPRIGHT",
+          "type": "string",
+          "enum": [
+            "TopRight"
+          ]
+        },
+        {
+          "description": "BOTTOMLEFT",
+          "type": "string",
+          "enum": [
+            "BottomLeft"
+          ]
+        },
+        {
+          "description": "BOTTOMRIGHT",
+          "type": "string",
+          "enum": [
+            "BottomRight"
+          ]
+        }
       ]
     },
     "LefForeign": {
@@ -728,22 +855,68 @@
     },
     "LefOnOff": {
       "description": "Binary On/Off Settings, Denoted by `ON` and `OFF`",
-      "type": "string",
-      "enum": [
-        "On",
-        "Off"
+      "oneOf": [
+        {
+          "description": "ON",
+          "type": "string",
+          "enum": [
+            "On"
+          ]
+        },
+        {
+          "description": "OFF",
+          "type": "string",
+          "enum": [
+            "Off"
+          ]
+        }
       ]
     },
     "LefPadClassType": {
       "description": "Sub-Types for Macros of Class [LefMacroClass::Pad]",
-      "type": "string",
-      "enum": [
-        "Input",
-        "Output",
-        "Inout",
-        "Power",
-        "Spacer",
-        "AreaIo"
+      "oneOf": [
+        {
+          "description": "INPUT",
+          "type": "string",
+          "enum": [
+            "Input"
+          ]
+        },
+        {
+          "description": "OUTPUT",
+          "type": "string",
+          "enum": [
+            "Output"
+          ]
+        },
+        {
+          "description": "INOUT",
+          "type": "string",
+          "enum": [
+            "Inout"
+          ]
+        },
+        {
+          "description": "POWER",
+          "type": "string",
+          "enum": [
+            "Power"
+          ]
+        },
+        {
+          "description": "SPACER",
+          "type": "string",
+          "enum": [
+            "Spacer"
+          ]
+        },
+        {
+          "description": "AREAIO",
+          "type": "string",
+          "enum": [
+            "AreaIo"
+          ]
+        }
       ]
     },
     "LefPin": {
@@ -949,23 +1122,69 @@
     },
     "LefPinShape": {
       "description": "Specifies a pin with special connection requirements because of its shape",
-      "type": "string",
-      "enum": [
-        "Abutment",
-        "Ring",
-        "FeedThru"
+      "oneOf": [
+        {
+          "description": "ABUTMENT",
+          "type": "string",
+          "enum": [
+            "Abutment"
+          ]
+        },
+        {
+          "description": "RING",
+          "type": "string",
+          "enum": [
+            "Ring"
+          ]
+        },
+        {
+          "description": "FEEDTHRU",
+          "type": "string",
+          "enum": [
+            "FeedThru"
+          ]
+        }
       ]
     },
     "LefPinUse": {
       "title": "Lef Pin-Usage",
       "description": "Specifies the usage-intent for a [LefPin]. Note this is the noun form of \"use\", pronounced with the hard \"s\" - not the verb form pronounced like the New Jersey second-person plural \"yous\".",
-      "type": "string",
-      "enum": [
-        "Signal",
-        "Analog",
-        "Power",
-        "Ground",
-        "Clock"
+      "oneOf": [
+        {
+          "description": "SIGNAL",
+          "type": "string",
+          "enum": [
+            "Signal"
+          ]
+        },
+        {
+          "description": "ANALOG",
+          "type": "string",
+          "enum": [
+            "Analog"
+          ]
+        },
+        {
+          "description": "POWER",
+          "type": "string",
+          "enum": [
+            "Power"
+          ]
+        },
+        {
+          "description": "GROUND",
+          "type": "string",
+          "enum": [
+            "Ground"
+          ]
+        },
+        {
+          "description": "CLOCK",
+          "type": "string",
+          "enum": [
+            "Clock"
+          ]
+        }
       ]
     },
     "LefPoint": {
@@ -1012,11 +1231,28 @@
     },
     "LefPortClass": {
       "description": "Sub-Types for Macros of Class [LefMacroClass::Core]",
-      "type": "string",
-      "enum": [
-        "None",
-        "Core",
-        "Bump"
+      "oneOf": [
+        {
+          "description": "NONE",
+          "type": "string",
+          "enum": [
+            "None"
+          ]
+        },
+        {
+          "description": "CORE",
+          "type": "string",
+          "enum": [
+            "Core"
+          ]
+        },
+        {
+          "description": "BUMP",
+          "type": "string",
+          "enum": [
+            "Bump"
+          ]
+        }
       ]
     },
     "LefShape": {
@@ -1139,19 +1375,47 @@
     },
     "LefSiteClass": {
       "description": "[LefSite] Classes",
-      "type": "string",
-      "enum": [
-        "Pad",
-        "Core"
+      "oneOf": [
+        {
+          "description": "PAD",
+          "type": "string",
+          "enum": [
+            "Pad"
+          ]
+        },
+        {
+          "description": "CORE",
+          "type": "string",
+          "enum": [
+            "Core"
+          ]
+        }
       ]
     },
     "LefSymmetry": {
       "description": "Specifies which MACRO orientations are valid for placement",
-      "type": "string",
-      "enum": [
-        "X",
-        "Y",
-        "R90"
+      "oneOf": [
+        {
+          "description": "X",
+          "type": "string",
+          "enum": [
+            "X"
+          ]
+        },
+        {
+          "description": "Y",
+          "type": "string",
+          "enum": [
+            "Y"
+          ]
+        },
+        {
+          "description": "R90",
+          "type": "string",
+          "enum": [
+            "R90"
+          ]
+        }
       ]
     },
     "LefUnits": {

@@ -78,16 +78,13 @@ mod tests {
         //      -i resources/sky130_fd_sc_hd__dfxtp_1.gds \
         //      -o resources/sky130_fd_sc_hd__dfxtp_1.golden.json \
         //      -f json
-        let golden_input_path = resource("sky130_fd_sc_hd__dfxtp_1.gds");
-        let golden_output_path = resource(&format!("sky130_fd_sc_hd__dfxtp_1.golden.{}", fmtstr));
-        let golden_bytes = match std::fs::read(&golden_output_path) {
-            Ok(bytes) => bytes,
-            Err(_err) => panic!("Could not read golden output file"),
-        };
-        let output_path = resource(&format!("sky130_fd_sc_hd__dfxtp_1.test_output.{}", fmtstr));
+
+        let output_path = scratch(&format!("sky130_fd_sc_hd__dfxtp_1.test_output.{}", fmtstr));
+        let golden_output_path =
+            resource(&format!("sky130_fd_sc_hd__dfxtp_1.golden.gds.{}", fmtstr));
 
         let options = ConvOptions {
-            gds: golden_input_path,
+            gds: resource("sky130_fd_sc_hd__dfxtp_1.gds"),
             out: output_path.clone(),
             fmt: fmtstr.to_string(),
             verbose: true,
@@ -96,28 +93,13 @@ mod tests {
         // Run the main function, producing file `output_path`
         let result = convert(&options);
 
-        // Closure to over-write the golden content. Un-comment to update the golden file.
-        // let write_golden = || {
-        //     // Read back the newly-written data
-        //     use layout21protos::ProtoFile;
-        //     let conv_lib = layout21protos::Library::open(&output_path).unwrap();
-
-        //     // Save it to disk in proto-binary format
-        //     conv_lib.save(&golden_output_path).unwrap();
-
-        //     // And store a YAML version of it for a bit easier reading & comparison
-        //     use layout21utils::SerializationFormat::Yaml;
-        //     Yaml.save(&conv_lib, &resource("sky130_fd_sc_hd__dfxtp_1.pb.yaml"))
-        //         .unwrap();
-        // };
-        // write_golden();
+        // Un-comment to update the golden file.
+        // std::fs::copy(&output_path, &golden_output_path).unwrap();
 
         // Check that `_main` succeeded, and compare the binary data it wrote to disk.
         assert!(result.is_ok());
-        let bytes = match std::fs::read(&output_path) {
-            Ok(bytes) => bytes,
-            Err(_err) => panic!("Could not read test output file"),
-        };
+        let bytes = std::fs::read(&output_path).unwrap();
+        let golden_bytes = std::fs::read(&golden_output_path).unwrap();
         assert_eq!(golden_bytes, bytes);
     }
 
@@ -138,5 +120,9 @@ mod tests {
     /// Grab the full path of resource-file `fname`
     fn resource(rname: &str) -> String {
         format!("{}/resources/{}", env!("CARGO_MANIFEST_DIR"), rname)
+    }
+    /// Grab the full path of scratch-file `fname`
+    fn scratch(rname: &str) -> String {
+        format!("{}/scratch/{}", env!("CARGO_MANIFEST_DIR"), rname)
     }
 }

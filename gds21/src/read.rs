@@ -867,8 +867,7 @@ where
             // Invalid time; return raw bytes
             return GdsDateTime::Bytes(d.clone());
         }
-        let dt = dt.unwrap();
-        return GdsDateTime::DateTime(dt);
+        return GdsDateTime::DateTime(dt.unwrap().into());
     }
     /// Error helper for an invalid record
     fn invalid<T>(&mut self, record: GdsRecord) -> GdsResult<T> {

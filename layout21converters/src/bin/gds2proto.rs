@@ -7,7 +7,7 @@ use clap::Parser;
 use layout21raw as raw;
 use std::error::Error;
 
-// => The doc-comment on `ProgramOptions` here is displayed by the `clap`-generated help docs => 
+// => The doc-comment on `ProgramOptions` here is displayed by the `clap`-generated help docs =>
 
 /// GDSII to VLSIR Protobuf Schema Converter
 #[derive(Parser)]
