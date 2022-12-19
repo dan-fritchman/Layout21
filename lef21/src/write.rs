@@ -9,7 +9,7 @@ use std::path::Path;
 
 // Layout21 Imports
 use layout21utils as utils;
-pub use utils::{enumstr, EnumStr, SerdeFile, SerializationFormat};
+pub use utils::{EnumStr, SerdeFile, SerializationFormat};
 
 // Local imports
 use super::data::*;

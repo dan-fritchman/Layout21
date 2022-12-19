@@ -17,3 +17,4 @@ serde_json = "1.0"
 serde_yaml = "0.8"
 textwrap = "0.14.2"
 toml = "0.5.7"
+schemars = {version = "0.8.10", features = ["rust_decimal"] }

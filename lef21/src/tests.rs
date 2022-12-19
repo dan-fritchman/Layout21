@@ -120,3 +120,24 @@ where
 fn resource(rname: &str) -> String {
     format!("{}/resources/{}", env!("CARGO_MANIFEST_DIR"), rname)
 }
+
+#[test]
+fn it_writes_schema() -> LefResult<()> {
+    // Create the [schemars] JSON-Schema for [LefLibrary].
+    // Compare it against golden data on disk.
+
+    use crate::utils::SerializationFormat::Json;
+    use schemars::schema_for;
+
+    // Create the schema
+    let schema = schema_for!(LefLibrary);
+
+    // NOTE: uncomment to overwrite golden data
+    // Json.save(&schema, resource("lef21.schema.json"))?;
+
+    // Load the golden version, and ensure they match
+    let golden = Json.open(resource("lef21.schema.json"))?;
+    assert_eq!(schema, golden);
+
+    Ok(())
+}
