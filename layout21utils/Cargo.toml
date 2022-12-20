@@ -1,19 +1,28 @@
 [package]
 description = "Layout21 Internal Utility Crate"
 name = "layout21utils"
+
 # Shared layout21 attributes
-authors = ["Dan Fritchman <dan@fritch.mn>"]
-edition = "2021"
-license = "BSD-3-Clause"
-repository = "https://github.com/dan-fritchman/Layout21"
-version = "0.2.1"
+authors.workspace = true
+categories.workspace = true
+documentation.workspace = true
+edition.workspace = true
+exclude.workspace = true
+homepage.workspace = true
+include.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+version.workspace = true
 workspace = "../"
 
 [dependencies]
 by_address = "1.0.4"
+schemars = {version = "0.8.10", features = ["rust_decimal"]}
 serde = {version = "1.0", features = ["derive"]}
 serde_derive = "1.0.88"
 serde_json = "1.0"
 serde_yaml = "0.8"
 textwrap = "0.14.2"
-toml = "0.5.7"
+toml = "0.5.10"

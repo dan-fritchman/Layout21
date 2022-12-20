@@ -1,21 +1,28 @@
 [package]
-name = "layout21raw"
 description = "Layout21 Raw-Format Integrated Circuit Layout"
+name = "layout21raw"
+
 # Shared layout21 attributes
-authors = ["Dan Fritchman <dan@fritch.mn>"]
-edition = "2021"
-license = "BSD-3-Clause"
-repository = "https://github.com/dan-fritchman/Layout21"
-version = "0.2.1"
+authors.workspace = true
+categories.workspace = true
+documentation.workspace = true
+edition.workspace = true
+exclude.workspace = true
+homepage.workspace = true
+include.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+version.workspace = true
 workspace = "../"
-exclude = ["resources",]
 
 [dependencies]
 # Local workspace dependencies
-gds21 = {path = "../gds21", version = "0.2.1", optional = true}
-layout21protos = {path = "../layout21protos", version = "0.2.1", optional = true}
-layout21utils = {path = "../layout21utils", version = "0.2.1"}
-lef21 = {path = "../lef21", version = "0.2.1", optional = true}
+gds21 = {path = "../gds21", version = "3.0.0-pre.2", optional = true}
+layout21protos = {path = "../layout21protos", version = "3.0.0-pre.2", optional = true}
+layout21utils = {path = "../layout21utils", version = "3.0.0-pre.2"}
+lef21 = {path = "../lef21", version = "3.0.0-pre.2", optional = true}
 # Crates.io 
 enum_dispatch = "0.3.7"
 num-integer = "0.1"

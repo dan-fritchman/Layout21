@@ -8,10 +8,11 @@ use std::io::Write;
 use std::path::Path;
 
 // Crates.io
-use chrono::{NaiveDateTime, SubsecRound, Utc};
+use chrono::{Datelike, NaiveDate, NaiveDateTime, SubsecRound, Timelike, Utc};
 use derive_builder::Builder;
 use derive_more::{self, Add, AddAssign, Sub, SubAssign};
 use num_derive::FromPrimitive;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 // Workspace Imports
@@ -26,7 +27,7 @@ use crate::write::GdsWriter;
 ///
 /// In the numeric-order specified by GDSII, for automatic [FromPrimitive] conversions.
 ///
-#[derive(FromPrimitive, Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(FromPrimitive, Debug, Clone, Copy, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub enum GdsRecordType {
     Header = 0x00,
     BgnLib,
@@ -114,7 +115,7 @@ impl GdsRecordType {
 
 /// # Gds DataType Enumeration
 /// In order as decoded from 16-bit integers in binary data
-#[derive(FromPrimitive, Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(FromPrimitive, Debug, Clone, Copy, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub enum GdsDataType {
     NoData = 0,
     BitArray = 1,
@@ -128,7 +129,7 @@ pub enum GdsDataType {
 /// # Gds Record Header
 /// Decoded contents of a record's four header bytes,
 /// including its record-type, data-type, and length in bytes.
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub struct GdsRecordHeader {
     pub rtype: GdsRecordType,
     pub dtype: GdsDataType,
@@ -247,13 +248,13 @@ impl GdsFloat64 {
 }
 
 /// # Unsupported (But Spec-Valid) Features
-#[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub struct Unsupported;
 
 /// # Gds Translation Settings
 /// Reflection, rotation, and magnification for text-elements and references.
 /// As configured by `STRANS` records.
-#[derive(Default, Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Default, Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
 pub struct GdsStrans {
     // Required Fields
     /// Reflection, about the x-axis.
@@ -276,20 +277,20 @@ pub struct GdsStrans {
 /// # Gds Text-Presentation Flags
 /// Sets fonts, text justification, and the like.
 /// Stored in raw `u8` form.
-#[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Default, Debug, Clone, Deserialize, Serialize, JsonSchema, PartialEq)]
 pub struct GdsPresentation(pub u8, pub u8);
 
 /// # Gds Element Flags
 /// As configured by `ELFLAGS` records.
 /// Two bytes of bit-fields stored in raw `u8` form.
-#[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Default, Debug, Clone, Deserialize, Serialize, JsonSchema, PartialEq)]
 pub struct GdsElemFlags(pub u8, pub u8);
 
 /// # Gds Plex
 /// From the spec:
 /// "A unique positive number which is common to all elements of the Plex to which this element belongs."
 /// In Gds21's experience, `PLEX` records and settings are highly uncommon.
-#[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Default, Debug, Clone, Deserialize, Serialize, JsonSchema, PartialEq)]
 pub struct GdsPlex(pub i32);
 
 /// # Gds Library Units
@@ -308,7 +309,7 @@ pub struct GdsPlex(pub i32);
 ///
 /// These two numbers are stored as-is in the [GdsUnits] tuple-struct.
 ///
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, PartialEq)]
 pub struct GdsUnits(pub f64, pub f64);
 impl GdsUnits {
     /// Create a new [GdsUnits]
@@ -336,7 +337,7 @@ impl Default for GdsUnits {
 /// # Gds Spatial Point
 /// Coordinate in (x,y) layout-space.
 /// Denoted in each [GdsLibrary]'s [GdsUnits].
-#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub struct GdsPoint {
     pub x: i32,
     pub y: i32,
@@ -394,7 +395,7 @@ impl GdsPoint {
 }
 /// # Gds Mask-Format Enumeration
 /// As set by the FORMAT record
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, PartialEq)]
 pub enum GdsFormatType {
     /// Default, sole fully-supported case.
     Archive,
@@ -406,7 +407,7 @@ pub enum GdsFormatType {
 /// ```text
 /// PROPATTR PROPVALUE
 /// ```
-#[derive(Default, Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Default, Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
 pub struct GdsProperty {
     /// Attribute Number
     pub attr: i16,
@@ -422,7 +423,7 @@ pub struct GdsProperty {
 /// PATH [ELFLAGS] [PLEX] LAYER DATATYPE [PATHTYPE] [WIDTH] XY [BGNEXTN] [ENDEXTN])
 /// ```
 ///
-#[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
 #[builder(pattern = "owned", setter(into))]
 pub struct GdsPath {
     // Required Fields
@@ -471,7 +472,7 @@ pub struct GdsPath {
 /// BOUNDARY [ELFLAGS] [PLEX] LAYER DATATYPE XY
 /// ```
 ///
-#[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
 #[builder(pattern = "owned", setter(into))]
 pub struct GdsBoundary {
     // Required Fields
@@ -506,7 +507,7 @@ pub struct GdsBoundary {
 /// SREF [ELFLAGS] [PLEX] SNAME [<strans>] XY
 /// ```
 ///
-#[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
 #[builder(pattern = "owned", setter(into))]
 pub struct GdsStructRef {
     // Required Fields
@@ -540,7 +541,7 @@ pub struct GdsStructRef {
 /// AREF [ELFLAGS] [PLEX] SNAME [<strans>] COLROW XY
 /// ```
 ///
-#[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
 #[builder(pattern = "owned", setter(into))]
 pub struct GdsArrayRef {
     // Required Fields
@@ -575,7 +576,7 @@ pub struct GdsArrayRef {
 /// TEXT [ELFLAGS] [PLEX] LAYER
 /// TEXTTYPE [PRESENTATION] [PATHTYPE] [WIDTH] [<strans>] XY STRING
 /// ```
-#[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
 #[builder(pattern = "owned", setter(into))]
 pub struct GdsTextElem {
     // Required Fields
@@ -620,7 +621,7 @@ pub struct GdsTextElem {
 /// NODE [ELFLAGS] [PLEX] LAYER NODETYPE XY
 /// ```
 ///
-#[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
 #[builder(pattern = "owned", setter(into))]
 pub struct GdsNode {
     // Required Fields
@@ -650,7 +651,7 @@ pub struct GdsNode {
 /// BOX [ELFLAGS] [PLEX] LAYER BOXTYPE XY
 /// ```
 ///
-#[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
 #[builder(pattern = "owned", setter(into))]
 pub struct GdsBox {
     // Required Fields
@@ -684,7 +685,7 @@ pub struct GdsBox {
 ///
 /// Note the `properties` vectors are pushed down to each enum variant.
 ///
-#[derive(derive_more::From, Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(derive_more::From, Debug, Clone, Deserialize, Serialize, JsonSchema, PartialEq)]
 pub enum GdsElement {
     GdsBoundary(GdsBoundary),
     GdsPath(GdsPath),
@@ -699,7 +700,9 @@ pub enum GdsElement {
 ///
 /// Summary statistics for a [GdsLibrary] or [GdsStruct].  
 /// Total numbers of elements of each type.
-#[derive(Debug, Default, Deserialize, Serialize, PartialEq, Add, AddAssign, Sub, SubAssign)]
+#[derive(
+    Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Add, AddAssign, Sub, SubAssign,
+)]
 pub struct GdsStats {
     pub libraries: usize,
     pub structs: usize,
@@ -714,15 +717,68 @@ pub struct GdsStats {
 
 /// # Gds Date & Time
 ///
-/// In typical cases, a wrapper around a [`NaiveDateTime`] with custom serialization.
-/// For existing GDSII files with invalid dates, the raw twelve bytes are stored instead.
+/// From the spec:
+/// ```text
+/// Two-Byte Signed Integer
+/// Contains last modification time of library (two bytes
+/// each for year, month, day, hour, minute, and second)
+/// as well as time of last access (same format) and
+/// marks beginning of library.
+/// ```
 ///
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-pub enum GdsDateTime {
-    /// Valid Date & Time
-    DateTime(NaiveDateTime),
-    /// Raw Bytes as stored in GDSII
-    Bytes([i16; 6]),
+/// In which more specifically:
+/// * Years are referenced to **1900**
+/// * Days are valued 1-31
+/// * Months are valued 1-12
+/// * Hours are valued 1-12
+///
+/// When reading from GDSII file, [`GdsDateTime`] accepts any twelve bytes and stores them as-is;
+/// no validation for real dates & times, e.g. month 30 or hour 99, is performed.
+/// The default [`GdsDateTime`] when creating a new [`GdsLibrary`] is its creation time,
+/// as produced by [`chrono::Utc::now()`]. Such dates & times are always valid.
+///
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
+pub struct GdsDateTime {
+    pub year: i16, // GDSII uses 1900 as the base year
+    pub month: i16,
+    pub day: i16,
+    pub hour: i16,
+    pub minute: i16,
+    pub second: i16,
+}
+impl From<NaiveDateTime> for GdsDateTime {
+    fn from(dt: NaiveDateTime) -> Self {
+        Self {
+            year: dt.year() as i16 - 1900, // GDSII uses 1900 as the base year
+            month: dt.month() as i16,
+            day: dt.day() as i16,
+            hour: dt.hour() as i16,
+            minute: dt.minute() as i16,
+            second: dt.second() as i16,
+        }
+    }
+}
+impl TryInto<NaiveDateTime> for GdsDateTime {
+    type Error = GdsError;
+
+    /// Try converting a [`GdsDateTime`] to a [`chrono::NaiveDateTime`].
+    /// Fails if any of the GDSII values are invalid. e.g. "month 30" or "hour 99".
+    fn try_into(self: GdsDateTime) -> GdsResult<NaiveDateTime> {
+        // Note GDSII's 1900 offset is applied here
+        let ymd = match NaiveDate::from_ymd_opt(
+            self.year as i32 + 1900,
+            self.month as u32,
+            self.day as u32,
+        ) {
+            Some(y) => y,
+            None => return Err(GdsError::Str("Invalid Date".to_string())),
+        };
+        let dt = match ymd.and_hms_opt(self.hour as u32, self.minute as u32, self.second as u32) {
+            Some(t) => t,
+            None => return Err(GdsError::Str("Invalid Time".to_string())),
+        };
+        Ok(dt)
+    }
 }
 impl GdsDateTime {
     /// Get the current time
@@ -731,7 +787,10 @@ impl GdsDateTime {
     /// Always round to the nearest second to match data coming in from GDSII files.
     ///
     pub fn now() -> Self {
-        Self::DateTime(Utc::now().naive_utc().round_subsecs(0))
+        // Create a [`chrono::NaiveDateTime`] from the current time, rounded to the nearest second,
+        // and convert it via the `From` implementation below.
+        let naive_datetime = Utc::now().naive_utc().round_subsecs(0);
+        naive_datetime.into()
     }
 }
 impl Default for GdsDateTime {
@@ -740,8 +799,23 @@ impl Default for GdsDateTime {
         Self::now()
     }
 }
+impl From<&[i16; 6]> for GdsDateTime {
+    /// Convert from a 6-element array of i16s to a [`GdsDateTime`],
+    /// in the order prescribed in the GDSII spec.
+    fn from(bytes: &[i16; 6]) -> Self {
+        Self {
+            year: bytes[0],
+            month: bytes[1],
+            day: bytes[2],
+            hour: bytes[3],
+            minute: bytes[4],
+            second: bytes[5],
+        }
+    }
+}
+
 /// # Gds Modification & Access Dates & Times
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
 pub struct GdsDateTimes {
     /// Last Modification Date & Time
     pub modified: GdsDateTime,
@@ -778,7 +852,7 @@ impl Default for GdsDateTimes {
 /// BGNSTR STRNAME [STRCLASS] {<element>}* ENDSTR
 /// ```
 ///
-#[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
 #[builder(pattern = "owned", setter(into))]
 pub struct GdsStruct {
     /// Struct Name
@@ -833,7 +907,7 @@ impl GdsStruct {
 /// UNITS {<structure>}* ENDLIB
 /// ```
 ///
-#[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Default, Clone, Builder, Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
 #[builder(pattern = "owned", setter(into))]
 pub struct GdsLibrary {
     // Required fields
@@ -922,10 +996,12 @@ impl GdsLibrary {
         wr.write_lib(self)
     }
     /// Set the library and all its structs' modification and access times
-    pub fn set_all_dates(&mut self, time: &NaiveDateTime) {
+    pub fn set_all_dates(&mut self, time: impl Into<GdsDateTime>) {
+        // Convert into [`GdsDateTime`]
+        let time: GdsDateTime = time.into();
         let forced_gds_date = GdsDateTimes {
-            modified: GdsDateTime::DateTime(time.clone()),
-            accessed: GdsDateTime::DateTime(time.clone()),
+            modified: time.clone(),
+            accessed: time.clone(),
         };
         self.dates = forced_gds_date.clone();
         for gds_struct in &mut self.structs {
@@ -1065,6 +1141,12 @@ impl From<&str> for GdsError {
         GdsError::Str(e.to_string())
     }
 }
+impl From<layout21utils::ser::Error> for GdsError {
+    fn from(e: layout21utils::ser::Error) -> Self {
+        Self::Boxed(Box::new(e))
+    }
+}
+
 #[cfg(any(test, feature = "selftest"))]
 /// Check `lib` matches across a write-read round-trip cycle
 pub fn roundtrip(lib: &GdsLibrary) -> GdsResult<()> {
