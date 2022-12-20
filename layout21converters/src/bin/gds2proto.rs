@@ -13,13 +13,13 @@ use std::error::Error;
 #[derive(Parser)]
 struct ProgramOptions {
     /// GDS Input File
-    #[clap(short = 'i', long, default_value = "")]
+    #[arg(short = 'i', long, default_value = "")]
     gds: String,
     /// Protobuf Output File
-    #[clap(short = 'o', long, default_value = "")]
+    #[arg(short = 'o', long, default_value = "")]
     proto: String,
     /// Verbose Output Mode
-    #[clap(short, long)]
+    #[arg(short, long)]
     verbose: bool,
 }
 

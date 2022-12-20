@@ -14,13 +14,13 @@ use std::error::Error;
 
 #[derive(Parser)]
 struct ProgramOptions {
-    #[clap(short = 'i', long, default_value = "")]
+    #[arg(short = 'i', long, default_value = "")]
     proto: String,
-    #[clap(short = 'o', long, default_value = "")]
+    #[arg(short = 'o', long, default_value = "")]
     gds: String,
-    #[clap(short = 't', long, default_value = "")]
+    #[arg(short = 't', long, default_value = "")]
     tech: String,
-    #[clap(short, long)]
+    #[arg(short, long)]
     verbose: bool,
 }
 

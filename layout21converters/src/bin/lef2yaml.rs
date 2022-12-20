@@ -12,13 +12,13 @@ use std::error::Error;
 #[derive(Parser)]
 struct ProgramOptions {
     /// LEF Input File
-    #[clap(short = 'i', long, default_value = "")]
+    #[arg(short = 'i', long, default_value = "")]
     lef: String,
     /// YAML Output File
-    #[clap(short = 'o', long, default_value = "")]
+    #[arg(short = 'o', long, default_value = "")]
     yaml: String,
     /// Verbose Output Mode
-    #[clap(short, long)]
+    #[arg(short, long)]
     verbose: bool,
 }
 

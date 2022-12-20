@@ -1,7 +1,7 @@
 //!
-//! # GDSII to Alternate Serialization Conversion CLI
+//! # GDSII to YAML Conversion CLI
 //!
-//!  Converts a GDSII file to [`gds21::GdsLibrary`]'s alternate serialization formats,  including JSON, YAML, and TOML.
+//! Converts a GDSII file to [`gds21::GdsLibrary`] YAML. 
 //!
 
 use clap::Parser;
@@ -12,16 +12,13 @@ use layout21converters::gds_serialization::{convert, ConvOptions};
 
 // => The doc-comment on `ProgramOptions` here is displayed by the `clap`-generated help docs =>
 
-/// GDSII to Markup-Based Serialization Format Converter
-/// Converts a GDSII file to [`gds21::GdsLibrary`]'s alternate serialization formats,  including JSON, YAML, and TOML.
+/// # GDSII to YAML Conversion CLI
+/// Converts a GDSII file to [`gds21::GdsLibrary`] YAML. 
 #[derive(Parser)]
 pub struct ProgramOptions {
     /// GDS Input File
     #[arg(short = 'i', long, default_value = "")]
     pub gds: String,
-    /// Output Format. One of ("json", "yaml", "toml")
-    #[arg(short = 'f', long, default_value = "")]
-    pub fmt: String,
     /// Output File
     #[arg(short = 'o', long, default_value = "")]
     pub out: String,
@@ -35,7 +32,7 @@ impl Into<ConvOptions> for ProgramOptions {
     fn into(self) -> ConvOptions {
         ConvOptions {
             gds: self.gds,
-            fmt: self.fmt,
+            fmt: "yaml".to_string(), // <= this is kinda the whole program right here!
             out: self.out,
             verbose: self.verbose,
         }
