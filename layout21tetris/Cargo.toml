@@ -6,15 +6,15 @@ authors = ["Dan Fritchman <dan@fritch.mn>"]
 edition = "2021"
 license = "BSD-3-Clause"
 repository = "https://github.com/dan-fritchman/Layout21"
-version = "0.2.1"
+version = "3.0.0-pre.2"
 workspace = "../"
 exclude = ["resources",]
 
 [dependencies]
 # Local workspace dependencies
-layout21raw = {path = "../layout21raw", version = "0.2.1"}
-layout21utils = {path = "../layout21utils", version = "0.2.1"}
-layout21protos = {path = "../layout21protos", version = "0.2.1"}
+layout21raw = {path = "../layout21raw", version = "3.0.0-pre.2"}
+layout21utils = {path = "../layout21utils", version = "3.0.0-pre.2"}
+layout21protos = {path = "../layout21protos", version = "3.0.0-pre.2"}
 
 # Crates.io 
 derive_builder = "0.9"

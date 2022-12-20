@@ -6,13 +6,13 @@ authors = ["Dan Fritchman <dan@fritch.mn>"]
 edition = "2021"
 license = "BSD-3-Clause"
 repository = "https://github.com/dan-fritchman/Layout21"
-version = "0.2.1"
+version = "3.0.0-pre.2"
 workspace = "../"
 exclude = ["resources",]
 
 [dependencies]
 # Local workspace dependencies
-layout21utils = {path = "../layout21utils", version="0.2.1"}
+layout21utils = {path = "../layout21utils", version="3.0.0-pre.2"}
 
 # External dependencies
 derive_builder = "0.9.0"

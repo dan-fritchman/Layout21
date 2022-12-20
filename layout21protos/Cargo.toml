@@ -6,8 +6,11 @@ authors = ["Dan Fritchman <dan@fritch.mn>"]
 edition = "2021"
 license = "BSD-3-Clause"
 repository = "https://github.com/dan-fritchman/Layout21"
-version = "0.2.1"
+version = "3.0.0-pre.2"
 workspace = "../"
 
 [dependencies]
-vlsir = { path = "vlsir/bindings/rust", version = "2.0.1" }
+# https://crates.io/crates/vlsir distributed versions here: 
+vlsir = { version = "3.0.0-pre.2" }
+# For local path-based development, use this instead:
+# vlsir = { version = "3.0.0-pre.2", path = "vlsir/bindings/rust" }

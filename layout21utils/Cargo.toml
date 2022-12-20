@@ -6,7 +6,7 @@ authors = ["Dan Fritchman <dan@fritch.mn>"]
 edition = "2021"
 license = "BSD-3-Clause"
 repository = "https://github.com/dan-fritchman/Layout21"
-version = "0.2.1"
+version = "3.0.0-pre.2"
 workspace = "../"
 
 [dependencies]
