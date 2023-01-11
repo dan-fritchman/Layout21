@@ -19,9 +19,9 @@ workspace = "../"
 
 [dependencies]
 # Local workspace dependencies
-layout21protos = {path = "../layout21protos", version = "3.0.0-pre.2"}
-layout21raw = {path = "../layout21raw", version = "3.0.0-pre.2"}
-layout21utils = {path = "../layout21utils", version = "3.0.0-pre.2"}
+layout21protos = {path = "../layout21protos", version = "3.0.0-pre.3"}
+layout21raw = {path = "../layout21raw", version = "3.0.0-pre.3"}
+layout21utils = {path = "../layout21utils", version = "3.0.0-pre.3"}
 
 # Crates.io 
 derive_builder = "0.9"

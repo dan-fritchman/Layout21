@@ -18,10 +18,10 @@ version.workspace = true
 workspace = "../"
 
 [dependencies]
-gds21 = {path = "../gds21", version = "3.0.0-pre.2", features = ["selftest"]}
-layout21converters = {path = "../layout21converters", version = "3.0.0-pre.2"}
-layout21protos = {path = "../layout21protos", version = "3.0.0-pre.2"}
-layout21raw = {path = "../layout21raw", version = "3.0.0-pre.2"}
-layout21utils = {path = "../layout21utils", version = "3.0.0-pre.2"}
-lef21 = {path = "../lef21", version = "3.0.0-pre.2"}
-## FIXME! layout21tetris = {path = "../layout21tetris", version = "3.0.0-pre.2"}
+gds21 = {path = "../gds21", version = "3.0.0-pre.3", features = ["selftest"]}
+layout21converters = {path = "../layout21converters", version = "3.0.0-pre.3"}
+layout21protos = {path = "../layout21protos", version = "3.0.0-pre.3"}
+layout21raw = {path = "../layout21raw", version = "3.0.0-pre.3"}
+layout21utils = {path = "../layout21utils", version = "3.0.0-pre.3"}
+lef21 = {path = "../lef21", version = "3.0.0-pre.3"}
+## FIXME! layout21tetris = {path = "../layout21tetris", version = "3.0.0-pre.3"}

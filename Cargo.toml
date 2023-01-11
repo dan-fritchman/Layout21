@@ -28,4 +28,4 @@ keywords = [] # FIXME!
 license = "BSD-3-Clause"
 readme = "readme.md"
 repository = "https://github.com/dan-fritchman/Layout21"
-version = "3.0.0-pre.2"
+version = "3.0.0-pre.3"

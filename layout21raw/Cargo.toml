@@ -19,10 +19,10 @@ workspace = "../"
 
 [dependencies]
 # Local workspace dependencies
-gds21 = {path = "../gds21", version = "3.0.0-pre.2", optional = true}
-layout21protos = {path = "../layout21protos", version = "3.0.0-pre.2", optional = true}
-layout21utils = {path = "../layout21utils", version = "3.0.0-pre.2"}
-lef21 = {path = "../lef21", version = "3.0.0-pre.2", optional = true}
+gds21 = {path = "../gds21", version = "3.0.0-pre.3", optional = true}
+layout21protos = {path = "../layout21protos", version = "3.0.0-pre.3", optional = true}
+layout21utils = {path = "../layout21utils", version = "3.0.0-pre.3"}
+lef21 = {path = "../lef21", version = "3.0.0-pre.3", optional = true}
 # Crates.io 
 enum_dispatch = "0.3.7"
 num-integer = "0.1"

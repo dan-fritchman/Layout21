@@ -19,7 +19,7 @@ workspace = "../"
 
 [dependencies]
 # Local workspace dependencies
-layout21utils = {path = "../layout21utils", version = "3.0.0-pre.2"}
+layout21utils = {path = "../layout21utils", version = "3.0.0-pre.3"}
 
 # External dependencies
 derive_builder = "0.9.0"
