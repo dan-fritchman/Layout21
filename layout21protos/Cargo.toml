@@ -1,14 +1,24 @@
 [package]
-name = "layout21protos"
 description = "Layout21 ProtoBuf Definitions"
+name = "layout21protos"
+
 # Shared layout21 attributes
-authors = ["Dan Fritchman <dan@fritch.mn>"]
-edition = "2018"
-license = "BSD-3-Clause"
-repository = "https://github.com/dan-fritchman/Layout21"
-version = "0.2.1"
+authors.workspace = true
+categories.workspace = true
+documentation.workspace = true
+edition.workspace = true
+exclude.workspace = true
+homepage.workspace = true
+include.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+version.workspace = true
 workspace = "../"
 
 [dependencies]
-vlsir = "0.2.1"
-
+# https://crates.io/crates/vlsir distributed versions here: 
+vlsir = {version = "3.0.0-pre.2"}
+# For local path-based development, use this instead:
+# vlsir = { version = "3.0.0-pre.2", path = "vlsir/bindings/rust" }

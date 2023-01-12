@@ -12,8 +12,8 @@ workspace = "../"
 
 [dependencies]
 # Local workspace dependencies
-layout21raw = {path = "../layout21raw", version = "0.2.1"}
-layout21utils = {path = "../layout21utils", version = "0.2.1"}
+layout21raw = {path = "../layout21raw", version = "3.0.0-pre.3"}
+layout21utils = {path = "../layout21utils", version = "3.0.0-pre.3"}
 
 # External dependencies
 slotmap = {version = "1.0", features = ["serde"]}

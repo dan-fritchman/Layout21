@@ -75,7 +75,7 @@ macro_rules! enumstr {
     }) => {
         $(#[$meta])*
         #[allow(dead_code)]
-        #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+        #[derive(Clone, Copy, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
         pub enum $enum_name {
             $( #[doc=$strval]
                 $variant ),*
@@ -113,6 +113,7 @@ macro_rules! enumstr {
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use schemars::JsonSchema;
     use serde::{Deserialize, Serialize};
 
     #[test]

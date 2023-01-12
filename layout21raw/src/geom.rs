@@ -201,9 +201,16 @@ pub enum Shape {
     Polygon(Polygon),
     Path(Path),
 }
+
+impl Default for Shape {
+    fn default() -> Self {
+        Self::Rect(Rect::default())
+    }
+}
+
 impl Shape {
     /// Boolean indication of whether we intersect with [Shape] `other`.
-    pub fn intersects(&self, other: &Shape) -> bool {
+    pub fn intersects(&self, _other: &Shape) -> bool {
         todo!() // FIXME!
     }
 }
@@ -420,7 +427,7 @@ impl ShapeTrait for Path {
 /// 2x2 rotation-matrix and two-entry translation vector,
 /// used for relative movement of [Point]s and [Shape]s.
 ///
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct Transform {
     /// Rotation / Transformation Matrix
     /// Represented in row-major order

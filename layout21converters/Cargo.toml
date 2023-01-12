@@ -1,0 +1,30 @@
+[package]
+description = "Converters to/from Layout21 formats from/to various legacy formats."
+name = "layout21converters"
+
+# Shared layout21 attributes
+authors.workspace = true
+categories.workspace = true
+documentation.workspace = true
+edition.workspace = true
+exclude.workspace = true
+homepage.workspace = true
+include.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+version.workspace = true
+workspace = "../"
+
+[dependencies]
+# Crates.io
+chrono = {version = "0.4.20"}
+clap = {version = "^4.0", features = ["derive"]}
+
+# Local Workspace
+gds21 = {path = "../gds21", version = "3.0.0-pre.3"}
+layout21protos = {path = "../layout21protos", version = "3.0.0-pre.3"}
+layout21raw = {path = "../layout21raw", version = "3.0.0-pre.3"}
+layout21utils = {path = "../layout21utils", version = "3.0.0-pre.3"}
+lef21 = {path = "../lef21", version = "3.0.0-pre.3"}
