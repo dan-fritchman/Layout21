@@ -59,9 +59,6 @@ structs:
             x: 0
             y: 0
           strans:
-            reflected: false
-            abs_mag: false
-            abs_angle: false
             mag: 0.1
             angle: 90.0
       - GdsBoundary:
@@ -2545,9 +2542,6 @@ structs:
             - 0
             - 5
           strans:
-            reflected: false
-            abs_mag: false
-            abs_angle: false
             mag: 0.1
       - GdsTextElem:
           string: VPB
@@ -2560,9 +2554,6 @@ structs:
             - 0
             - 5
           strans:
-            reflected: false
-            abs_mag: false
-            abs_angle: false
             mag: 0.1
       - GdsTextElem:
           string: VNB
@@ -2575,9 +2566,6 @@ structs:
             - 0
             - 5
           strans:
-            reflected: false
-            abs_mag: false
-            abs_angle: false
             mag: 0.1
       - GdsTextElem:
           string: VNB
@@ -2590,9 +2578,6 @@ structs:
             - 0
             - 5
           strans:
-            reflected: false
-            abs_mag: false
-            abs_angle: false
             mag: 0.1
       - GdsTextElem:
           string: Q
@@ -2605,9 +2590,6 @@ structs:
             - 0
             - 5
           strans:
-            reflected: false
-            abs_mag: false
-            abs_angle: false
             mag: 0.2
       - GdsTextElem:
           string: CLK
@@ -2620,9 +2602,6 @@ structs:
             - 0
             - 5
           strans:
-            reflected: false
-            abs_mag: false
-            abs_angle: false
             mag: 0.2
       - GdsTextElem:
           string: D
@@ -2635,9 +2614,6 @@ structs:
             - 0
             - 5
           strans:
-            reflected: false
-            abs_mag: false
-            abs_angle: false
             mag: 0.1
       - GdsTextElem:
           string: VPWR
@@ -2650,9 +2626,6 @@ structs:
             - 0
             - 5
           strans:
-            reflected: false
-            abs_mag: false
-            abs_angle: false
             mag: 0.1
       - GdsTextElem:
           string: VGND
@@ -2665,9 +2638,6 @@ structs:
             - 0
             - 5
           strans:
-            reflected: false
-            abs_mag: false
-            abs_angle: false
             mag: 0.1
       - GdsBoundary:
           layer: 64

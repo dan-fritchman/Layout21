@@ -83,9 +83,6 @@
               "y": 0
             },
             "strans": {
-              "reflected": false,
-              "abs_mag": false,
-              "abs_angle": false,
               "mag": 0.1,
               "angle": 90.0
             }
@@ -5045,9 +5042,6 @@
               5
             ],
             "strans": {
-              "reflected": false,
-              "abs_mag": false,
-              "abs_angle": false,
               "mag": 0.1
             }
           }
@@ -5066,9 +5060,6 @@
               5
             ],
             "strans": {
-              "reflected": false,
-              "abs_mag": false,
-              "abs_angle": false,
               "mag": 0.1
             }
           }
@@ -5087,9 +5078,6 @@
               5
             ],
             "strans": {
-              "reflected": false,
-              "abs_mag": false,
-              "abs_angle": false,
               "mag": 0.1
             }
           }
@@ -5108,9 +5096,6 @@
               5
             ],
             "strans": {
-              "reflected": false,
-              "abs_mag": false,
-              "abs_angle": false,
               "mag": 0.1
             }
           }
@@ -5129,9 +5114,6 @@
               5
             ],
             "strans": {
-              "reflected": false,
-              "abs_mag": false,
-              "abs_angle": false,
               "mag": 0.2
             }
           }
@@ -5150,9 +5132,6 @@
               5
             ],
             "strans": {
-              "reflected": false,
-              "abs_mag": false,
-              "abs_angle": false,
               "mag": 0.2
             }
           }
@@ -5171,9 +5150,6 @@
               5
             ],
             "strans": {
-              "reflected": false,
-              "abs_mag": false,
-              "abs_angle": false,
               "mag": 0.1
             }
           }
@@ -5192,9 +5168,6 @@
               5
             ],
             "strans": {
-              "reflected": false,
-              "abs_mag": false,
-              "abs_angle": false,
               "mag": 0.1
             }
           }
@@ -5213,9 +5186,6 @@
               5
             ],
             "strans": {
-              "reflected": false,
-              "abs_mag": false,
-              "abs_angle": false,
               "mag": 0.1
             }
           }

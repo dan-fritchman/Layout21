@@ -682,11 +682,6 @@
       "title": "Gds Translation Settings",
       "description": "Reflection, rotation, and magnification for text-elements and references. As configured by `STRANS` records.",
       "type": "object",
-      "required": [
-        "abs_angle",
-        "abs_mag",
-        "reflected"
-      ],
       "properties": {
         "abs_angle": {
           "description": "Absolute Angle Setting",
@@ -705,7 +700,7 @@
           "format": "double"
         },
         "mag": {
-          "description": "Magnification Factor. Defaults to 1.0 if not specified.",
+          "description": "Magnification Factor. Interpreted as unit-scaling (mag==1.0) if not specified.",
           "type": [
             "number",
             "null"

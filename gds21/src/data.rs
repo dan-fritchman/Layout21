@@ -251,22 +251,23 @@ impl GdsFloat64 {
 #[derive(Default, Debug, Clone, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub struct Unsupported;
 
+
 /// # Gds Translation Settings
 /// Reflection, rotation, and magnification for text-elements and references.
 /// As configured by `STRANS` records.
 #[derive(Default, Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
 pub struct GdsStrans {
-    // Required Fields
     /// Reflection, about the x-axis.
     /// Applied before rotation.
+    #[serde(default, skip_serializing_if = "is_false")]
     pub reflected: bool,
     /// Absolute Magnification Setting
+    #[serde(default, skip_serializing_if = "is_false")]
     pub abs_mag: bool,
     /// Absolute Angle Setting
+    #[serde(default, skip_serializing_if = "is_false")]
     pub abs_angle: bool,
-
-    // Optional Fields
-    /// Magnification Factor. Defaults to 1.0 if not specified.
+    /// Magnification Factor. Interpreted as unit-scaling (mag==1.0) if not specified.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mag: Option<f64>,
     /// Angle, in degrees counter-clockwise. Defaults to zero if not specified.
@@ -553,6 +554,7 @@ pub struct GdsArrayRef {
     pub cols: i16,
     /// Number of rows
     pub rows: i16,
+
     // Optional Fields
     /// Translation & Reflection Options
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1145,6 +1147,13 @@ impl From<layout21utils::ser::Error> for GdsError {
     fn from(e: layout21utils::ser::Error) -> Self {
         Self::Boxed(Box::new(e))
     }
+}
+
+/// Our helper for "do not serialize default `false` boolean values". 
+/// This is a function primarily because those are what `#[serde(skip_serializing_if)]` understands. 
+/// (Or at least what we understand how to make it understand).
+fn is_false(b:& bool) -> bool {
+    !b
 }
 
 #[cfg(any(test, feature = "selftest"))]

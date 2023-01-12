@@ -8,7 +8,7 @@ use clap::Parser;
 use std::error::Error;
 
 // Use our own crate, note by name, not `crate::` or `super::`.
-use layout21converters::gds_serialization::{convert, ConvOptions};
+use layout21converters::gds_serialization::{to_markup, ToMarkupOptions};
 
 // => The doc-comment on `ProgramOptions` here is displayed by the `clap`-generated help docs =>
 
@@ -27,10 +27,10 @@ pub struct ProgramOptions {
     pub verbose: bool,
 }
 
-impl Into<ConvOptions> for ProgramOptions {
-    /// Convert into the [`gds_serialization::ConvOptions`] struct.
-    fn into(self) -> ConvOptions {
-        ConvOptions {
+impl Into<ToMarkupOptions> for ProgramOptions {
+    /// Convert into the [`gds_serialization::ToMarkupOptions`] struct.
+    fn into(self) -> ToMarkupOptions {
+        ToMarkupOptions {
             gds: self.gds,
             fmt: "toml".to_string(), // <= this is kinda the whole program right here!
             out: self.out,
@@ -40,8 +40,8 @@ impl Into<ConvOptions> for ProgramOptions {
 }
 
 /// Main entry point.
-/// Parses the command-line arguments and calls [`gds_serialization::convert`].
+/// Parses the command-line arguments and calls [`gds_serialization::to_markup`].
 pub fn main() -> Result<(), Box<dyn Error>> {
     let options = ProgramOptions::parse();
-    convert(&options.into())
+    to_markup(&options.into())
 }
