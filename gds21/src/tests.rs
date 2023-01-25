@@ -209,7 +209,6 @@ fn empty_lib_to_yaml() -> GdsResult<()> {
     Ok(())
 }
 #[test]
-#[ignore] // https://github.com/dan-fritchman/Layout21/issues/33
 fn empty_lib_to_toml() -> GdsResult<()> {
     let lib = empty_lib();
     Toml.save(&lib, &resource("empty.gds.toml"))
