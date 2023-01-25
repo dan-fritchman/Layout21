@@ -17,13 +17,13 @@ class SizeOf:
 
 
 # Enumerated means of specifying x-y relative-placement separation
-SepBy = Union[
-    UnitSpeced, SizeOf  # Absolute valued dimensions  # Size of an instantiable object
-]
+SepBy = Union[UnitSpeced, SizeOf]
 
-# Three-dimensional separation units
+
 @dataclass
 class Separation:
+    """# Three-dimensional separation"""
+
     x: Optional[SepBy] = None
     y: Optional[SepBy] = None
     z: Optional[int] = None
@@ -31,7 +31,7 @@ class Separation:
     @staticmethod
     def zero() -> "Separation":
         return Separation()
-        
+
     @staticmethod
     def by_x(x: SepBy) -> "Separation":
         return Separation(x=x)

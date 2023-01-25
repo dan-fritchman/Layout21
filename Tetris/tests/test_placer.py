@@ -2,17 +2,18 @@ from dataclasses import dataclass
 from typing import Optional
 
 import tetris
-from tetris.align import Align, AlignSide
-from tetris.abstract import Abstract, Port, PortKind
-from tetris.library import Library
-from tetris.instance import Instance, Reflect
-from tetris.layout import Layout
-from tetris.placer import Placer
-from tetris.outline import Outline
-from tetris.cell import Cell
-from tetris.placement import Place, Placeable, RelAssign, RelativePlace, Side, AbsPlace
-from tetris.separation import SepBy, Separation
+from tetris import Align, AlignSide
+from tetris import Abstract, Port, PortKind
+from tetris import Library
+from tetris import Instance, Reflect
+from tetris import Layout
+from tetris import Outline
+from tetris import Cell
+from tetris import Place, Placeable, RelAssign, RelativePlace, Side, AbsPlace
+from tetris import SepBy, Separation
 
+# Non-public imports
+from tetris.placer import Placer
 # from .tests import exports, SampleStacks
 
 
@@ -83,79 +84,78 @@ def test_place2() -> None:
     exports(lib, stack)
 
 
-# def test_place3() -> None :
-#     # Test each relative side and alignment
+def test_place3() -> None:
+    # Test each relative side and alignment
 
-#     # Get the sample data
-#     sample_lib = SampleLib.get()
-#     ibig = sample_lib.ibig
-#     big = sample_lib.big
-#     lil = sample_lib.lil
-#     lib = sample_lib.lib
-#     parent = sample_lib.parent
+    # Get the sample data
+    sample_lib = SampleLib.get()
+    ibig = sample_lib.ibig
+    big = sample_lib.big
+    lil = sample_lib.lil
+    lib = sample_lib.lib
+    parent = sample_lib.parent
 
-#     lib.name = "test_place3"
-#     relto = ibig
+    lib.name = "test_place3"
+    relto = ibig
 
-#     # Relative-placement-adder closure
-#     add_inst = |inst_name: str, side, align| {
-#         i = Instance(
-#             inst_name: inst_name,
-#             cell: lil,
-#             loc: RelativePlace(RelativePlace(
-#                 to: relto,
-#                 side,
-#                 align: AlignSide(align),
-#                 sep: Separation.zero(),
-#             ),
-#             reflect_horiz: False,
-#             reflect_vert: False,
-#         )
-#         parent.add_instance(i)
-#     }
-#     # Add a bunch of em
-#     i1 = add_inst("i1", Side.Left, Side.Bottom)
-#     i2 = add_inst("i2", Side.Right, Side.Bottom)
-#     i3 = add_inst("i3", Side.Bottom, Side.Left)
-#     i4 = add_inst("i4", Side.Bottom, Side.Right)
-#     i5 = add_inst("i5", Side.Left, Side.Top)
-#     i6 = add_inst("i6", Side.Right, Side.Top)
-#     i7 = add_inst("i7", Side.Top, Side.Left)
-#     i8 = add_inst("i8", Side.Top, Side.Right)
+    # Relative-placement-adder closure
+    def add_inst(name: str, side: Side, align: Side) -> Instance:
+        i = Instance(
+            name=name,
+            of=lil,
+            loc=RelativePlace(
+                to=relto,
+                side=side,
+                align=AlignSide(align),
+                sep=Separation.zero(),
+            ),
+            reflect=Reflect.default(),
+        )
+        return parent.add_instance(i)
 
-#     # Add `parent` to the library
-#     _parent = lib.add_cell(parent)
+    # Add a bunch of em
+    i1 = add_inst("i1", Side.Left, Side.Bottom)
+    i2 = add_inst("i2", Side.Right, Side.Bottom)
+    i3 = add_inst("i3", Side.Bottom, Side.Left)
+    i4 = add_inst("i4", Side.Bottom, Side.Right)
+    i5 = add_inst("i5", Side.Left, Side.Top)
+    i6 = add_inst("i6", Side.Right, Side.Top)
+    i7 = add_inst("i7", Side.Top, Side.Left)
+    i8 = add_inst("i8", Side.Top, Side.Right)
 
-#     # The real code under test: run placement
-#     (lib, stack) = Placer.place(lib, SampleStacks.pdka())
+    # Add `parent` to the library
+    parent = lib.add_cell(Cell(name="parent", layout=parent))
 
-#     # And test the placed results
-#     bigbox = ibig.read().boundbox()
-#     ibox = i1.read().boundbox()
-#     assert ibox.side(Side.Right), bigbox.side(Side.Left))
-#     assert ibox.side(Side.Bottom), bigbox.side(Side.Bottom))
-#     ibox = i2.read().boundbox()
-#     assert ibox.side(Side.Left), bigbox.side(Side.Right))
-#     assert ibox.side(Side.Bottom), bigbox.side(Side.Bottom))
-#     ibox = i3.read().boundbox()
-#     assert ibox.side(Side.Top), bigbox.side(Side.Bottom))
-#     assert ibox.side(Side.Left), bigbox.side(Side.Left))
-#     ibox = i4.read().boundbox()
-#     assert ibox.side(Side.Top), bigbox.side(Side.Bottom))
-#     assert ibox.side(Side.Right), bigbox.side(Side.Right))
-#     ibox = i5.read().boundbox()
-#     assert ibox.side(Side.Right), bigbox.side(Side.Left))
-#     assert ibox.side(Side.Top), bigbox.side(Side.Top))
-#     ibox = i6.read().boundbox()
-#     assert ibox.side(Side.Left), bigbox.side(Side.Right))
-#     assert ibox.side(Side.Top), bigbox.side(Side.Top))
-#     ibox = i7.read().boundbox()
-#     assert ibox.side(Side.Bottom), bigbox.side(Side.Top))
-#     assert ibox.side(Side.Left), bigbox.side(Side.Left))
-#     ibox = i8.read().boundbox()
-#     assert ibox.side(Side.Bottom), bigbox.side(Side.Top))
-#     assert ibox.side(Side.Right), bigbox.side(Side.Right))
-#     exports(lib, stack)
+    # The real code under test: run placement
+    (lib, stack) = Placer.place(lib, SampleStacks.pdka())
+
+    # And test the placed results
+    bigbox = ibig.boundbox()
+    ibox = i1.boundbox()
+    assert ibox.side(Side.Right) == bigbox.side(Side.Left)
+    assert ibox.side(Side.Bottom) == bigbox.side(Side.Bottom)
+    ibox = i2.boundbox()
+    assert ibox.side(Side.Left) == bigbox.side(Side.Right)
+    assert ibox.side(Side.Bottom) == bigbox.side(Side.Bottom)
+    ibox = i3.boundbox()
+    assert ibox.side(Side.Top) == bigbox.side(Side.Bottom)
+    assert ibox.side(Side.Left) == bigbox.side(Side.Left)
+    ibox = i4.boundbox()
+    assert ibox.side(Side.Top) == bigbox.side(Side.Bottom)
+    assert ibox.side(Side.Right) == bigbox.side(Side.Right)
+    ibox = i5.boundbox()
+    assert ibox.side(Side.Right) == bigbox.side(Side.Left)
+    assert ibox.side(Side.Top) == bigbox.side(Side.Top)
+    ibox = i6.boundbox()
+    assert ibox.side(Side.Left) == bigbox.side(Side.Right)
+    assert ibox.side(Side.Top) == bigbox.side(Side.Top)
+    ibox = i7.boundbox()
+    assert ibox.side(Side.Bottom) == bigbox.side(Side.Top)
+    assert ibox.side(Side.Left) == bigbox.side(Side.Left)
+    ibox = i8.boundbox()
+    assert ibox.side(Side.Bottom) == bigbox.side(Side.Top)
+    assert ibox.side(Side.Right) == bigbox.side(Side.Right)
+    exports(lib, stack)
 
 
 # def test_place4() -> None :
@@ -172,9 +172,9 @@ def test_place2() -> None:
 #     lib.name = "test_place4"
 
 #     # Relative-placement-adder closure
-#     add_inst = |inst_name: str, side, sep| {
+#     add_inst = |name: str, side, sep| {
 #         i = Instance(
-#             inst_name: inst_name,
+#             name: name,
 #             cell: lil,
 #             loc: RelativePlace(RelativePlace(
 #                 to: ibig,
@@ -201,18 +201,18 @@ def test_place2() -> None:
 #     (lib, stack) = Placer.place(lib, SampleStacks.pdka())
 
 #     # And test the placed results
-#     lilsize = lil.read().boundbox_size()
-#     bigbox = ibig.read().boundbox()
-#     ibox = i1.read().boundbox()
+#     lilsize = lil.boundbox_size()
+#     bigbox = ibig.boundbox()
+#     ibox = i1.boundbox()
 #     assert ibox.side(Side.Top), bigbox.side(Side.Top))
 #     assert ibox.side(Side.Right), bigbox.side(Side.Left) - lilsize.x)
-#     ibox = i2.read().boundbox()
+#     ibox = i2.boundbox()
 #     assert ibox.side(Side.Bottom), bigbox.side(Side.Bottom))
 #     assert ibox.side(Side.Left), bigbox.side(Side.Right) + lilsize.x)
-#     ibox = i3.read().boundbox()
+#     ibox = i3.boundbox()
 #     assert ibox.side(Side.Left), bigbox.side(Side.Left))
 #     assert ibox.side(Side.Top), bigbox.side(Side.Bottom) - lilsize.y)
-#     ibox = i4.read().boundbox()
+#     ibox = i4.boundbox()
 #     assert ibox.side(Side.Right), bigbox.side(Side.Right))
 #     assert ibox.side(Side.Bottom), bigbox.side(Side.Top) + lilsize.y)
 
@@ -233,9 +233,9 @@ def test_place2() -> None:
 #     lib.name = "test_place5"
 
 #     # Relative-placement-adder closure
-#     add_inst = |inst_name: str, side, sep| {
+#     add_inst = |name: str, side, sep| {
 #         i = Instance {
-#             inst_name: inst_name,
+#             name: name,
 #             cell: lil,
 #             loc: RelativePlace(RelativePlace {
 #                 to: ibig,
@@ -264,88 +264,28 @@ def test_place2() -> None:
 #     (lib, stack) = Placer.place(lib, SampleStacks.pdka())
 
 #     # And test the placed results
-#     bigbox = ibig.read().boundbox()
-#     ibox = i1.read().boundbox()
+#     bigbox = ibig.boundbox()
+#     ibox = i1.boundbox()
 #     assert ibox.side(Side.Bottom), bigbox.side(Side.Bottom))
 #     assert ibox.side(Side.Right), bigbox.side(Side.Left) - dx)
-#     ibox = i2.read().boundbox()
+#     ibox = i2.boundbox()
 #     assert ibox.side(Side.Top), bigbox.side(Side.Top))
 #     assert ibox.side(Side.Left), bigbox.side(Side.Right) + dx)
-#     ibox = i3.read().boundbox()
+#     ibox = i3.boundbox()
 #     assert ibox.side(Side.Right), bigbox.side(Side.Right))
 #     assert ibox.side(Side.Top), bigbox.side(Side.Bottom) - dy)
-#     ibox = i4.read().boundbox()
+#     ibox = i4.boundbox()
 #     assert ibox.side(Side.Left), bigbox.side(Side.Left))
 #     assert ibox.side(Side.Bottom), bigbox.side(Side.Top) + dy)
 
 #     exports(lib, stack)
 
 
-# def test_place6() -> None :
-#     # Test port-relative placement
-
-#     # Get the sample data
-#     sample_lib = SampleLib.get()
-#     ibig = sample_lib.ibig
-#     big = sample_lib.big
-#     lil = sample_lib.lil
-#     lib = sample_lib.lib
-#     parent = sample_lib.parent
-
-#     lib.name = "test_place6"
-
-#     # Relative-placement-adder closure
-#     add_inst = |inst_name: str| {
-#         i = Instance {
-#             inst_name: inst_name,
-#             cell: lil,
-#             loc: (0, 0),
-#             reflect_horiz: False,
-#             reflect_vert: False,
-#         }
-#         parent.add_instance(i)
-#     }
-#     # Add a `lil`
-#     i1 = add_inst("i1")
-
-#     # The "code under test": add a relative-placed `Assign`.
-#     parent.places.append(Placeable.Assign(Ptr(RelAssign {
-#         net: "NETPPP",
-#         loc: RelativePlace {
-#             to: Placeable.Port {
-#                 inst: i1,
-#                 port: "PPP",
-#             },
-#             align: Align.Center,
-#             side: Side.Left, # FIXME: kinda nonsense
-#             sep: Separation.z(2),
-#         },
-#     })))
-#     # Add `parent` to the library
-#     parent = lib.add_cell(parent)
-
-#     # The real code under test: run placement
-#     (lib, stack) = Placer.place(lib, SampleStacks.pdka())
-
-#     {
-#         p = parent.read()
-#         parent_layout = p.layout.as_ref().unwrap()
-#         assert parent_layout.places.len(), 0)
-#         assert parent_layout.instances.len(), 2)
-#         assert parent_layout.cuts.len(), 0)
-#         assert parent_layout.assignments.len(), 1)
-#         assn = parent_layout.assignments[0]
-#         assert assn.net, "NETPPP")
-#         assert assn.at.track.layer, 2)
-#         assert assn.at.track.track, 0)
-#         assert assn.at.cross.layer, 1)
-#         assert assn.at.cross.track, 1)
-#     }
-#     exports(lib, stack)
-
-
 @dataclass
 class SampleLib:
+    # The sample library used in several tests,
+    # including attribute-references to key instances and cells.
+
     lib: Library
     big: Cell
     ibig: Instance
@@ -360,7 +300,7 @@ class SampleLib:
         lib = Library("_rename_me_plz_")
         # Create a big center cell
         big = Layout("big", 1, Outline.rect(11, 12))
-        big = lib.add_cell(big)
+        big = lib.add_cell(Cell(name="big", layout=big))
         # Create the parent cell which instantiates it
         parent = Layout("parent", 3, Outline.rect(40, 35))
         # Create an initial instance
@@ -374,19 +314,20 @@ class SampleLib:
         # Create a unit cell which we'll instantiate a few times around `ibig`
         lil = Cell("lil")
         lil.layout = Layout("lil", 1, Outline.rect(2, 1))
-        lil_abs = Abstract("lil", 1, Outline.rect(2, 1))
-        lil_abs.ports.append(
-            Port(
-                name="PPP",
-                kind=PortKind.ZTopEdge(
-                    track=0,
-                    side=abs.Side.BottomOrLeft,
-                    into=(2, stack.RelZ.Above),
-                ),
-            )
-        )
-        lil.abs = Some(lil_abs)
+        lil.abs = Abstract(name="lil", metals=1, outline=Outline.rect(2, 1), ports=[])
+        # lil_abs.ports.append(
+        #     Port(
+        #         name="PPP",
+        #         kind=PortKind.ZTopEdge(
+        #             track=0,
+        #             side=abs.Side.BottomOrLeft,
+        #             into=(2, stack.RelZ.Above),
+        #         ),
+        #     )
+        # )
+        # lil.abs = Some(lil_abs)
         lil = lib.add_cell(lil)
+
         return SampleLib(
             lib,
             big,

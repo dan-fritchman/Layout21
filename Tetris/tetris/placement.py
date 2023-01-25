@@ -51,6 +51,10 @@ class AbsPlace:
 
     xy: Xy ## FIXME: [PrimPitches]
 
+    @staticmethod
+    def origin() -> "AbsPlace":
+        return AbsPlace(xy=Xy.origin())
+
     @property
     def x(self) -> PrimPitches:
         return self.xy.x

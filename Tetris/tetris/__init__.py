@@ -17,6 +17,9 @@ from .placement import *
 from .array import *
 from .group import *
 from .instantiable import *
+from .reflect import * 
+from .align import * 
+from .separation import * 
 
 # from .layer_period import *
 # from .tracks import *

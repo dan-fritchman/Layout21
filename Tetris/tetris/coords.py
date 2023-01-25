@@ -107,6 +107,17 @@ class PrimPitches:
             )
         return PrimPitches(self.dir, self.num + other.num)
 
+    def __sub__(self, other: "PrimPitches") -> "PrimPitches":
+        if not isinstance(other, PrimPitches):
+            return NotImplemented
+        if self.dir != other.dir:
+            raise ValueError(
+                "Invalid attempt to add opposite-direction {} and {}".format(
+                    self, other
+                )
+            )
+        return PrimPitches(self.dir, self.num - other.num)
+
 
 # # Numeric operations between primitive-pitch values.
 # # Generally panic if operating on two [PrimPitches] with different directions.
