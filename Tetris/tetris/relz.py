@@ -2,7 +2,7 @@ from enum import Enum, auto
 
 
 class RelZ(Enum):
-    """ Relative Z-Axis Reference to one Layer `Above` or `Below` another """
+    """Relative Z-Axis Reference to one Layer `Above` or `Below` another"""
 
     Above = auto()
     Below = auto()
@@ -13,4 +13,3 @@ class RelZ(Enum):
         if self == RelZ.Below:
             return RelZ.Above
         raise ValueError
-

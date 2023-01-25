@@ -1,6 +1,6 @@
 
 from enum import Enum, auto 
-from typing import List, Union, Optionalal 
+from typing import List, Union, Optional
 
 from pydantic.dataclasses import dataclass
 
@@ -32,29 +32,9 @@ class TrackSegment:
     stop: DbUnits
 
 
-@dataclass
-enum TrackConflict :
-    Assign(Assign),
-    Cut(TrackCross),
-    Blockage(Ptr<Instance>),
+TrackConflict = Union[Assign, TrackCross, Instance]
 
 
-    def fmt(self, f: std.fmt.Formatter) -> std.fmt.Result :
-        match self :
-            # Delegate simpler types to [Debug]
-            TrackConflict.Assign(a) => std.fmt.Debug.fmt(a, f),
-            TrackConflict.Cut(c) => std.fmt.Debug.fmt(c, f),
-            # And for more complicated ones, [Display]
-            TrackConflict.Blockage(i) => std.fmt.Debug.fmt(i, f),
-        
-    
-
-
-    def from(tp: TrackSegmentType<'_>) -> Self :
-        match tp :
-            TrackSegmentType.Cut : src  => TrackConflict.Cut(src.clone()),
-            TrackSegmentType.Blockage : src  => TrackConflict.Blockage(src.clone()),
-            _ => unreachable!(),
         
     
 

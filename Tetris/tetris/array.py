@@ -4,7 +4,7 @@
 # Uniformly-spaced repetitions of [Arrayable] elements.
 #
 
-from pydantic.dataclasses import dataclass
+from dataclasses import dataclass
 
 # Local imports
 from .coords import PrimPitches, Xy
@@ -15,8 +15,8 @@ from .separation import Separation
 
 @dataclass
 class Array:
-    """ # Array 
-    A Uniform-Spaced Array of Identical [`Instantiable`] Elements """
+    """# Array
+    A Uniform-Spaced Array of Identical [`Instantiable`] Elements"""
 
     # Array Name
     name: str
@@ -32,4 +32,3 @@ class Array:
     def boundbox_size(self) -> Xy[PrimPitches]:
         _unit = self.unit.boundbox_size()
         raise NotImplementedError  # FIXME!
-

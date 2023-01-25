@@ -25,4 +25,3 @@ class AlignPorts:
 
 # Alignment types
 Align = Union[AlignSide, AlignCenter, AlignPorts]
-

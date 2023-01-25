@@ -2,7 +2,7 @@
 # # Layout21 Placement Module
 #
 
-from typing import Union
+from typing import Union, Any, Optional
 
 from pydantic.dataclasses import dataclass
 
@@ -24,7 +24,7 @@ class RelAssign:
 
 @dataclass
 class Port:
-    """ Reference to the Location of a Port """
+    """Reference to the Location of a Port"""
 
     inst: Instance
     port: str
@@ -43,11 +43,32 @@ def loc(self: Placeable) -> "Place":
     raise TypeError
 
 
+
+
+@dataclass
+class AbsPlace:
+    """Absolute-Valued Placement, in Primitive Pitches"""
+
+    xy: Xy ## FIXME: [PrimPitches]
+
+    @property
+    def x(self) -> PrimPitches:
+        return self.xy.x
+
+    @property
+    def y(self) -> PrimPitches:
+        return self.xy.y
+
+    @staticmethod
+    def xy(x: int, y: int) -> "AbsPlace":
+        return AbsPlace(xy=Xy(x=PrimPitches.x(x), y=PrimPitches.y(y)))
+
+
 # # Relative Placement
 @dataclass
 class RelativePlace:
     # Placement is relative `to` this
-    to: Placeable
+    to: Any  ## FIXME: Placeable
     # Placed on this `side` of `to`
     side: Side
     # Aligned to this aspect of `to`
@@ -55,13 +76,7 @@ class RelativePlace:
     # Separation between the placement and the `to`
     sep: Separation
 
-
-@dataclass
-class AbsPlace:
-    """ Absolute-Valued Placement, in Primitive Pitches """
-
-    xy: Xy[PrimPitches]
-
+    resolved: Optional[AbsPlace] = None
 
 # # Placement Union
 #

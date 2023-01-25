@@ -37,9 +37,18 @@ class Layout:
     # Track cuts
     cuts: List[TrackCross] = field(default_factory=list)
 
+    def add_instance(self, instance: Instance) -> Instance:
+        self.instances.append(instance)
+        return instance
+
     # Assign a net at the given coordinates.
     def assign(
-        self, net: str, layer: int, track: int, at: int, relz: RelZ,
+        self,
+        net: str,
+        layer: int,
+        track: int,
+        at: int,
+        relz: RelZ,
     ) -> None:
         at = TrackCross.from_relz(layer, track, at, relz)
         self.assignments.append(Assign(net, at))

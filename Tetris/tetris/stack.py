@@ -143,3 +143,7 @@ class Stack:
         from .validate import validate_stack
 
         return validate_stack(self)
+
+
+# FIXME: these will probably be the same type
+ValidStack = Stack

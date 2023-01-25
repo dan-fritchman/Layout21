@@ -16,6 +16,7 @@ from .instance import *
 from .placement import *
 from .array import *
 from .group import *
+from .instantiable import *
 
 # from .layer_period import *
 # from .tracks import *

@@ -7,4 +7,3 @@ from pydantic.dataclasses import dataclass
 @dataclass
 class Index:
     inner: int
-

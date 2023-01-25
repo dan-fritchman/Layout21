@@ -25,4 +25,3 @@ class Group:
     # Size of the Instance's rectangular `boundbox`, i.e. the zero-origin `boundbox` of its `cell`.
     def boundbox_size(self) -> Xy[PrimPitches]:
         raise NotImplementedError
-

@@ -8,8 +8,7 @@
 
 
 from typing import List, Set, Dict, Type, Union, Optional
-
-from pydantic.dataclasses import dataclass
+from dataclasses import dataclass
 
 # Local imports
 from .index import Index
@@ -39,7 +38,10 @@ class RawLayoutPtr:
 # # Cell View Enumeration
 # All of the ways in which a Cell is represented
 CellView = Union[
-    Bundle, Abstract, Layout, RawLayoutPtr,
+    Bundle,
+    Abstract,
+    Layout,
+    RawLayoutPtr,
 ]
 
 # Collection of the Views describing a Cell
@@ -116,4 +118,3 @@ class Cell:
             return None
         else:
             return Index(metals - 1)
-

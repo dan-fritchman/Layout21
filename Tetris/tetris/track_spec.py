@@ -33,14 +33,18 @@ class TrackCross:
     # Create from four [int], representing the two (layer-index, track-index) pairs.
     def from_parts(layer1: int, index1: int, layer2: int, index2: int) -> "TrackCross":
         return TrackCross(
-            track=TrackRef(layer1, index1), cross=TrackRef(layer2, index2),
+            track=TrackRef(layer1, index1),
+            cross=TrackRef(layer2, index2),
         )
 
     # Create from a (layer-index, track-index) pair and a [RelZ]
     def from_relz(layer: int, track: int, at: int, relz: RelZ) -> "TrackCross":
         layer2 = layer + 1 if relz == RelZ.Above else layer - 1
         track = TrackRef(layer, track)
-        cross = TrackRef(layer=layer2, track=at,)
+        cross = TrackRef(
+            layer=layer2,
+            track=at,
+        )
 
         return TrackCross(track, cross)
 

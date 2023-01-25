@@ -30,4 +30,3 @@ class Side(Enum):
         if self == Side.Right:
             return Side.Top
         raise ValueError
-

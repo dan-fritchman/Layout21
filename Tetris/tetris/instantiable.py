@@ -7,4 +7,3 @@ from .group import Group
 # Instantiable Types Union
 # Primarily used as the `of` target of each `Instance`
 Instantiable = Union[Cell, Array, Group]
-

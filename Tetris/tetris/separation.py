@@ -29,6 +29,10 @@ class Separation:
     z: Optional[int] = None
 
     @staticmethod
+    def zero() -> "Separation":
+        return Separation()
+        
+    @staticmethod
     def by_x(x: SepBy) -> "Separation":
         return Separation(x=x)
 
@@ -47,4 +51,3 @@ class Separation:
         if dir_ == Dir.Vert:
             return self.y
         raise ValueError
-

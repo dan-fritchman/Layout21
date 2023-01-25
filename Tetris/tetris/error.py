@@ -5,4 +5,3 @@
 
 class LayoutError(Exception):
     ...  # FIXME! Add some real data
-

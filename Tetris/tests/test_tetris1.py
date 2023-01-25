@@ -2,8 +2,9 @@
 # # Unit Tests
 #
 
+from typing import Optional
+
 # Local imports
-from tetris import abstract
 from tetris.cell import Cell
 from tetris.instance import Instance
 from tetris.layout import Layout
@@ -15,6 +16,10 @@ from tetris.stack import *
 # from tetris import conv
 # from tetris.tracks import *
 # from tetris.validate import ValidStack
+
+
+def exports(lib: Library, stack: Optional["Stack"] = None) -> None:
+    ...  # FIXME!
 
 
 # Create an empty cell
@@ -39,7 +44,12 @@ def test_create_layout() -> None:
         metals=4,
         outline=Outline.rect(50, 5),
         instances=list(),
-        assignments=[Assign(net="clk", at=TrackCross.from_relz(1, 0, 1, RelZ.Above),)],
+        assignments=[
+            Assign(
+                net="clk",
+                at=TrackCross.from_relz(1, 0, 1, RelZ.Above),
+            )
+        ],
         cuts=list(),
     )
 
@@ -52,7 +62,12 @@ def test_create_lib1() -> None:
         metals=3,
         outline=Outline.rect(50, 5),
         instances=list(),
-        assignments=[Assign(net="clk", at=TrackCross.from_relz(1, 4, 2, RelZ.Below),)],
+        assignments=[
+            Assign(
+                net="clk",
+                at=TrackCross.from_relz(1, 4, 2, RelZ.Below),
+            )
+        ],
         cuts=[
             TrackCross.from_relz(0, 1, 1, RelZ.Above),
             TrackCross.from_relz(0, 1, 3, RelZ.Above),
@@ -197,21 +212,20 @@ def test_create_lib1() -> None:
 #         protolib,
 #         resource(format!(":.proto.yaml", protolib.domain)),
 #     )
-    
+
 #     raw.proto.proto.save(
 #         protolib,
 #         resource(format!(":.proto.bin", protolib.domain)),
 #     )
-    
+
 
 #     # Export to GDSII
 #     gds = rawlib.to_gds()
 #     Yaml.save(gds, resource(format!(":.gds.yaml", gds.name)))
-        
+
 #     gds.save(resource(format!(":.gds", gds.name)))
 
 
 # # Grab the full path of resource-file `fname`
 # def resource(rname: str) -> str :
 #     format!(":/resources/:", env!("CARGO_MANIFEST_DIR"), rname)
-

@@ -13,15 +13,22 @@ from .index import Index
 
 
 class Dir(Enum):
-    """ Enumerated 2-D Directions """
+    """Enumerated 2-D Directions"""
 
     Horiz = "horiz"
     Vert = "vert"
 
+    def other(self) -> "Dir":
+        if self == Dir.Horiz:
+            return Dir.Vert
+        if self == Dir.Vert:
+            return Dir.Horiz
+        raise ValueError
+
 
 @dataclass
 class DbUnits:
-    """ Distance Specified in Database Units """
+    """Distance Specified in Database Units"""
 
     num: int
 
@@ -67,7 +74,7 @@ class DbUnits:
 
 @dataclass
 class PrimPitches:
-    """ Distance in Primitive-Pitches, in Either X/Y Direction """
+    """Distance in Primitive-Pitches, in Either X/Y Direction"""
 
     dir: Dir
     num: int
@@ -88,6 +95,17 @@ class PrimPitches:
     # Create a new [PrimPitches] with opposite sign of `self.num`
     def negate(self) -> "PrimPitches":
         return PrimPitches(self.dir, -self.num)
+
+    def __add__(self, other: "PrimPitches") -> "PrimPitches":
+        if not isinstance(other, PrimPitches):
+            return NotImplemented
+        if self.dir != other.dir:
+            raise ValueError(
+                "Invalid attempt to add opposite-direction {} and {}".format(
+                    self, other
+                )
+            )
+        return PrimPitches(self.dir, self.num + other.num)
 
 
 # # Numeric operations between primitive-pitch values.
@@ -159,7 +177,7 @@ class PrimPitches:
 
 @dataclass
 class LayerPitches:
-    """ Distance in Pitches on a Particular Layer """
+    """Distance in Pitches on a Particular Layer"""
 
     layer: Index
     num: int
@@ -205,18 +223,22 @@ T = TypeVar("T")
 
 
 class Xy(GenericModel, Generic[T]):
-    """ X-Y Cartesian Pair """
+    """X-Y Cartesian Pair"""
 
     x: T
     y: T
+
+    @staticmethod
+    def new(x: T, y: T) -> "Xy":
+        return Xy(x=x, y=y)
 
     def transpose(self) -> "Xy":
         # Create a new [Xy] with transposed coordinates.
         Xy(self.y, self.x)
 
     def dir(self, dir_: Dir) -> T:
-        """ Get the dimension in direction `dir`
-        Also available via square-bracket access through `__getitem__`. """
+        """Get the dimension in direction `dir`
+        Also available via square-bracket access through `__getitem__`."""
         if dir_ == Dir.Horiz:
             return self.x
         if dir_ == Dir.Vert:
@@ -224,7 +246,7 @@ class Xy(GenericModel, Generic[T]):
         raise ValueError
 
     def __getitem__(self, dir_: Dir) -> T:
-        """ Square bracket access via [Dir] """
+        """Square bracket access via [Dir]"""
         if not isinstance(dir_, Dir):
             return NotImplemented
         return self.dir(dir_)
