@@ -15,10 +15,10 @@ use std::convert::{TryFrom, TryInto};
 
 // Local imports
 use crate::{
-    utils::{ErrorContext, ErrorHelper, Ptr},
-    Abstract, AbstractPort, Cell, DepOrder, Element, Instance, Int, LayerKey, LayerPurpose, Layers,
-    Layout, LayoutError, LayoutResult, Library, Path, Point, Polygon, Rect, Shape, TextElement,
-    Units,
+    utils::{ErrorContext, ErrorHelper, Ptr, Unwrapper},
+    Abstract, AbstractPort, Cell, DepOrder, Element, Instance, Int, Layer, LayerKey, LayerPurpose,
+    Layers, Layout, LayoutError, LayoutResult, Library, Path, Point, Polygon, Rect, Shape,
+    TextElement, Units,
 };
 pub use layout21protos as proto;
 
@@ -106,20 +106,10 @@ impl<'lib> ProtoExporter<'lib> {
                 .push(self.export_abstract_blockages(layerkey, shapes)?);
         }
         // Convert its outline
-        pabs.outline = Some(self.export_abstract_outline(&abs.outline)?);
+        pabs.outline = Some(self.export_polygon(&abs.outline)?);
         // And we're done - pop the context and return
         self.ctx.pop();
         Ok(pabs)
-    }
-    /// Export an abstract's outline to a [proto::Polygon]
-    fn export_abstract_outline(&mut self, outline: &Element) -> LayoutResult<proto::Polygon> {
-        // Convert to a [ProtoShape] enum
-        let poutline = self.export_element(outline)?;
-        // And if it's (the supported) rect-variant, return it
-        match poutline {
-            ProtoShape::Poly(p) => Ok(p),
-            _ => self.fail("abstract outline is not a polygon"),
-        }
     }
     /// Export an abstract's blockages for layer `layer`
     fn export_abstract_blockages(
@@ -145,6 +135,7 @@ impl<'lib> ProtoExporter<'lib> {
             for shape in shapes.iter() {
                 self.export_and_add_shape(shape, &mut pshapes)?;
             }
+            pport.shapes.push(pshapes);
         }
         Ok(pport)
     }
@@ -312,13 +303,14 @@ impl<'lib> ProtoExporter<'lib> {
         purpose: &LayerPurpose,
     ) -> LayoutResult<proto::Layer> {
         let layers = self.lib.layers.read()?;
-        let layer = self.unwrap(
-            layers.get(*layer),
+        let layer = layers.get(*layer).unwrapper(
+            self,
             format!("Layer {:?} Not Defined in Library {}", layer, self.lib.name),
         )?;
-        let purpose = self
-            .unwrap(
-                layer.num(purpose),
+        let purpose = layer
+            .num(purpose)
+            .unwrapper(
+                self,
                 format!("LayerPurpose Not Defined for {:?}, {:?}", layer, purpose),
             )?
             .clone();
@@ -345,6 +337,7 @@ impl ErrorHelper for ProtoExporter<'_> {
     }
 }
 /// Helper enumeration for converting to several proto-primitives
+#[derive(Debug, Clone, PartialEq)]
 enum ProtoShape {
     Rect(proto::Rectangle),
     Poly(proto::Polygon),
@@ -426,24 +419,71 @@ impl ProtoImporter {
         Ok(cell)
     }
     /// Import a [Abstract]
-    #[allow(dead_code)] // FIXME!
-    fn import_abstract(&mut self, _pcell: &proto::Abstract) -> LayoutResult<Abstract> {
-        todo!()
+    fn import_abstract(&mut self, pabs: &proto::Abstract) -> LayoutResult<Abstract> {
+        self.ctx.push(ErrorContext::Abstract);
+
+        let mut abs = Abstract::default();
+
+        abs.name = pabs.name.clone();
+
+        for port in pabs.ports.iter() {
+            abs.ports.push(self.import_abstract_port(port)?);
+        }
+
+        for layershapes in pabs.blockages.iter() {
+            let proto::Layer { number, purpose } = layershapes.layer.as_ref().unwrap();
+            let (layerkey, _) = self
+                .layers
+                .write()
+                .unwrap()
+                .get_or_insert(*number as i16, *purpose as i16)
+                .unwrap();
+            let shapes = self.import_abstract_layer_shapes(layershapes)?;
+            abs.blockages.insert(layerkey, shapes);
+        }
+
+        abs.outline = match self.import_polygon(&pabs.outline.as_ref().unwrap())? {
+            Shape::Polygon(p) => p,
+            _ => unreachable!(
+                "import_polygon only returns the Shape::Polygon(Polygon) enum variant."
+            ),
+        };
+
+        Ok(abs)
+    }
+    /// Import an [AbstractPort]
+    fn import_abstract_port(&mut self, pport: &proto::AbstractPort) -> LayoutResult<AbstractPort> {
+        let mut port = AbstractPort::default();
+        port.net = pport.net.clone();
+
+        for layershapes in pport.shapes.iter() {
+            let proto::Layer { number, purpose } = layershapes.layer.as_ref().unwrap();
+            let (layerkey, _) = self
+                .layers
+                .write()
+                .unwrap()
+                .get_or_insert(*number as i16, *purpose as i16)
+                .unwrap();
+            let shapes = self.import_abstract_layer_shapes(layershapes)?;
+            port.shapes.insert(layerkey, shapes);
+        }
+
+        Ok(port)
     }
     /// Import a [Layout]
-    fn import_layout(&mut self, pcell: &proto::Layout) -> LayoutResult<Layout> {
+    fn import_layout(&mut self, playout: &proto::Layout) -> LayoutResult<Layout> {
         let mut cell = Layout::default();
-        let name = pcell.name.clone();
+        let name = playout.name.clone();
         cell.name = name.clone();
         self.ctx.push(ErrorContext::Impl);
 
-        for inst in &pcell.instances {
+        for inst in &playout.instances {
             cell.insts.push(self.import_instance(inst)?);
         }
-        for s in &pcell.shapes {
+        for s in &playout.shapes {
             cell.elems.extend(self.import_layer_shapes(s)?);
         }
-        for txt in &pcell.annotations {
+        for txt in &playout.annotations {
             cell.annotations.push(self.import_annotation(txt)?);
         }
         self.ctx.pop();
@@ -476,6 +516,34 @@ impl ProtoImporter {
         }
         self.ctx.pop();
         Ok(elems)
+    }
+    /// Import a layer's-worth of shapes
+    fn import_abstract_layer_shapes(
+        &mut self,
+        player: &proto::LayerShapes,
+    ) -> LayoutResult<Vec<Shape>> {
+        // Import the layer
+        let (_layer, _purpose) = match player.layer {
+            Some(ref l) => self.import_layer(l),
+            None => self.fail("Invalid proto::LayerShapes with no Layer"),
+        }?;
+        // Import all the shapes
+        self.ctx.push(ErrorContext::Geometry);
+        let mut shapes = Vec::new();
+        for shape in &player.rectangles {
+            let s = self.import_rect(shape)?;
+            shapes.push(s);
+        }
+        for shape in &player.polygons {
+            let s = self.import_polygon(shape)?;
+            shapes.push(s);
+        }
+        for shape in &player.paths {
+            let s = self.import_path(shape)?;
+            shapes.push(s);
+        }
+        self.ctx.pop();
+        Ok(shapes)
     }
     /// Import a text annotation
     fn import_annotation(&mut self, x: &proto::TextElement) -> LayoutResult<TextElement> {
@@ -538,12 +606,12 @@ impl ProtoImporter {
     /// Import a proto-defined pointer, AKA [proto::Reference]
     fn import_reference(&mut self, pinst: &proto::Instance) -> LayoutResult<Ptr<Cell>> {
         // Mostly wind through protobuf-generated structures' layers of [Option]s
-        let pref = self.unwrap(
-            pinst.cell.as_ref(),
+        let pref = pinst.cell.as_ref().unwrapper(
+            self,
             format!("Invalid proto::Instance with null Cell: {}", pinst.name),
         )?;
-        let pref_to = self.unwrap(
-            pref.to.as_ref(),
+        let pref_to = pref.to.as_ref().unwrapper(
+            self,
             format!("Invalid proto::Instance with null Cell: {}", pinst.name),
         )?;
         use proto::reference::To::{External, Local};
@@ -552,8 +620,8 @@ impl ProtoImporter {
             External(_) => self.fail("Import of external proto-references not supported"),
         }?;
         // Now look that up in our hashmap
-        let cellkey = self.unwrap(
-            self.cell_map.get(cellname),
+        let cellkey = self.cell_map.get(cellname).unwrapper(
+            self,
             format!("Instance proto::Instance of undefined cell {}", cellname),
         )?;
         Ok(cellkey.clone())
@@ -565,8 +633,8 @@ impl ProtoImporter {
         // Look up the cell-pointer, which must be imported by now, or we fail
         let cell = self.import_reference(&pinst)?;
         // Unwrap the [Option] over (not really optional) location `origin_location`
-        let origin_location = self.unwrap(
-            pinst.origin_location.as_ref(),
+        let origin_location = pinst.origin_location.as_ref().unwrapper(
+            self,
             format!("Invalid proto::Instance with no Location: {}", pinst.name),
         )?;
         // And convert it
@@ -617,6 +685,44 @@ impl ErrorHelper for ProtoImporter {
         LayoutError::Import {
             message: msg.into(),
             stack: self.ctx.clone(),
+        }
+    }
+}
+impl Layers {
+    /// Load the struct from an external Technology protobuf.
+    pub fn from_proto(library_pb: &proto::Technology) -> LayoutResult<Layers> {
+        let mut layers_by_number = HashMap::new();
+
+        // Generate the Layers data from the given tech proto:
+        for layer_pb in &library_pb.layers {
+            let layer = layers_by_number
+                .entry(layer_pb.index)
+                .or_insert(Layer::from_num(layer_pb.index as i16));
+
+            let sub_index = layer_pb.sub_index as i16;
+            let layer_purpose = match &layer_pb.purpose {
+                Some(purpose) => {
+                    Layers::proto_to_internal_layer_purpose(sub_index, &purpose.r#type())
+                }
+                None => LayerPurpose::Other(sub_index),
+            };
+            layer.add_purpose(sub_index, layer_purpose)?;
+        }
+
+        let mut layers = Layers::default();
+        for layer in layers_by_number.values() {
+            layers.add(layer.clone());
+        }
+        Ok(layers)
+    }
+
+    fn proto_to_internal_layer_purpose(
+        sub_index: i16,
+        purpose_pb: &proto::LayerPurposeType,
+    ) -> LayerPurpose {
+        match purpose_pb {
+            proto::LayerPurposeType::Label => LayerPurpose::Label,
+            _ => LayerPurpose::Other(sub_index),
         }
     }
 }

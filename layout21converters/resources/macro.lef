@@ -1,0 +1,17 @@
+VERSION 5.4 ; 
+UNITS
+    DATABASE MICRONS 2000 ;
+END UNITS
+MACRO macro_name
+    CLASS BLOCK ;
+    SIZE 999.9 BY 111.1 ;
+    SYMMETRY X Y R90 ;
+    PIN pin_name
+        DIRECTION INPUT ;
+        PORT
+            LAYER layer_name ;
+                RECT  88.4 0.0 88.78 1.06 ;
+        END
+    END pin_name
+END macro_name
+END LIBRARY

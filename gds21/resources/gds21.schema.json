@@ -1,0 +1,925 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Gds Library",
+  "description": "The Library is GDSII's primary idiom for a suite of layout-cells. A Library generally corresponds one-to-one with a `.gds` file. Libraries consist primarily of cell-definitions ([GdsStruct]s), and secondarily include library-level meta-data, including the distance units, GDS-spec version, and modification dates.\n\nSeveral more esoteric library-level GDSII features are included as [GdsLibrary] fields, but are not materially supported. The empty [Unsupported] value generally denotes these fields.\n\nSpec BNF: ```text HEADER BGNLIB [LIBDIRSIZE] [SRFNAME] [LIBSECUR] LIBNAME [REFLIBS] [FONTS] [ATTRTABLE] [GENERATIONS] [<FormatType>] UNITS {<structure>}* ENDLIB ```",
+  "type": "object",
+  "required": [
+    "attrtable",
+    "dates",
+    "fonts",
+    "format_type",
+    "generations",
+    "libdirsize",
+    "libsecur",
+    "name",
+    "reflibs",
+    "srfname",
+    "structs",
+    "units",
+    "version"
+  ],
+  "properties": {
+    "attrtable": {
+      "writeOnly": true,
+      "allOf": [
+        {
+          "$ref": "#/definitions/Unsupported"
+        }
+      ]
+    },
+    "dates": {
+      "description": "Modification & Access Dates & Times",
+      "allOf": [
+        {
+          "$ref": "#/definitions/GdsDateTimes"
+        }
+      ]
+    },
+    "fonts": {
+      "writeOnly": true,
+      "allOf": [
+        {
+          "$ref": "#/definitions/Unsupported"
+        }
+      ]
+    },
+    "format_type": {
+      "writeOnly": true,
+      "allOf": [
+        {
+          "$ref": "#/definitions/Unsupported"
+        }
+      ]
+    },
+    "generations": {
+      "writeOnly": true,
+      "allOf": [
+        {
+          "$ref": "#/definitions/Unsupported"
+        }
+      ]
+    },
+    "libdirsize": {
+      "writeOnly": true,
+      "allOf": [
+        {
+          "$ref": "#/definitions/Unsupported"
+        }
+      ]
+    },
+    "libsecur": {
+      "writeOnly": true,
+      "allOf": [
+        {
+          "$ref": "#/definitions/Unsupported"
+        }
+      ]
+    },
+    "name": {
+      "description": "Library Name",
+      "type": "string"
+    },
+    "reflibs": {
+      "writeOnly": true,
+      "allOf": [
+        {
+          "$ref": "#/definitions/Unsupported"
+        }
+      ]
+    },
+    "srfname": {
+      "writeOnly": true,
+      "allOf": [
+        {
+          "$ref": "#/definitions/Unsupported"
+        }
+      ]
+    },
+    "structs": {
+      "description": "Struct Definitions",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/GdsStruct"
+      }
+    },
+    "units": {
+      "description": "Spatial Units",
+      "allOf": [
+        {
+          "$ref": "#/definitions/GdsUnits"
+        }
+      ]
+    },
+    "version": {
+      "description": "Gds Spec Version",
+      "type": "integer",
+      "format": "int16"
+    }
+  },
+  "definitions": {
+    "GdsArrayRef": {
+      "title": "Gds Array Reference",
+      "description": "A two-dimensional array of struct (cell) instances.\n\nSpec BNF: ```text AREF [ELFLAGS] [PLEX] SNAME [<strans>] COLROW XY ```",
+      "type": "object",
+      "required": [
+        "cols",
+        "name",
+        "rows",
+        "xy"
+      ],
+      "properties": {
+        "cols": {
+          "description": "Number of columns",
+          "type": "integer",
+          "format": "int16"
+        },
+        "elflags": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/GdsElemFlags"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "description": "Struct (Cell) Name",
+          "type": "string"
+        },
+        "plex": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/GdsPlex"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "properties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/GdsProperty"
+          }
+        },
+        "rows": {
+          "description": "Number of rows",
+          "type": "integer",
+          "format": "int16"
+        },
+        "strans": {
+          "description": "Translation & Reflection Options",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/GdsStrans"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "xy": {
+          "description": "Vector of x,y coordinates",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/GdsPoint"
+          },
+          "maxItems": 3,
+          "minItems": 3
+        }
+      }
+    },
+    "GdsBoundary": {
+      "title": "Gds Boundary Element",
+      "description": "The most common type for closed-form shapes in GDSII. Most IC layout is comprised of [GdsBoundary] elements, which represent individual polygons. GDSII dictates that the first two and final two coordinates in each [GdsBoundary] shall be identical, \"closing\" the polygon. Hence an N-sided polygon is represented by an (N+1)-point `xy` vector.\n\nSpec BNF: ```text BOUNDARY [ELFLAGS] [PLEX] LAYER DATATYPE XY ```",
+      "type": "object",
+      "required": [
+        "datatype",
+        "layer",
+        "xy"
+      ],
+      "properties": {
+        "datatype": {
+          "description": "DataType ID",
+          "type": "integer",
+          "format": "int16"
+        },
+        "elflags": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/GdsElemFlags"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "layer": {
+          "description": "Layer Number",
+          "type": "integer",
+          "format": "int16"
+        },
+        "plex": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/GdsPlex"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "properties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/GdsProperty"
+          }
+        },
+        "xy": {
+          "description": "Vector of x,y coordinates",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/GdsPoint"
+          }
+        }
+      }
+    },
+    "GdsBox": {
+      "title": "Gds Box Element",
+      "description": "Spec BNF: ```text BOX [ELFLAGS] [PLEX] LAYER BOXTYPE XY ```",
+      "type": "object",
+      "required": [
+        "boxtype",
+        "layer",
+        "xy"
+      ],
+      "properties": {
+        "boxtype": {
+          "description": "Box-Type ID",
+          "type": "integer",
+          "format": "int16"
+        },
+        "elflags": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/GdsElemFlags"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "layer": {
+          "description": "Layer Number",
+          "type": "integer",
+          "format": "int16"
+        },
+        "plex": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/GdsPlex"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "properties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/GdsProperty"
+          }
+        },
+        "xy": {
+          "description": "Vector of x,y coordinates",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/GdsPoint"
+          },
+          "maxItems": 5,
+          "minItems": 5
+        }
+      }
+    },
+    "GdsDateTime": {
+      "title": "Gds Date & Time",
+      "description": "From the spec: ```text Two-Byte Signed Integer Contains last modification time of library (two bytes each for year, month, day, hour, minute, and second) as well as time of last access (same format) and marks beginning of library. ```\n\nIn which more specifically: * Years are referenced to **1900** * Days are valued 1-31 * Months are valued 1-12 * Hours are valued 1-12\n\nWhen reading from GDSII file, [`GdsDateTime`] accepts any twelve bytes and stores them as-is; no validation for real dates & times, e.g. month 30 or hour 99, is performed. The default [`GdsDateTime`] when creating a new [`GdsLibrary`] is its creation time, as produced by [`chrono::Utc::now()`]. Such dates & times are always valid.",
+      "type": "object",
+      "required": [
+        "day",
+        "hour",
+        "minute",
+        "month",
+        "second",
+        "year"
+      ],
+      "properties": {
+        "day": {
+          "type": "integer",
+          "format": "int16"
+        },
+        "hour": {
+          "type": "integer",
+          "format": "int16"
+        },
+        "minute": {
+          "type": "integer",
+          "format": "int16"
+        },
+        "month": {
+          "type": "integer",
+          "format": "int16"
+        },
+        "second": {
+          "type": "integer",
+          "format": "int16"
+        },
+        "year": {
+          "type": "integer",
+          "format": "int16"
+        }
+      }
+    },
+    "GdsDateTimes": {
+      "title": "Gds Modification & Access Dates & Times",
+      "type": "object",
+      "required": [
+        "accessed",
+        "modified"
+      ],
+      "properties": {
+        "accessed": {
+          "description": "Last Access Date & Time",
+          "allOf": [
+            {
+              "$ref": "#/definitions/GdsDateTime"
+            }
+          ]
+        },
+        "modified": {
+          "description": "Last Modification Date & Time",
+          "allOf": [
+            {
+              "$ref": "#/definitions/GdsDateTime"
+            }
+          ]
+        }
+      }
+    },
+    "GdsElemFlags": {
+      "title": "Gds Element Flags",
+      "description": "As configured by `ELFLAGS` records. Two bytes of bit-fields stored in raw `u8` form.",
+      "type": "array",
+      "items": [
+        {
+          "type": "integer",
+          "format": "uint8",
+          "minimum": 0.0
+        },
+        {
+          "type": "integer",
+          "format": "uint8",
+          "minimum": 0.0
+        }
+      ],
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "GdsElement": {
+      "title": "Gds Element Enumeration",
+      "description": "Primary union of geometric elements, instances, and arrays which comprise a GDSII struct (cell).\n\nSpec BNF: ```text {<boundary> | <path> | <SREF> | <AREF> | <text> | <node> | <box>} {<property>}* ENDEL ```\n\nNote the `properties` vectors are pushed down to each enum variant.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "GdsBoundary"
+          ],
+          "properties": {
+            "GdsBoundary": {
+              "$ref": "#/definitions/GdsBoundary"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "GdsPath"
+          ],
+          "properties": {
+            "GdsPath": {
+              "$ref": "#/definitions/GdsPath"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "GdsStructRef"
+          ],
+          "properties": {
+            "GdsStructRef": {
+              "$ref": "#/definitions/GdsStructRef"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "GdsArrayRef"
+          ],
+          "properties": {
+            "GdsArrayRef": {
+              "$ref": "#/definitions/GdsArrayRef"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "GdsTextElem"
+          ],
+          "properties": {
+            "GdsTextElem": {
+              "$ref": "#/definitions/GdsTextElem"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "GdsNode"
+          ],
+          "properties": {
+            "GdsNode": {
+              "$ref": "#/definitions/GdsNode"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "GdsBox"
+          ],
+          "properties": {
+            "GdsBox": {
+              "$ref": "#/definitions/GdsBox"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "GdsNode": {
+      "title": "Gds Node Element",
+      "description": "Spec BNF: ```text NODE [ELFLAGS] [PLEX] LAYER NODETYPE XY ```",
+      "type": "object",
+      "required": [
+        "layer",
+        "nodetype",
+        "xy"
+      ],
+      "properties": {
+        "elflags": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/GdsElemFlags"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "layer": {
+          "description": "Layer Number",
+          "type": "integer",
+          "format": "int16"
+        },
+        "nodetype": {
+          "description": "Node-Type ID",
+          "type": "integer",
+          "format": "int16"
+        },
+        "plex": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/GdsPlex"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "properties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/GdsProperty"
+          }
+        },
+        "xy": {
+          "description": "Vector of x,y coordinates",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/GdsPoint"
+          }
+        }
+      }
+    },
+    "GdsPath": {
+      "title": "Gds Path Element",
+      "description": "Spec BNF: ```text PATH [ELFLAGS] [PLEX] LAYER DATATYPE [PATHTYPE] [WIDTH] XY [BGNEXTN] [ENDEXTN]) ```",
+      "type": "object",
+      "required": [
+        "datatype",
+        "layer",
+        "xy"
+      ],
+      "properties": {
+        "begin_extn": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32"
+        },
+        "datatype": {
+          "description": "DataType ID",
+          "type": "integer",
+          "format": "int16"
+        },
+        "elflags": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/GdsElemFlags"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "end_extn": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32"
+        },
+        "layer": {
+          "description": "Layer Number",
+          "type": "integer",
+          "format": "int16"
+        },
+        "path_type": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int16"
+        },
+        "plex": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/GdsPlex"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "properties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/GdsProperty"
+          }
+        },
+        "width": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32"
+        },
+        "xy": {
+          "description": "Vector of x,y coordinates",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/GdsPoint"
+          }
+        }
+      }
+    },
+    "GdsPlex": {
+      "title": "Gds Plex",
+      "description": "From the spec: \"A unique positive number which is common to all elements of the Plex to which this element belongs.\" In Gds21's experience, `PLEX` records and settings are highly uncommon.",
+      "type": "integer",
+      "format": "int32"
+    },
+    "GdsPoint": {
+      "title": "Gds Spatial Point",
+      "description": "Coordinate in (x,y) layout-space. Denoted in each [GdsLibrary]'s [GdsUnits].",
+      "type": "object",
+      "required": [
+        "x",
+        "y"
+      ],
+      "properties": {
+        "x": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "y": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "GdsPresentation": {
+      "title": "Gds Text-Presentation Flags",
+      "description": "Sets fonts, text justification, and the like. Stored in raw `u8` form.",
+      "type": "array",
+      "items": [
+        {
+          "type": "integer",
+          "format": "uint8",
+          "minimum": 0.0
+        },
+        {
+          "type": "integer",
+          "format": "uint8",
+          "minimum": 0.0
+        }
+      ],
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "GdsProperty": {
+      "title": "Gds Property",
+      "description": "Spec BNF: ```text PROPATTR PROPVALUE ```",
+      "type": "object",
+      "required": [
+        "attr",
+        "value"
+      ],
+      "properties": {
+        "attr": {
+          "description": "Attribute Number",
+          "type": "integer",
+          "format": "int16"
+        },
+        "value": {
+          "description": "Attribute Value",
+          "type": "string"
+        }
+      }
+    },
+    "GdsStrans": {
+      "title": "Gds Translation Settings",
+      "description": "Reflection, rotation, and magnification for text-elements and references. As configured by `STRANS` records.",
+      "type": "object",
+      "properties": {
+        "abs_angle": {
+          "description": "Absolute Angle Setting",
+          "type": "boolean"
+        },
+        "abs_mag": {
+          "description": "Absolute Magnification Setting",
+          "type": "boolean"
+        },
+        "angle": {
+          "description": "Angle, in degrees counter-clockwise. Defaults to zero if not specified.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "mag": {
+          "description": "Magnification Factor. Interpreted as unit-scaling (mag==1.0) if not specified.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "reflected": {
+          "description": "Reflection, about the x-axis. Applied before rotation.",
+          "type": "boolean"
+        }
+      }
+    },
+    "GdsStruct": {
+      "title": "Gds Struct (Cell) Definition",
+      "description": "GDSII's primary hierarchical layout-definition object is its \"struct\", which most other layout systems would call a \"cell\" or \"module\". (Most GDSII software calls them one of these as well.)\n\n[GdsStruct]s are principally composed of an un-ordered, un-indexed vector of [GdsElement]s, which can be polygons ([GdsBoundary]), instances of other layouts ([GdsStructRef]), two-dimensional arrays thereof ([GdsArrayRef]), and a handful of other [GdsElement]s.\n\nSpec BNF: ```text BGNSTR STRNAME [STRCLASS] {<element>}* ENDSTR ```",
+      "type": "object",
+      "required": [
+        "dates",
+        "elems",
+        "name"
+      ],
+      "properties": {
+        "dates": {
+          "description": "Modification & Access Dates & Times",
+          "allOf": [
+            {
+              "$ref": "#/definitions/GdsDateTimes"
+            }
+          ]
+        },
+        "elems": {
+          "description": "Elements List",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/GdsElement"
+          }
+        },
+        "name": {
+          "description": "Struct Name",
+          "type": "string"
+        }
+      }
+    },
+    "GdsStructRef": {
+      "title": "Gds Struct Reference (Cell Instance)",
+      "description": "Represents an instance of a layout-cell. Coordinate vector `xy` is dictated by spec to have exactly one point (or two numbers), specifying the instance's lower-left coordinate. Options for rotation and reflection are configured in the [GdsStrans] attribute `strans`.\n\nSpec BNF: ```text SREF [ELFLAGS] [PLEX] SNAME [<strans>] XY ```",
+      "type": "object",
+      "required": [
+        "name",
+        "xy"
+      ],
+      "properties": {
+        "elflags": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/GdsElemFlags"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "description": "Struct (Cell) Name",
+          "type": "string"
+        },
+        "plex": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/GdsPlex"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "properties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/GdsProperty"
+          }
+        },
+        "strans": {
+          "description": "Translation & Reflection Options",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/GdsStrans"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "xy": {
+          "description": "Location x,y coordinates",
+          "allOf": [
+            {
+              "$ref": "#/definitions/GdsPoint"
+            }
+          ]
+        }
+      }
+    },
+    "GdsTextElem": {
+      "title": "Gds Text Element",
+      "description": "Spec BNF: ```text TEXT [ELFLAGS] [PLEX] LAYER TEXTTYPE [PRESENTATION] [PATHTYPE] [WIDTH] [<strans>] XY STRING ```",
+      "type": "object",
+      "required": [
+        "layer",
+        "string",
+        "texttype",
+        "xy"
+      ],
+      "properties": {
+        "elflags": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/GdsElemFlags"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "layer": {
+          "description": "Layer Number",
+          "type": "integer",
+          "format": "int16"
+        },
+        "path_type": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int16"
+        },
+        "plex": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/GdsPlex"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "presentation": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/GdsPresentation"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "properties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/GdsProperty"
+          }
+        },
+        "strans": {
+          "description": "Translation & Reflection Options",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/GdsStrans"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "string": {
+          "description": "Text Value",
+          "type": "string"
+        },
+        "texttype": {
+          "description": "Text-Type ID",
+          "type": "integer",
+          "format": "int16"
+        },
+        "width": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32"
+        },
+        "xy": {
+          "description": "Vector of x,y coordinates",
+          "allOf": [
+            {
+              "$ref": "#/definitions/GdsPoint"
+            }
+          ]
+        }
+      }
+    },
+    "GdsUnits": {
+      "title": "Gds Library Units",
+      "description": "Each GDSII Library has two length-units, referred to as \"DB Units\" and \"User Units\" respectively. Essentially all spatial data throughout the Library is denoted in \"DB Units\". \"User units\" are a sort of recommendation for GUI programs to use when displaying the Library.\n\nFrom the spec's `UNITS` record-description: ```text Contains two eight-byte real numbers. The first number is the size of a database-unit, in user-units. The second is the size of a database-unit in meters. To calculate the size of a user-unit in meters, divide the second number by the first. ```\n\nThese two numbers are stored as-is in the [GdsUnits] tuple-struct.",
+      "type": "array",
+      "items": [
+        {
+          "type": "number",
+          "format": "double"
+        },
+        {
+          "type": "number",
+          "format": "double"
+        }
+      ],
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "Unsupported": {
+      "title": "Unsupported (But Spec-Valid) Features",
+      "type": "null"
+    }
+  }
+}

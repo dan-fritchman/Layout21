@@ -111,7 +111,7 @@ impl<'lib> ProtoExporter<'lib> {
         let mut pport = tproto::AbstractPort::default();
         pport.net = port.name.clone();
 
-        use tproto::abstract_port::{EdgePort, Kind, PortSide, ZTopEdgePort, ZTopInner};
+        use tproto::abstract_port::{EdgePort, Kind, PortSide, ZTopEdgePort};
         let kind = match &port.kind {
             PortKind::Edge { layer, track, side } => {
                 let track = Some(tproto::TrackRef {
@@ -591,7 +591,7 @@ cells:
       cuts: []
 "#;
         let plib: tproto::Library = Yaml.from_str(yaml)?;
-        let lib = ProtoLibImporter::import(&plib)?;
+        let _lib = ProtoLibImporter::import(&plib)?;
 
         // let lib = Library::new("proto_yaml1");
         // let plib = ProtoExporter::export(&lib)?;

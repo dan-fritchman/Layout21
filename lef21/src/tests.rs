@@ -1,6 +1,8 @@
-use super::read::{parse_str, LefLexer, LefParser, Token};
 use super::*;
+use super::read::{parse_str, LefLexer, LefParser, Token};
 use std::path::Path;
+use crate::utils::SerializationFormat::{Yaml, Json, Toml};
+
 
 #[test]
 fn test_points() -> LefResult<()> {
@@ -92,16 +94,49 @@ fn it_parses_lib2() -> LefResult<()> {
     check_yaml(&lib, &resource("lib2.yaml"));
     Ok(())
 }
+
+#[test]
+fn empty_lib_to_yaml() {
+    Yaml.save(&LefLibrary::new(), &resource("empty_lib.lef.yaml")).unwrap();
+}
+#[test]
+fn empty_lib_to_json() {
+    Json.save(&LefLibrary::new(), &resource("empty_lib.lef.json")).unwrap();
+}
+#[test]
+fn empty_lib_to_toml() {
+    Toml.save(&LefLibrary::new(), &resource("empty_lib.lef.toml")).unwrap();
+}
+
 /// Helper function: Assert that `data` equals the content in YAML file `fname`
 fn check_yaml<T>(data: &T, fname: impl AsRef<Path>)
 where
     T: Eq + std::fmt::Debug + serde::de::DeserializeOwned,
 {
-    use crate::utils::SerializationFormat::Yaml;
     let golden: T = Yaml.open(fname).unwrap();
     assert_eq!(*data, golden);
 }
 /// Helper function: Grab the full path of resource-file `fname`
 fn resource(rname: &str) -> String {
     format!("{}/resources/{}", env!("CARGO_MANIFEST_DIR"), rname)
+}
+
+#[test]
+fn it_writes_schema() -> LefResult<()> {
+    // Create the [schemars] JSON-Schema for [LefLibrary].
+    // Compare it against golden data on disk.
+
+    use schemars::schema_for;
+
+    // Create the schema
+    let schema = schema_for!(LefLibrary);
+
+    // NOTE: uncomment to overwrite golden data
+    // Json.save(&schema, resource("lef21.schema.json"))?;
+
+    // Load the golden version, and ensure they match
+    let golden = Json.open(resource("lef21.schema.json"))?;
+    assert_eq!(schema, golden);
+
+    Ok(())
 }

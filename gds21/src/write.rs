@@ -2,8 +2,18 @@
 //! # Gds21 Byte-Encoding and Writing
 //!
 
+// Std-Lib Imports
+use std::convert::TryFrom;
+use std::fs::File;
+use std::io::{BufWriter, Write};
+use std::path::Path;
+
+// Crates.io
+use byteorder::{BigEndian, WriteBytesExt};
+use serde::{Deserialize, Serialize};
+
 // Local imports
-use super::*;
+use crate::data::*;
 
 /// Gds Writing Helper
 pub struct GdsWriter<'wr> {
@@ -245,13 +255,12 @@ trait Encode {
     /// Encode a [GdsLibrary]
     fn encode_lib(&mut self, lib: &GdsLibrary) -> GdsResult<()> {
         // Write our header content
+        let dates = self.encode_datetimes(&lib.dates);
         self.encode_records(&[
             GdsRecord::Header {
                 version: lib.version,
             },
-            GdsRecord::BgnLib {
-                dates: lib.dates.encode().to_vec(),
-            },
+            GdsRecord::BgnLib { dates },
             GdsRecord::LibName(lib.name.clone()),
             GdsRecord::Units(lib.units.0, lib.units.1),
         ])?;
@@ -266,10 +275,9 @@ trait Encode {
     /// Encode a [GdsStruct]
     fn encode_struct(&mut self, strukt: &GdsStruct) -> GdsResult<()> {
         // Write the header content
+        let dates = self.encode_datetimes(&strukt.dates);
         self.encode_records(&[
-            GdsRecord::BgnStruct {
-                dates: strukt.dates.encode().to_vec(),
-            },
+            GdsRecord::BgnStruct { dates },
             GdsRecord::StructName(strukt.name.clone()),
         ])?;
         // Write each of our elements
@@ -477,6 +485,18 @@ trait Encode {
         }
         Ok(())
     }
+    /// Encode a [`GdsDateTime`] in GDSII's vector of i16's format
+    fn encode_datetime(&self, dt: &GdsDateTime, dest: &mut [i16]) {
+        let bytes = [dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second];
+        dest.copy_from_slice(&bytes)
+    }
+    /// Encode [`GdsDateTimes`] in GDSII's vector of i16's format
+    fn encode_datetimes(&self, dts: &GdsDateTimes) -> [i16; 12] {
+        let mut rv = [0; 12];
+        self.encode_datetime(&dts.modified, &mut rv[0..6]);
+        self.encode_datetime(&dts.accessed, &mut rv[6..12]);
+        return rv;
+    }
 }
 
 /// # GdsRecordList
@@ -494,25 +514,5 @@ impl Encode for GdsRecordList {
     /// Add an array of [GdsRecord]s to the list
     fn encode_records(&mut self, records: &[GdsRecord]) -> GdsResult<()> {
         Ok(self.records.extend(records.to_vec()))
-    }
-}
-
-impl GdsDateTimes {
-    /// Encode in GDSII's vector of i16's format
-    pub fn encode(&self) -> [i16; 12] {
-        [
-            self.modified.date().year() as i16,
-            self.modified.date().month() as i16,
-            self.modified.date().day() as i16,
-            self.modified.time().hour() as i16,
-            self.modified.time().minute() as i16,
-            self.modified.time().second() as i16,
-            self.accessed.date().year() as i16,
-            self.accessed.date().month() as i16,
-            self.accessed.date().day() as i16,
-            self.accessed.time().hour() as i16,
-            self.accessed.time().minute() as i16,
-            self.accessed.time().second() as i16,
-        ]
     }
 }

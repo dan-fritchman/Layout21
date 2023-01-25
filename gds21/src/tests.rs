@@ -1,8 +1,16 @@
-use super::*;
+#[allow(unused_imports)]
+use std::io::prelude::*;
+use std::path::Path;
+use std::str;
+
+// Local Imports
+use crate::data::*;
+use crate::read::*;
+use layout21utils::SerializationFormat::{Json, Toml, Yaml};
 
 /// Specified creation date for test cases
 fn test_dates() -> GdsDateTimes {
-    let test_date = NaiveDate::from_ymd(1970, 1, 1).and_hms(0, 0, 1);
+    let test_date = GdsDateTime::from(&[70, 1, 1, 0, 0, 1]);
     GdsDateTimes {
         modified: test_date.clone(),
         accessed: test_date.clone(),
@@ -167,11 +175,86 @@ fn record_too_long() -> GdsResult<()> {
     }
 }
 
+/// Create an empty library with known dates
+fn empty_lib() -> GdsLibrary {
+    // Create an empty library
+    let mut lib = GdsLibrary::new("empty");
+    // Set its dates to some known value, so we can check it round-trips
+    lib.dates = test_dates();
+    // And return it for other test
+    lib
+}
+#[test]
+fn empty_lib_roundtrip() -> GdsResult<()> {
+    // Create an empty, testable library
+    let lib = empty_lib();
+
+    // OK now the actual test
+    roundtrip(&lib)?;
+    check(&lib, &resource("empty.gds.json"));
+    Ok(())
+}
+#[test]
+fn empty_lib_to_json() -> GdsResult<()> {
+    let lib = empty_lib();
+    Json.save(&lib, &resource("empty.gds.json"))
+        .expect("save failed");
+    Ok(())
+}
+#[test]
+fn empty_lib_to_yaml() -> GdsResult<()> {
+    let lib = empty_lib();
+    Yaml.save(&lib, &resource("empty.gds.yaml"))
+        .expect("save failed");
+    Ok(())
+}
+#[test]
+#[ignore] // https://github.com/dan-fritchman/Layout21/issues/33
+fn empty_lib_to_toml() -> GdsResult<()> {
+    let lib = empty_lib();
+    Toml.save(&lib, &resource("empty.gds.toml"))
+        .expect("save failed");
+    Ok(())
+}
+
+#[test]
+fn test_invalid_dates() -> GdsResult<()> {
+    // Test loading a library with invalid dates
+    let lib = GdsLibrary::load(&resource("invalid_dates.gds"))?;
+    assert_eq!(
+        lib.dates,
+        GdsDateTimes {
+            modified: GdsDateTime::from(&[0, 0, 0, 17, 49, 18]),
+            accessed: GdsDateTime::from(&[0, 0, 0, 17, 49, 18])
+        }
+    );
+    Ok(())
+}
+
+#[test]
+fn it_writes_schema() -> GdsResult<()> {
+    // Create the [schemars] JSON-Schema for [GdsLibrary].
+    // Compare it against golden data on disk.
+
+    use schemars::schema_for;
+
+    // Create the schema
+    let schema = schema_for!(GdsLibrary);
+
+    // NOTE: uncomment to overwrite golden data
+    // Json.save(&schema, resource("gds21.schema.json"))?;
+
+    // Load the golden version, and ensure they match
+    let golden = Json.open(resource("gds21.schema.json"))?;
+    assert_eq!(schema, golden);
+
+    Ok(())
+}
+
 /// Compare `lib` to "golden" data loaded from JSON at path `golden`.
-fn check(lib: &GdsLibrary, fname: impl AsRef<Path>) {
-    use layout21utils::ser::SerializationFormat::Json;
+fn check(lib: &GdsLibrary, fname: &impl AsRef<Path>) {
     // Uncomment this bit to over-write the golden data
-    // Json::save(lib, fname);
+    // Json.save(lib, fname).unwrap();
 
     let golden = Json.open(fname).unwrap();
     assert_eq!(*lib, golden);

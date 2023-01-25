@@ -1,18 +1,27 @@
 [package]
-description = "Layout21 Integrated Circuit Layout. Meta-crate, re-exporting several internally defined crates"
+description = "Layout21 Integrated Circuit Layout"
 name = "layout21"
+
 # Shared layout21 attributes
-authors = ["Dan Fritchman <dan@fritch.mn>"]
-edition = "2018"
-license = "BSD-3-Clause"
-repository = "https://github.com/dan-fritchman/Layout21"
-version = "0.2.1"
+authors.workspace = true
+categories.workspace = true
+documentation.workspace = true
+edition.workspace = true
+exclude.workspace = true
+homepage.workspace = true
+include.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+version.workspace = true
 workspace = "../"
 
 [dependencies]
-gds21 = {path = "../gds21", version = "0.2.1", features = ["selftest"]}
-layout21protos = {path = "../layout21protos", version = "0.2.1"}
-layout21raw = {path = "../layout21raw", version = "0.2.1"}
-layout21tetris = {path = "../layout21tetris", version = "0.2.1"}
-layout21utils = {path = "../layout21utils", version = "0.2.1"}
-lef21 = {path = "../lef21", version = "0.2.1"}
+gds21 = {path = "../gds21", version = "3.0.0-pre.3", features = ["selftest"]}
+layout21converters = {path = "../layout21converters", version = "3.0.0-pre.3"}
+layout21protos = {path = "../layout21protos", version = "3.0.0-pre.3"}
+layout21raw = {path = "../layout21raw", version = "3.0.0-pre.3"}
+layout21utils = {path = "../layout21utils", version = "3.0.0-pre.3"}
+lef21 = {path = "../lef21", version = "3.0.0-pre.3"}
+## FIXME! layout21tetris = {path = "../layout21tetris", version = "3.0.0-pre.3"}

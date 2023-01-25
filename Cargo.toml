@@ -1,13 +1,32 @@
-[workspace]
+# 
+# Layout21 Workspace
+# 
 
+[workspace]
 members = [
   "rules21",
   "gds21",
-  "gds2proto",
-  "lef21",
+  "layout21",
+  "layout21converters",
   "layout21protos",
   "layout21raw",
   "layout21tetris",
-  "layout21",
   "layout21utils",
+  "lef21",
 ]
+
+# Inherited Package Attributes
+# Thanks https://doc.rust-lang.org/cargo/reference/workspaces.html#the-package-table!
+[workspace.package]
+authors = ["Dan Fritchman <dan@fritch.mn>", "Arya Reais-Parsi <aryap@berkeley.edu>"]
+categories = [] # FIXME! 
+documentation = "https://github.com/dan-fritchman/Layout21"
+edition = "2021"
+exclude = ["resources", "scratch"]
+homepage = "https://github.com/dan-fritchman/Layout21"
+include = []
+keywords = [] # FIXME! 
+license = "BSD-3-Clause"
+readme = "readme.md"
+repository = "https://github.com/dan-fritchman/Layout21"
+version = "3.0.0-pre.3"

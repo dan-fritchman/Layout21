@@ -11,6 +11,9 @@ pub use ser::*;
 pub mod error;
 pub use error::*;
 
+pub mod context;
+pub use context::*;
+
 pub mod dep_order;
 pub use dep_order::*;
 
