@@ -1,8 +1,10 @@
-use std::{iter, mem};
+use std::{iter, marker::PhantomData, mem};
 
 use bytemuck::{Pod, Zeroable};
 
 use layout21protos::{self, conv as proto_converters};
+use layout21raw as raw;
+use layout21utils::Ptr;
 use log::{debug, error, info, log_enabled, Level};
 use rand::Rng;
 use wgpu::util::DeviceExt;
@@ -11,6 +13,43 @@ use winit::{
     event_loop::{ControlFlow, EventLoop},
     window::{Window, WindowBuilder},
 };
+
+#[derive(Debug)]
+struct LayoutDisplay {
+    lib: raw::Library,
+    cell: Ptr<raw::Cell>,
+    bbox: Option<[[raw::Int; 2]; 2]>,
+}
+impl LayoutDisplay {
+    fn from_proto() -> Self {
+        let proto_lib: layout21protos::Library =
+            proto_converters::open(&resource("sky130_fd_sc_hd__dfxtp_1.pb")).unwrap();
+        let rawlib = raw::Library::from_proto(proto_lib, None).unwrap();
+        Self::from_rawlib(rawlib)
+    }
+    fn from_rawlib(rawlib: raw::Library) -> Self {
+        let cell = rawlib.cells[0].clone();
+
+        Self {
+            lib: rawlib,
+            cell,
+            bbox: None,
+        }
+    }
+    fn something(&self) {
+        let bbox = self.bbox.unwrap().clone();
+        let cell = self.cell.read().unwrap();
+        let layout = cell.layout.as_ref().unwrap();
+        for elem in &layout.elems {
+            let shape = &elem.inner;
+            match shape {
+                raw::Shape::Rect(r) => unimplemented!(),
+                raw::Shape::Path(p) => unimplemented!(),
+                raw::Shape::Polygon(p) => unimplemented!(),
+            }
+        }
+    }
+}
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
@@ -172,17 +211,6 @@ struct Color(pub [f32; 3]);
 //     },
 // ];
 
-struct State {
-    surface: wgpu::Surface,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    config: wgpu::SurfaceConfiguration,
-    size: winit::dpi::PhysicalSize<u32>,
-    pipeline: wgpu::RenderPipeline,
-    vertex_buffer_stuff: VertexBufferStuff,
-    // vertex_buffer: wgpu::Buffer,
-    // vertices: Vec<Vertex>,
-}
 struct OneOfThese {
     vertex_buffer: wgpu::Buffer,
     vertices: Vec<Vertex>,
@@ -223,6 +251,19 @@ impl VertexBufferStuff {
     fn swap(&mut self) {
         self.idx = (self.idx + 1) % 2;
     }
+}
+
+struct State {
+    surface: wgpu::Surface,
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    config: wgpu::SurfaceConfiguration,
+    size: winit::dpi::PhysicalSize<u32>,
+    pipeline: wgpu::RenderPipeline,
+    vertex_buffer_stuff: VertexBufferStuff,
+    layout_display: LayoutDisplay,
+    // vertex_buffer: wgpu::Buffer,
+    // vertices: Vec<Vertex>,
 }
 
 impl State {
@@ -317,6 +358,8 @@ impl State {
         // });
         let vertex_buffer_stuff = VertexBufferStuff::new(&device);
 
+        let layout_display = LayoutDisplay::from_proto();
+
         Self {
             surface,
             device,
@@ -325,6 +368,7 @@ impl State {
             size,
             pipeline,
             vertex_buffer_stuff,
+            layout_display,
             // vertex_buffer,
             // vertices
         }
@@ -405,8 +449,7 @@ impl State {
 
 pub fn run() {
     env_logger::init();
-    let something: layout21protos::Library =
-        proto_converters::open(&resource("sky130_fd_sc_hd__dfxtp_1.pb")).unwrap();
+
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
     window.set_title(&*format!("{}", "Layout21 Viewer"));
