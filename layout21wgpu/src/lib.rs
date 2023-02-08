@@ -1,4 +1,4 @@
-use std::{iter, marker::PhantomData, mem};
+use std::{collections::HashMap, iter, marker::PhantomData, mem};
 
 use bytemuck::{Pod, Zeroable};
 
@@ -14,39 +14,119 @@ use winit::{
     window::{Window, WindowBuilder},
 };
 
+#[derive(Debug, Clone, Copy)]
+struct Tbd;
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Pod, Zeroable)]
+struct Color(pub [f32; 3]);
+
+const RED: Color = Color([1.0, 0.0, 0.0]);
+const GREEN: Color = Color([0.0, 1.0, 0.0]);
+const BLUE: Color = Color([0.0, 0.0, 1.0]);
+const BLACK: Color = Color([0.0, 0.0, 0.0]);
+const WHITE: Color = Color([1.0, 1.0, 1.0]);
+
+const colors: [Color; 4] = [RED, GREEN, BLUE, WHITE];
+#[derive(Debug)]
+struct ColorWheel {
+    index: usize,
+}
+impl ColorWheel {
+    fn next(&mut self) -> Color {
+        let color = colors[self.index];
+        self.index = (self.index + 1) % colors.len();
+        color
+    }
+}
+
 #[derive(Debug)]
 struct LayoutDisplay {
+    // Data elements
     lib: raw::Library,
     cell: Ptr<raw::Cell>,
-    bbox: Option<[[raw::Int; 2]; 2]>,
+    // Rendering elements
+    bbox: [[raw::Int; 2]; 2],
+    vertices: Vec<Vertex>,
+    layer_colors: HashMap<raw::LayerKey, Color>,
 }
 impl LayoutDisplay {
     fn from_proto() -> Self {
         let proto_lib: layout21protos::Library =
             proto_converters::open(&resource("sky130_fd_sc_hd__dfxtp_1.pb")).unwrap();
         let rawlib = raw::Library::from_proto(proto_lib, None).unwrap();
-        Self::from_rawlib(rawlib)
-    }
-    fn from_rawlib(rawlib: raw::Library) -> Self {
         let cell = rawlib.cells[0].clone();
-
-        Self {
-            lib: rawlib,
-            cell,
-            bbox: None,
-        }
+        Self::build(rawlib, cell)
     }
-    fn something(&self) {
-        let bbox = self.bbox.unwrap().clone();
-        let cell = self.cell.read().unwrap();
-        let layout = cell.layout.as_ref().unwrap();
+    fn build(rawlib: raw::Library, cell: Ptr<raw::Cell>) -> Self {
+        let cell1 = cell.read().unwrap();
+        let layout = cell1.layout.as_ref().unwrap();
+
+        let mut layer_colors: HashMap<raw::LayerKey, Color> = HashMap::new();
+
+        let mut rects: Vec<Rect> = Vec::with_capacity(layout.elems.len());
+        // let bbox = self.bbox.unwrap().clone();
+        let bbox = [[0, 10_000], [0, 4000]];
+
+        let mut color_wheel = ColorWheel { index: 0 };
+
         for elem in &layout.elems {
+            let color = layer_colors
+                .entry(elem.layer)
+                .or_insert_with(|| color_wheel.next());
             let shape = &elem.inner;
             match shape {
-                raw::Shape::Rect(r) => unimplemented!(),
-                raw::Shape::Path(p) => unimplemented!(),
-                raw::Shape::Polygon(p) => unimplemented!(),
+                raw::Shape::Rect(r) => {
+                    let rect = Rect {
+                        p0: [
+                            r.p0.x as f32 / bbox[0][1] as f32,
+                            r.p0.y as f32 / bbox[1][1] as f32,
+                        ],
+                        p1: [
+                            r.p1.x as f32 / bbox[0][1] as f32,
+                            r.p1.y as f32 / bbox[1][1] as f32,
+                        ],
+                        color: color_wheel.next(),
+                    };
+                    rects.push(rect);
+                }
+                raw::Shape::Path(p) => {
+                    let path_rects = p.rects();
+                    if path_rects.is_none(){
+                        continue;
+                    }
+                    let path_rects = path_rects.unwrap();
+                    for r in path_rects.iter() {
+                        let rect = Rect {
+                            p0: [
+                                r.p0.x as f32 / bbox[0][1] as f32,
+                                r.p0.y as f32 / bbox[1][1] as f32,
+                            ],
+                            p1: [
+                                r.p1.x as f32 / bbox[0][1] as f32,
+                                r.p1.y as f32 / bbox[1][1] as f32,
+                            ],
+                            color: color_wheel.next(),
+                        };
+                        rects.push(rect);
+                    }
+                }
+                raw::Shape::Polygon(_) => {
+                    error!("Not implemented: poly")
+                }
             }
+        }
+
+        let mut vertices: Vec<Vertex> = Vec::with_capacity(rects.len() * 6);
+        for rect in rects.iter() {
+            vertices.extend_from_slice(&rect.vertices());
+        }
+        Self {
+            lib: rawlib,
+            cell: cell.clone(),
+            bbox,
+            vertices,
+            layer_colors,
         }
     }
 }
@@ -109,8 +189,7 @@ impl Rect {
     }
 }
 
-const NUM_RECTS: usize = 10_000;
-const NUM_VERTICES: usize = NUM_RECTS * 6;
+// const NUM_VERTICES: usize = NUM_RECTS * 6;
 struct RectHolder {
     rects: Vec<Rect>,
     vertices: Vec<Vertex>,
@@ -118,6 +197,7 @@ struct RectHolder {
 impl RectHolder {
     /// Generate a random set of rectangles
     fn random() -> RectHolder {
+        let NUM_RECTS: usize = 10_000;
         let mut rects = Vec::with_capacity(NUM_RECTS);
         let mut rng = rand::thread_rng();
         let mut random = || rng.gen_range(-1.0..1.0);
@@ -155,16 +235,6 @@ impl RectHolder {
 //     }
 //     vertices
 // }
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug, Pod, Zeroable)]
-struct Color(pub [f32; 3]);
-
-// const RED: Color = Color([1.0, 0.0, 0.0]);
-// const GREEN: Color = Color([0.0, 1.0, 0.0]);
-// const BLUE: Color = Color([0.0, 0.0, 1.0]);
-// const BLACK: Color = Color([0.0, 0.0, 0.0]);
-// const WHITE: Color = Color([1.0, 1.0, 1.0]);
 
 // const VERTICES: &[Vertex] = &[
 //     Vertex {
@@ -211,45 +281,26 @@ struct Color(pub [f32; 3]);
 //     },
 // ];
 
-struct OneOfThese {
+struct VertexBufferStuff {
     vertex_buffer: wgpu::Buffer,
-    vertices: Vec<Vertex>,
+    layout_display: LayoutDisplay,
 }
-impl OneOfThese {
+impl VertexBufferStuff {
     fn new(device: &wgpu::Device) -> Self {
+        let layout_display = LayoutDisplay::from_proto();
+
         // let vertices = generate_vertices();
-        let vertices = RectHolder::random().vertices;
+        // let vertices = RectHolder::random().vertices;
+
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(&vertices),
+            contents: bytemuck::cast_slice(&layout_display.vertices),
             usage: wgpu::BufferUsages::VERTEX,
         });
         Self {
             vertex_buffer,
-            vertices,
+            layout_display,
         }
-    }
-}
-struct VertexBufferStuff {
-    one: OneOfThese,
-    two: OneOfThese,
-    idx: usize,
-}
-impl VertexBufferStuff {
-    fn new(device: &wgpu::Device) -> Self {
-        let one = OneOfThese::new(device);
-        let two = OneOfThese::new(device);
-        Self { one, two, idx: 0 }
-    }
-    fn current(&self) -> &OneOfThese {
-        match self.idx {
-            0 => &self.one,
-            1 => &self.two,
-            _ => unreachable!(),
-        }
-    }
-    fn swap(&mut self) {
-        self.idx = (self.idx + 1) % 2;
     }
 }
 
@@ -400,7 +451,7 @@ impl State {
         //     usage: wgpu::BufferUsages::VERTEX,
         // });
 
-        self.vertex_buffer_stuff.swap();
+        // self.vertex_buffer_stuff.swap();
 
         let output = self.surface.get_current_texture()?;
         let view = output
@@ -434,7 +485,10 @@ impl State {
 
             render_pass.set_pipeline(&self.pipeline);
             render_pass.set_vertex_buffer(0, self.vertex_buffer().slice(..));
-            render_pass.draw(0..NUM_VERTICES as u32, 0..1);
+            render_pass.draw(
+                0..self.vertex_buffer_stuff.layout_display.vertices.len() as u32,
+                0..1,
+            );
         }
 
         self.queue.submit(iter::once(encoder.finish()));
@@ -443,7 +497,7 @@ impl State {
         Ok(())
     }
     fn vertex_buffer(&self) -> &wgpu::Buffer {
-        &self.vertex_buffer_stuff.current().vertex_buffer
+        &self.vertex_buffer_stuff.vertex_buffer
     }
 }
 
