@@ -9,7 +9,7 @@ use wgpu::util::DeviceExt;
 use winit::window::Window;
 
 // Local Imports
-use crate::{LayoutDisplay, Vertex};
+use crate::{Buffers, Vertex};
 
 /// # GPU Stuff
 ///
@@ -32,7 +32,7 @@ impl GpuStuff {
     /// Once this gets done, things really do calm down to just the vertex and index buffers,
     /// and writing triangles to them.
     ///
-    pub async fn new(window: &Window, layout: &LayoutDisplay) -> Self {
+    pub async fn new(window: &Window, buffers: &Buffers) -> Self {
         let size = window.inner_size();
         let backends = wgpu::util::backend_bits_from_env().unwrap_or_else(wgpu::Backends::all);
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -114,12 +114,12 @@ impl GpuStuff {
 
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(&layout.geometry.vertices),
+            contents: bytemuck::cast_slice(&buffers.vertices),
             usage: wgpu::BufferUsages::VERTEX,
         });
         let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Index Buffer"),
-            contents: bytemuck::cast_slice(&layout.geometry.indices),
+            contents: bytemuck::cast_slice(&buffers.indices),
             usage: wgpu::BufferUsages::INDEX,
         });
 
@@ -145,7 +145,7 @@ impl GpuStuff {
     }
 
     /// Render the current frame
-    pub fn render(&self, max_index: u32) -> Result<(), wgpu::SurfaceError> {
+    pub fn render(&self, buffers: &Buffers) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
         let view = output
             .texture
@@ -180,9 +180,9 @@ impl GpuStuff {
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
             render_pass.draw_indexed(
-                0..max_index, // indices
-                0,            // base_vertex
-                0..1,         // instances
+                0..buffers.indices.len() as u32, // indices
+                0,                               // base_vertex
+                0..1,                            // instances
             );
         }
 

@@ -6,17 +6,29 @@ use winit::{
 };
 
 // Local imports
-use crate::{GpuStuff, LayoutDisplay};
+use crate::{tessellate, GpuStuff, LayoutDisplay, Size, Buffers};
 
+/// # Application State
 pub struct State {
     gpu: GpuStuff,
     layout: LayoutDisplay,
+    buffers: Buffers,
 }
 impl State {
     async fn new(window: &Window) -> Self {
         let layout = LayoutDisplay::from_proto();
-        let gpu = GpuStuff::new(window, &layout).await;
-        Self { gpu, layout }
+        let size = window.inner_size();
+        let size: Size<u32> = Size {
+            width: size.width,
+            height: size.height,
+        };
+        let buffers = tessellate(&layout, &size);
+        let gpu = GpuStuff::new(window, &buffers).await;
+        Self {
+            gpu,
+            layout,
+            buffers,
+        }
     }
 }
 
@@ -65,8 +77,7 @@ pub fn run() {
         }
         Event::RedrawRequested(_) => {
             error!("REDRAW!!!");
-            let max_index = state.layout.geometry.indices.len();
-            match state.gpu.render(max_index as u32) {
+            match state.gpu.render(&state.buffers) {
                 Ok(_) => {}
                 Err(wgpu::SurfaceError::Lost) => state.gpu.resize(state.gpu.size),
                 Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
