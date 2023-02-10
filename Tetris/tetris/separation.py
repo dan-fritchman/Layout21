@@ -5,15 +5,15 @@ from pydantic.dataclasses import dataclass
 # Local imports
 from .coords import UnitSpeced, Dir
 
-
-@dataclass
-class Instantiable:
-    ...  # FIXME!
+# from .instantiable import Instantiable
 
 
 @dataclass
 class SizeOf:
-    of: Instantiable
+    """# The size of `of`."""
+
+    ...  # FIXME!
+    # of: "Instantiable"
 
 
 # Enumerated means of specifying x-y relative-placement separation

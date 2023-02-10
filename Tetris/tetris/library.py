@@ -33,8 +33,8 @@ class Library:
     # def add_rawlib(self, rawlib: raw.Library) -> Ptr<raw.Library> :
     #     self.rawlibs.add(rawlib)
 
-    # Add a [Cell]
     def add_cell(self, cell: Cell) -> Cell:
+        """# Add a [Cell]"""
         if not isinstance(cell, Cell):
             raise TypeError
         if cell.name in self.cells:

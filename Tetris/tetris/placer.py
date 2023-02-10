@@ -237,7 +237,7 @@ class Placer:
             top = place_relative_to_this_bbox.bottom
         else:
             raise ValueError
-        
+
         if inst.loc.align.side == Side.Left:
             left = place_relative_to_this_bbox.left
         elif inst.loc.align.side == Side.Right:
@@ -248,7 +248,7 @@ class Placer:
             bottom = place_relative_to_this_bbox.bottom
         else:
             raise ValueError
-        
+
         origin = something(inst=inst, top=top, bottom=bottom, left=left, right=right)
         return AbsPlace(origin)
 
@@ -259,7 +259,7 @@ def something(
     bottom: Optional[PrimPitches],
     left: Optional[PrimPitches],
     right: Optional[PrimPitches],
-)-> Xy:
+) -> Xy:
     # What we know at this point:
     # * The cell's bounding box
     # * *Either* the top or bottom edge of the instance

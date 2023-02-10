@@ -14,6 +14,7 @@ from tetris import SepBy, Separation
 
 # Non-public imports
 from tetris.placer import Placer
+
 # from .tests import exports, SampleStacks
 
 
@@ -315,17 +316,6 @@ class SampleLib:
         lil = Cell("lil")
         lil.layout = Layout("lil", 1, Outline.rect(2, 1))
         lil.abs = Abstract(name="lil", metals=1, outline=Outline.rect(2, 1), ports=[])
-        # lil_abs.ports.append(
-        #     Port(
-        #         name="PPP",
-        #         kind=PortKind.ZTopEdge(
-        #             track=0,
-        #             side=abs.Side.BottomOrLeft,
-        #             into=(2, stack.RelZ.Above),
-        #         ),
-        #     )
-        # )
-        # lil.abs = Some(lil_abs)
         lil = lib.add_cell(lil)
 
         return SampleLib(

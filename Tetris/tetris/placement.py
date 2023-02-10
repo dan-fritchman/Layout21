@@ -43,13 +43,11 @@ def loc(self: Placeable) -> "Place":
     raise TypeError
 
 
-
-
 @dataclass
 class AbsPlace:
     """Absolute-Valued Placement, in Primitive Pitches"""
 
-    xy: Xy ## FIXME: [PrimPitches]
+    xy: Xy  ## FIXME: [PrimPitches]
 
     @staticmethod
     def origin() -> "AbsPlace":
@@ -82,6 +80,7 @@ class RelativePlace:
 
     resolved: Optional[AbsPlace] = None
 
+
 # # Placement Union
 #
 # Includes absolute and relative placements.
@@ -91,4 +90,3 @@ class RelativePlace:
 # which can be specified relative to any other [Placeable] object.
 #
 Place = Union[AbsPlace, RelativePlace]
-
