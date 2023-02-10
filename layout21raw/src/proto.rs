@@ -731,7 +731,7 @@ impl Layers {
 #[test]
 fn proto1() -> LayoutResult<()> {
     // Round-trip through Layout21::Raw -> ProtoBuf -> Layout21::Raw
-    let mut lib = Library::new("prt_lib", Units::Nano);
+    let mut lib = Library::new("prt_lib", Units::Nano, None);
     let (layer, purpose) = {
         let mut layers = lib.layers.write()?;
         layers.get_or_insert(0, 0)?

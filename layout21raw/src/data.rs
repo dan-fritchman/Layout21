@@ -165,11 +165,11 @@ impl Layers {
         }
         LayoutError::fail("No more layer numbers available")
     }
-    /// Get a reference to the [LayerKey] for layer-number `num`
+    /// Get the [LayerKey] for layer-number `num`
     pub fn keynum(&self, num: i16) -> Option<LayerKey> {
         self.nums.get(&num).map(|x| x.clone())
     }
-    /// Get a reference to the [LayerKey] layer-name `name`
+    /// Get the [LayerKey] for layer-name `name`
     pub fn keyname(&self, name: impl Into<String>) -> Option<LayerKey> {
         self.names.get(&name.into()).map(|x| x.clone())
     }
@@ -402,11 +402,13 @@ pub struct Library {
 }
 impl Library {
     /// Create a new and empty Library
-    pub fn new(name: impl Into<String>, units: Units) -> Self {
+    pub fn new(name: impl Into<String>, units: Units, layers: Option<Ptr<Layers>>) -> Self {
+        let layers = layers.unwrap_or_default();
         Self {
             name: name.into(),
             units,
-            ..Default::default()
+            layers,
+            cells: PtrList::new(),
         }
     }
 }
@@ -505,6 +507,13 @@ pub struct Layout {
     pub annotations: Vec<TextElement>,
 }
 impl Layout {
+    /// Create an empty [Layout] with the given `name`
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            ..Default::default()
+        }
+    }
     /// Create a rectangular [BoundBox] surrounding all elements in the [Layout].
     pub fn bbox(&self) -> BoundBox {
         let mut bbox = BoundBox::empty();
@@ -584,6 +593,21 @@ pub struct Element {
     pub purpose: LayerPurpose,
     /// Shape
     pub inner: Shape,
+}
+impl Element {
+    pub fn new(
+        net: Option<impl Into<String>>,
+        layer: LayerKey,
+        purpose: LayerPurpose,
+        inner: impl Into<Shape>,
+    ) -> Self {
+        Self {
+            net: net.map(|s| s.into()),
+            layer,
+            purpose,
+            inner: inner.into(),
+        }
+    }
 }
 
 /// Location, orientation, and angular rotation for an [Instance]
