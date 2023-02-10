@@ -100,6 +100,32 @@ pub struct Path {
     pub points: Vec<Point>,
     pub width: usize,
 }
+impl Path {
+    /// Convert a Manhattan path into a vector of rectangles.
+    /// Returns `None` if the path is not Manhattan.
+    pub fn rects(&self) -> Option<Vec<Rect>> {
+        let (points, width) = (&self.points, self.width);
+        let width = Int::try_from(width).unwrap(); // FIXME: probably store these signed, check them on creation
+        let mut rects: Vec<Rect> = Vec::with_capacity(self.points.len());
+        for k in 0..points.len() - 1 {
+            let rect = if points[k].x == points[k + 1].x {
+                Rect {
+                    p0: Point::new(points[k].x - width / 2, points[k].y),
+                    p1: Point::new(points[k].x + width / 2, points[k + 1].y),
+                }
+            } else if points[k].y == points[k + 1].y {
+                Rect {
+                    p0: Point::new(points[k].x, points[k].y - width / 2),
+                    p1: Point::new(points[k + 1].x, points[k].y + width / 2),
+                }
+            } else {
+                return None; // Non-Manhattan Path
+            };
+            rects.push(rect);
+        }
+        Some(rects)
+    }
+}
 /// # Polygon
 ///
 /// Closed n-sided polygon with arbitrary number of vertices.
@@ -314,33 +340,15 @@ impl ShapeTrait for Path {
     /// Boolean indication of whether the [Shape] contains [Point] `pt`.
     /// Containment is *inclusive* for all [Shape] types.
     /// [Point]s on their boundary, which generally include all points specifying the shape itself, are regarded throughout as "inside" the shape.
+    ///
+    /// Note checks for [`Path`] are valid solely for Manhattan paths, i.e. those with segments solely running vertically or horizontally.
     fn contains(&self, pt: &Point) -> bool {
-        // Break into segments, and check for intersection with each
-        // Probably not the most efficient way to do this, but a start.
-        // Only "Manhattan paths", i.e. those with segments solely running vertically or horizontally, are supported.
         // FIXME: even with this method, there are some small pieces at corners which we'll miss.
         // Whether these are relevant in real life, tbd.
-        let (points, width) = (&self.points, self.width);
-        let width = Int::try_from(width).unwrap(); // FIXME: probably store these signed, check them on creation
-        for k in 0..points.len() - 1 {
-            let rect = if points[k].x == points[k + 1].x {
-                Rect {
-                    p0: Point::new(points[k].x - width / 2, points[k].y),
-                    p1: Point::new(points[k].x + width / 2, points[k + 1].y),
-                }
-            } else if points[k].y == points[k + 1].y {
-                Rect {
-                    p0: Point::new(points[k].x, points[k].y - width / 2),
-                    p1: Point::new(points[k + 1].x, points[k].y + width / 2),
-                }
-            } else {
-                unimplemented!("Unsupported Non-Manhattan Path")
-            };
-            if rect.contains(pt) {
-                return true;
-            }
+        match self.rects() {
+            None => false, // FIXME! non-Manhattan paths
+            Some(rects) => rects.iter().any(|r| r.contains(pt)),
         }
-        false
     }
     fn to_poly(&self) -> Polygon {
         unimplemented!("Path::to_poly")

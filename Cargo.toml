@@ -12,8 +12,10 @@ members = [
   "layout21raw",
   # "layout21tetris",
   "layout21utils",
+  "layout21wgpu",
   "lef21",
 ]
+resolver = "2"
 
 # Inherited Package Attributes
 # Thanks https://doc.rust-lang.org/cargo/reference/workspaces.html#the-package-table!
