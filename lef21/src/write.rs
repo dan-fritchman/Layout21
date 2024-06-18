@@ -294,8 +294,13 @@ impl<'wr> LefWriter<'wr> {
         match geom {
             LefGeometry::Iterate { .. } => unimplemented!(),
             LefGeometry::Shape(ref shape) => match shape {
-                LefShape::Rect(p0, p1) => {
-                    self.write_line(format_args_f!("{Rect} {p0} {p1} ; "))?;
+                LefShape::Rect(mask, p0, p1) => {
+                    let mut line = format!("{Rect} ");
+                    match mask {
+                        Some(mask) => line.push_str(&format!("MASK {mask} ")),
+                        None => (),
+                    };
+                    self.write_line(format_args_f!("{line}{p0} {p1} ; "))?;
                 }
                 LefShape::Polygon(pts) => {
                     let ptstr = pts

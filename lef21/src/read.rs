@@ -503,9 +503,15 @@ impl<'src> LefParser<'src> {
                     self.expect_key(LefKey::Library)?; // Expect END LIBRARY
                     break;
                 }
+                LefKey::UseMinSpacing => {
+                    self.advance()?;
+                    self.expect_key(LefKey::Obs)?;
+                    let e = self.parse_enum::<LefOnOff>()?;
+                    self.expect(TokenType::SemiColon)?;
+                    lib.use_min_spacing(e)
+                }
                 LefKey::BeginExtension
                 | LefKey::ManufacturingGrid
-                | LefKey::UseMinSpacing
                 | LefKey::ClearanceMeasure
                 | LefKey::PropertyDefinitions
                 | LefKey::MaxViaStack
@@ -831,16 +837,21 @@ impl<'src> LefParser<'src> {
         match self.peek_key()? {
             LefKey::Rect => {
                 self.advance()?;
+                let mut mask = None;
                 if self.matches(TokenType::Name) {
-                    // The ITERATE construction would go here, but is not supported.
-                    self.fail(LefParseErrorType::Unsupported)?;
+                    if self.get_key()? == LefKey::Mask {
+                        mask = Some(self.parse_number()?);
+                    } else {
+                        // The ITERATE construction would go here, but is not supported.
+                        self.fail(LefParseErrorType::Unsupported)?;
+                    }
                 }
                 // Parse the two points
                 let p1 = self.parse_point()?;
                 let p2 = self.parse_point()?;
                 self.expect(TokenType::SemiColon)?;
                 // And return the Rect
-                Ok(LefGeometry::Shape(LefShape::Rect(p1, p2)))
+                Ok(LefGeometry::Shape(LefShape::Rect(mask, p1, p2)))
             }
             LefKey::Polygon => {
                 self.advance()?;
