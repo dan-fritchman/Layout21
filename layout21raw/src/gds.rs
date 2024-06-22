@@ -631,7 +631,13 @@ impl GdsImporter {
                 GdsBoundary(ref x) => Yes(self.import_boundary(x)?),
                 GdsPath(ref x) => Yes(self.import_path(x)?),
                 GdsBox(ref x) => Yes(self.import_box(x)?),
-                GdsArrayRef(ref x) => No(layout.insts.extend(self.import_instance_array(x)?)),
+                GdsArrayRef(ref x) => {
+                    let array = self.import_instance_array(x)?;
+                    if let Some(insts) = array {
+                        layout.insts.extend(insts);
+                    }
+                    No(())
+                },
                 GdsStructRef(ref x) => No(layout.insts.push(self.import_instance(x)?)),
                 GdsTextElem(ref x) => No(texts.push(x)),
                 // GDSII "Node" elements are fairly rare, and are not supported.
@@ -854,7 +860,7 @@ impl GdsImporter {
     /// Further support for such "non-rectangular-specified" arrays may (or may not) become a future addition,
     /// based on observed GDSII usage.
     ///
-    fn import_instance_array(&mut self, aref: &gds21::GdsArrayRef) -> LayoutResult<Vec<Instance>> {
+    fn import_instance_array(&mut self, aref: &gds21::GdsArrayRef) -> LayoutResult<Option<Vec<Instance>>> {
         let cname = aref.name.clone();
         self.ctx.push(ErrorContext::Array(cname.clone()));
 
@@ -871,7 +877,8 @@ impl GdsImporter {
         let p2 = self.import_point(&aref.xy[2])?;
         // Check for (thus far) unsupported non-rectangular arrays
         if p0.y != p1.y || p0.x != p2.x {
-            self.fail("Unsupported Non-Rectangular GDS Array")?;
+            //self.fail("Unsupported Non-Rectangular GDS Array")?;
+            return Ok(None);
         }
         // Sort out the inter-element spacing
         let mut xstep = (p1.x - p0.x) / Int::from(aref.cols);
@@ -920,7 +927,7 @@ impl GdsImporter {
             }
         }
         self.ctx.pop();
-        Ok(insts)
+        Ok(Some(insts))
     }
     /// Import a [Point]
     fn import_point(&mut self, pt: &gds21::GdsPoint) -> LayoutResult<Point> {
