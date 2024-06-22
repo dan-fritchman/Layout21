@@ -93,7 +93,7 @@ pub struct LefLibrary {
     /// "Use Min Spacing" Option
     #[serde(default, skip_serializing)]
     #[builder(default)]
-    pub use_min_spacing: Option<LefOnOff>,
+    pub use_min_spacing: Option<Unsupported>,
     /// Clearance Measure
     #[serde(default, skip_serializing)]
     #[builder(default)]
@@ -426,7 +426,7 @@ pub enum LefGeometry {
 /// rectangles, polygons, and paths.
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub enum LefShape {
-    Rect(Option<LefDecimal>, LefPoint, LefPoint),
+    Rect(LefPoint, LefPoint),
     Polygon(Vec<LefPoint>),
     Path(Vec<LefPoint>),
 }
@@ -610,7 +610,6 @@ enumstr!(
         DesignRuleWidth: "DESIGNRULEWIDTH",
         Spacing: "SPACING",
         Bump: "BUMP",
-        Mask: "MASK",
 
         // UNITS Fields
         Units: "UNITS",
