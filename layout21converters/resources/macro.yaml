@@ -9,6 +9,7 @@ macros:
                 geometries:
                   - Shape:
                       Rect:
+                        - ~
                         - x: "88.4"
                           y: "0.0"
                         - x: "88.78"
