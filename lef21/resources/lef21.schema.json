@@ -170,7 +170,7 @@
       "writeOnly": true,
       "anyOf": [
         {
-          "$ref": "#/definitions/Unsupported"
+          "$ref": "#/definitions/LefOnOff"
         },
         {
           "type": "null"
@@ -180,9 +180,10 @@
     "version": {
       "description": "Lef Spec Version",
       "type": [
-        "number",
+        "string",
         "null"
-      ]
+      ],
+      "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
     },
     "via_rule_generators": {
       "description": "Via Rules Generators",
@@ -540,9 +541,10 @@
         },
         "width": {
           "type": [
-            "number",
+            "string",
             "null"
-          ]
+          ],
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
         }
       }
     },
@@ -557,7 +559,8 @@
           ],
           "properties": {
             "Spacing": {
-              "type": "number"
+              "type": "string",
+              "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
             }
           },
           "additionalProperties": false
@@ -569,7 +572,8 @@
           ],
           "properties": {
             "DesignRuleWidth": {
-              "type": "number"
+              "type": "string",
+              "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
             }
           },
           "additionalProperties": false
@@ -698,10 +702,12 @@
           ],
           "items": [
             {
-              "type": "number"
+              "type": "string",
+              "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
             },
             {
-              "type": "number"
+              "type": "string",
+              "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
             }
           ],
           "maxItems": 2,
@@ -1083,7 +1089,8 @@
           ]
         },
         "val": {
-          "type": "number"
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
         }
       }
     },
@@ -1197,10 +1204,12 @@
       ],
       "properties": {
         "x": {
-          "type": "number"
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
         },
         "y": {
-          "type": "number"
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
         }
       }
     },
@@ -1269,14 +1278,21 @@
               "type": "array",
               "items": [
                 {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+                },
+                {
                   "$ref": "#/definitions/LefPoint"
                 },
                 {
                   "$ref": "#/definitions/LefPoint"
                 }
               ],
-              "maxItems": 2,
-              "minItems": 2
+              "maxItems": 3,
+              "minItems": 3
             }
           },
           "additionalProperties": false
@@ -1352,10 +1368,12 @@
           "type": "array",
           "items": [
             {
-              "type": "number"
+              "type": "string",
+              "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
             },
             {
-              "type": "number"
+              "type": "string",
+              "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
             }
           ],
           "maxItems": 2,
@@ -1425,15 +1443,17 @@
       "properties": {
         "capacitance_pf": {
           "type": [
-            "number",
+            "string",
             "null"
-          ]
+          ],
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
         },
         "current_ma": {
           "type": [
-            "number",
+            "string",
             "null"
-          ]
+          ],
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
         },
         "database_microns": {
           "description": "Database Distance Units per Micron Defaults to 100, i.e. 1 DBU = 10nm",
@@ -1448,33 +1468,38 @@
         },
         "frequency_mhz": {
           "type": [
-            "number",
+            "string",
             "null"
-          ]
+          ],
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
         },
         "power_mw": {
           "type": [
-            "number",
+            "string",
             "null"
-          ]
+          ],
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
         },
         "resistance_ohms": {
           "type": [
-            "number",
+            "string",
             "null"
-          ]
+          ],
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
         },
         "time_ns": {
           "type": [
-            "number",
+            "string",
             "null"
-          ]
+          ],
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
         },
         "voltage_volts": {
           "type": [
-            "number",
+            "string",
             "null"
-          ]
+          ],
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
         }
       }
     },

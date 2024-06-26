@@ -10,6 +10,7 @@ macros:
                 geometries:
                   - Shape:
                       Rect:
+                        - ~
                         - - "88.4"
                           - "0.0"
                         - - "88.78"
