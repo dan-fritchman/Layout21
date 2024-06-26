@@ -859,6 +859,20 @@
         }
       ]
     },
+    "LefMask": {
+      "title": "Mask value",
+      "description": "Specifies which mask from double- or triple-patterning to use for this shape. Supports common mathematical operations (Add, Sub, increment, etc.).",
+      "type": "object",
+      "required": [
+        "mask"
+      ],
+      "properties": {
+        "mask": {
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+        }
+      }
+    },
     "LefOnOff": {
       "description": "Binary On/Off Settings, Denoted by `ON` and `OFF`",
       "oneOf": [
@@ -1278,11 +1292,14 @@
               "type": "array",
               "items": [
                 {
-                  "type": [
-                    "string",
-                    "null"
-                  ],
-                  "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/LefMask"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 {
                   "$ref": "#/definitions/LefPoint"

@@ -840,7 +840,7 @@ impl<'src> LefParser<'src> {
                 let mut mask = None;
                 if self.matches(TokenType::Name) {
                     if self.get_key()? == LefKey::Mask {
-                        mask = Some(self.parse_number()?);
+                        mask = Some(LefMask::new(self.parse_number()?));
                     } else {
                         // The ITERATE construction would go here, but is not supported.
                         self.fail(LefParseErrorType::Unsupported)?;
