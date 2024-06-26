@@ -643,6 +643,7 @@ enumstr!(
         Spacing: "SPACING",
         Bump: "BUMP",
         Mask: "MASK",
+        UseMinSpacing: "USEMINSPACING",
 
         // UNITS Fields
         Units: "UNITS",
@@ -683,7 +684,6 @@ enumstr!(
         MustJoin: "MUSTJOIN",
         Property: "PROPERTY",
         ManufacturingGrid: "MANUFACTURINGGRID",
-        UseMinSpacing: "USEMINSPACING",
         ClearanceMeasure: "CLEARANCEMEASURE",
         PropertyDefinitions: "PROPERTYDEFINITIONS",
         MaxViaStack: "MAXVIASTACK",

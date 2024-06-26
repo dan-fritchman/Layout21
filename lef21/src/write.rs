@@ -52,7 +52,7 @@ impl<'wr> LefWriter<'wr> {
     /// Fields are written in the LEF-recommended order
     fn write_lib(&mut self, lib: &LefLibrary) -> LefResult<()> {
         use LefKey::{
-            BusBitChars, DividerChar, End, Library, NamesCaseSensitive, NoWireExtensionAtPin,
+            BusBitChars, DividerChar, End, Library, NamesCaseSensitive, NoWireExtensionAtPin, Obs,
             Units, UseMinSpacing, Version,
         };
         if let Some(ref v) = lib.version {
@@ -86,7 +86,7 @@ impl<'wr> LefWriter<'wr> {
             self.write_line(format_args_f!("{DividerChar} \"{}\" ; ", v))?;
         }
         if let Some(ref v) = lib.use_min_spacing {
-            self.write_line(format_args_f!("{UseMinSpacing} \"{}\" ; ", v))?;
+            self.write_line(format_args_f!("{UseMinSpacing} {Obs} {} ; ", v))?;
         }
         if let Some(ref v) = lib.units {
             self.write_line(format_args_f!("{Units} "))?;
