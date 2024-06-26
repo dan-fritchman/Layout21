@@ -53,7 +53,7 @@ impl<'wr> LefWriter<'wr> {
     fn write_lib(&mut self, lib: &LefLibrary) -> LefResult<()> {
         use LefKey::{
             BusBitChars, DividerChar, End, Library, NamesCaseSensitive, NoWireExtensionAtPin,
-            Units, Version,
+            Units, UseMinSpacing, Version,
         };
         if let Some(ref v) = lib.version {
             // Save a copy in our session-state
@@ -84,6 +84,9 @@ impl<'wr> LefWriter<'wr> {
         }
         if let Some(ref v) = lib.divider_char {
             self.write_line(format_args_f!("{DividerChar} \"{}\" ; ", v))?;
+        }
+        if let Some(ref v) = lib.use_min_spacing {
+            self.write_line(format_args_f!("{UseMinSpacing} \"{}\" ; ", v))?;
         }
         if let Some(ref v) = lib.units {
             self.write_line(format_args_f!("{Units} "))?;
