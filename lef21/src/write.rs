@@ -142,7 +142,7 @@ impl<'wr> LefWriter<'wr> {
     /// Write a [LefMacro], in recommended order of fields.
     fn write_macro(&mut self, mac: &LefMacro) -> LefResult<()> {
         use LefKey::{By, End, Foreign, Macro, Obs, Origin, Site, Size, Source};
-        self.write_line(format_args_f!("{Macro} {mac.name} ; "))?;
+        self.write_line(format_args_f!("{Macro} {mac.name}"))?;
         self.indent += 1;
 
         if let Some(ref v) = mac.class {
