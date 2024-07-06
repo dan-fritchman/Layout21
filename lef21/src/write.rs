@@ -141,7 +141,7 @@ impl<'wr> LefWriter<'wr> {
     }
     /// Write a [LefMacro], in recommended order of fields.
     fn write_macro(&mut self, mac: &LefMacro) -> LefResult<()> {
-        use LefKey::{By, End, FixedMask, Foreign, Macro, Obs, Origin, Site, Size, Source};
+        use LefKey::{By, Eeq, End, FixedMask, Foreign, Macro, Obs, Origin, Site, Size, Source};
         self.write_line(format_args_f!("{Macro} {mac.name}"))?;
         self.indent += 1;
 
@@ -174,8 +174,10 @@ impl<'wr> LefWriter<'wr> {
             }
             self.write_line(format_args_f!("{Source} {v} ;"))?;
         }
-        // EEQ would be written here
-        // if mac.eeq.is_some() { }
+        
+        if let Some(ref cell) = mac.eeq {
+            self.write_line(format_args_f!("{Eeq} {cell} ;"))?;
+        }
         if let Some(ref v) = mac.size {
             self.write_line(format_args_f!("{Size} {v.0} {By} {v.1} ;"))?;
         }

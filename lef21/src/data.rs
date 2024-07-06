@@ -198,15 +198,16 @@ pub struct LefMacro {
     #[builder(default, setter(strip_option))]
     pub source: Option<LefDefSource>,
 
+    /// Electrically-Equivalent Cell
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
+    pub eeq: Option<String>,
+
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub fixed_mask: bool,
+
     // Unsupported
-    /// Fixed Mask Option (Unsupported)
-    #[serde(default, skip_serializing)]
-    #[builder(default)]
-    pub fixed_mask: bool, //Option<Unsupported>,
-    /// Electrically-Equivalent Cell (Unsupported)
-    #[serde(default, skip_serializing)]
-    #[builder(default)]
-    pub eeq: Option<Unsupported>,
     /// Density Objects (Unsupported)
     #[serde(default, skip_serializing)]
     #[builder(default)]
@@ -607,8 +608,9 @@ enumstr!(
         DesignRuleWidth: "DESIGNRULEWIDTH",
         Spacing: "SPACING",
         Bump: "BUMP",
+        Eeq: "EEQ",
         FixedMask: "FIXEDMASK",
-
+        
         // UNITS Fields
         Units: "UNITS",
         Time: "TIME",
