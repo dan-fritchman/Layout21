@@ -31,6 +31,7 @@ pub type LefDecimal = rust_decimal::Decimal;
 // Note [`once_cell`](https://docs.rs/once_cell/1.8.0/once_cell/#lazy-initialized-global-data)
 // demands these be `static`, not `const`, for reasons outside our grasp.
 pub(crate) static V5P4: Lazy<LefDecimal> = Lazy::new(|| LefDecimal::from_str("5.4").unwrap());
+pub(crate) static V5P6: Lazy<LefDecimal> = Lazy::new(|| LefDecimal::from_str("5.6").unwrap());
 pub(crate) static V5P8: Lazy<LefDecimal> = Lazy::new(|| LefDecimal::from_str("5.8").unwrap());
 
 /// # Lef Library

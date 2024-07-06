@@ -466,6 +466,9 @@ impl<'src> LefParser<'src> {
         let mut macros = Vec::new();
         let mut sites = Vec::new();
         loop {
+            if self.peek_token().is_none() && self.session.lef_version >= *V5P6 {
+                break; // End of input (without END LIBRARY), which is valid for lef 5.6+
+            }
             lib = match self.peek_key()? {
                 LefKey::Macro => {
                     macros.push(self.parse_macro()?);

@@ -96,6 +96,28 @@ fn it_parses_lib2() -> LefResult<()> {
 }
 
 #[test]
+fn it_parses_no_end_library_5p6() -> LefResult<()> {
+    let src = r#"
+    VERSION 5.6 ;
+    UNITS DATABASE MICRONS 2000 ; END UNITS
+    MACRO macro_name SIZE 2 BY 3 ; END macro_name
+    "#;
+    parse_str(src)?;
+    Ok(())
+}
+
+#[test]
+fn it_errors_no_end_library_5p5() -> LefResult<()> {
+    let src = r#"
+    VERSION 5.5 ;
+    UNITS DATABASE MICRONS 2000 ; END UNITS
+    MACRO macro_name SIZE 2 BY 3 ; END macro_name
+    "#;
+    assert!(parse_str(src).is_err());
+    Ok(())
+}
+
+#[test]
 fn empty_lib_to_yaml() {
     Yaml.save(&LefLibrary::new(), &resource("empty_lib.lef.yaml")).unwrap();
 }
