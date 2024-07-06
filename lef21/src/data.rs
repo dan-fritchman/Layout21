@@ -240,18 +240,14 @@ pub enum LefMacroClass {
 ///
 /// Declares the linkage to another cell, commonly in DEF or GDSII format.
 /// Foreign-cell references are stored exacty as in the LEF format: as a string cell-name.
-/// The optional `ORIENT` feature is not supported.
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub struct LefForeign {
     /// Foreign Cell Name
     pub cell_name: String,
     /// Location
     pub pt: Option<LefPoint>,
-
-    // Unsupported Fields
-    /// Orientation (Unsupported)
-    #[serde(default, skip_serializing)]
-    pub orient: Option<Unsupported>,
+    /// Orientation
+    pub orient: Option<LefOrient>,
 }
 /// # Lef Pin Definition
 ///
@@ -695,6 +691,20 @@ enumstr!(
         R90: "R90"
     }
 );
+enumstr!(
+    /// Specifies orientation for FOREIGN statement
+    LefOrient {
+        N: "N",
+        S: "S",
+        E: "E",
+        W: "W",
+        FN: "FN",
+        FS: "FS",
+        FE: "FE",
+        FW: "FW"
+    }
+);
+
 enumstr!(
     /// # Lef Pin-Usage
     ///

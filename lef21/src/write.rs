@@ -156,7 +156,11 @@ impl<'wr> LefWriter<'wr> {
                 Some(ref p) => p.to_string(),
                 None => "".into(),
             };
-            self.write_line(format_args_f!("{Foreign} {v.cell_name} {pt} ;"))?;
+            let orient = match v.orient {
+                Some(ref o) => o.to_string(),
+                None => "".into(),
+            };
+            self.write_line(format_args_f!("{Foreign} {v.cell_name} {pt} {orient} ;"))?;
         }
         if let Some(ref v) = mac.origin {
             self.write_line(format_args_f!("{Origin} {v} ;"))?;

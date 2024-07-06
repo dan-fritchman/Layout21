@@ -569,19 +569,20 @@ impl<'src> LefParser<'src> {
                 LefKey::Foreign => {
                     self.advance()?; // Eat the FOREIGN key
                     let cell_name = self.parse_ident()?;
+                    
                     let mut pt = None;
                     if !self.matches(TokenType::SemiColon) {
                         pt = Some(self.parse_point()?);
                     }
-                    // The optional `ORIENT` field is not supported
-                    if self.matches(TokenType::Name) {
-                        self.fail(LefParseErrorType::Unsupported)?;
+                    let mut orient = None;
+                    if !self.matches(TokenType::SemiColon) {
+                        orient = Some(self.parse_enum::<LefOrient>()?);
                     }
                     self.expect(TokenType::SemiColon)?;
                     mac.foreign(LefForeign {
                         cell_name,
                         pt,
-                        orient: None,
+                        orient: orient,
                     })
                 }
                 LefKey::Origin => {
