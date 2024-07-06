@@ -654,7 +654,9 @@ impl<'src> LefParser<'src> {
                 }
                 LefKey::AntennaModel => {
                     self.advance()?;
-                    pin.antenna_model(self.parse_enum::<LefAntennaModel>()?)
+                    let e = self.parse_enum::<LefAntennaModel>()?;
+                    self.expect(TokenType::SemiColon)?;
+                    pin.antenna_model(e)
                 }
                 LefKey::AntennaDiffArea
                 | LefKey::AntennaGateArea
