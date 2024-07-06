@@ -691,11 +691,31 @@ impl<'src> LefParser<'src> {
                     antenna_attrs.push(LefPinAntennaAttr { key, val, layer });
                     pin
                 }
-                LefKey::TaperRule
-                | LefKey::NetExpr
-                | LefKey::SupplySensitivity
-                | LefKey::GroundSensitivity
-                | LefKey::MustJoin
+                LefKey::TaperRule => {
+                    self.advance()?;
+                    let value = self.parse_ident()?;
+                    self.expect(TokenType::SemiColon)?;
+                    pin.taper_rule(value)
+                }
+                LefKey::MustJoin => {
+                    self.advance()?;
+                    let value = self.parse_ident()?;
+                    self.expect(TokenType::SemiColon)?;
+                    pin.must_join(value)
+                }
+                LefKey::SupplySensitivity => {
+                    self.advance()?;
+                    let value = self.parse_ident()?;
+                    self.expect(TokenType::SemiColon)?;
+                    pin.supply_sensitivity(value)
+                }
+                LefKey::GroundSensitivity => {
+                    self.advance()?;
+                    let value = self.parse_ident()?;
+                    self.expect(TokenType::SemiColon)?;
+                    pin.ground_sensitivity(value)
+                }
+                LefKey::NetExpr
                 | LefKey::Property => self.fail(LefParseErrorType::Unsupported)?,
                 _ => self.fail(LefParseErrorType::InvalidKey)?,
             }

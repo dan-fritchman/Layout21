@@ -210,7 +210,7 @@ impl<'wr> LefWriter<'wr> {
     }
     /// Write a [LefPin] definition
     fn write_pin(&mut self, pin: &LefPin) -> LefResult<()> {
-        use LefKey::{AntennaModel, Direction, End, Layer, Pin, Shape, Use};
+        use LefKey::{AntennaModel, Direction, End, GroundSensitivity, Layer, MustJoin, Pin, Shape, SupplySensitivity, TaperRule, Use};
         self.write_line(format_args_f!("{Pin} {pin.name} "))?;
         self.indent += 1;
         if let Some(ref v) = pin.direction {
@@ -233,7 +233,18 @@ impl<'wr> LefWriter<'wr> {
             };
             self.write_line(format_args_f!("{attr.key} {attr.val} {layer} ;"))?;
         }
-
+        if let Some(ref v) = pin.taper_rule {
+            self.write_line(format_args_f!("{TaperRule} {v} ; "))?;
+        }
+        if let Some(ref v) = pin.supply_sensitivity {
+            self.write_line(format_args_f!("{SupplySensitivity} {v} ; "))?;
+        }
+        if let Some(ref v) = pin.ground_sensitivity {
+            self.write_line(format_args_f!("{GroundSensitivity} {v} ; "))?;
+        }
+        if let Some(ref v) = pin.must_join {
+            self.write_line(format_args_f!("{MustJoin} {v} ; "))?;
+        }
         // Most unsupported PINS features *would* go here.
         // if pin.taper_rule.is_some()
         //     || pin.net_expr.is_some()

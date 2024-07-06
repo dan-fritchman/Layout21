@@ -284,27 +284,28 @@ pub struct LefPin {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub antenna_attrs: Vec<LefPinAntennaAttr>,
 
+    /// Taper Rule
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
+    pub taper_rule: Option<String>,
+    /// Supply Sensitivity
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
+    pub supply_sensitivity: Option<String>,
+    /// Ground Sensitivity
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
+    pub ground_sensitivity: Option<String>,
+    /// Must-Join
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
+    pub must_join: Option<String>,
+
     // Unsupported
-    /// Taper Rule (Unsupported)
-    #[serde(default, skip_serializing)]
-    #[builder(default)]
-    pub taper_rule: Option<Unsupported>,
     /// Net Expression (Unsupported)
     #[serde(default, skip_serializing)]
     #[builder(default)]
     pub net_expr: Option<Unsupported>,
-    /// Supply Sensitivity (Unsupported)
-    #[serde(default, skip_serializing)]
-    #[builder(default)]
-    pub supply_sensitivity: Option<Unsupported>,
-    /// Ground Sensitivity (Unsupported)
-    #[serde(default, skip_serializing)]
-    #[builder(default)]
-    pub ground_sensitivity: Option<Unsupported>,
-    /// Must-Join (Unsupported)
-    #[serde(default, skip_serializing)]
-    #[builder(default)]
-    pub must_join: Option<Unsupported>,
     /// Properties (Unsupported)
     #[serde(default, skip_serializing)]
     #[builder(default)]
