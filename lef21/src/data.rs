@@ -202,7 +202,7 @@ pub struct LefMacro {
     /// Fixed Mask Option (Unsupported)
     #[serde(default, skip_serializing)]
     #[builder(default)]
-    pub fixed_mask: Option<Unsupported>,
+    pub fixed_mask: bool, //Option<Unsupported>,
     /// Electrically-Equivalent Cell (Unsupported)
     #[serde(default, skip_serializing)]
     #[builder(default)]
@@ -611,6 +611,7 @@ enumstr!(
         DesignRuleWidth: "DESIGNRULEWIDTH",
         Spacing: "SPACING",
         Bump: "BUMP",
+        FixedMask: "FIXEDMASK",
 
         // UNITS Fields
         Units: "UNITS",

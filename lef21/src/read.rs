@@ -561,6 +561,11 @@ impl<'src> LefParser<'src> {
                     self.expect(TokenType::SemiColon)?;
                     mac.site(id)
                 }
+                LefKey::FixedMask => {
+                    self.advance()?; // Eat the FIXEDMASK key
+                    self.expect(TokenType::SemiColon)?;
+                    mac.fixed_mask(true)
+                }
                 LefKey::Foreign => {
                     self.advance()?; // Eat the FOREIGN key
                     let cell_name = self.parse_ident()?;

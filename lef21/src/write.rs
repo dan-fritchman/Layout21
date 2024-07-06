@@ -141,15 +141,16 @@ impl<'wr> LefWriter<'wr> {
     }
     /// Write a [LefMacro], in recommended order of fields.
     fn write_macro(&mut self, mac: &LefMacro) -> LefResult<()> {
-        use LefKey::{By, End, Foreign, Macro, Obs, Origin, Site, Size, Source};
+        use LefKey::{By, End, FixedMask, Foreign, Macro, Obs, Origin, Site, Size, Source};
         self.write_line(format_args_f!("{Macro} {mac.name}"))?;
         self.indent += 1;
 
         if let Some(ref v) = mac.class {
             self.write_macro_class(v)?;
         }
-        // FIXEDMASK would be written here
-        // if mac.fixed_mask.is_some() { }
+        if mac.fixed_mask { 
+            self.write_line(format_args_f!("{FixedMask} ;"))?;
+        }
         if let Some(ref v) = mac.foreign {
             let pt = match v.pt {
                 Some(ref p) => p.to_string(),
