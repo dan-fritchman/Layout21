@@ -290,7 +290,7 @@ impl<'wr> LefWriter<'wr> {
         Ok(()) // Note [LefLayerGeometries] have no "END" or other closing delimeter.
     }
     fn write_geom(&mut self, geom: &LefGeometry) -> LefResult<()> {
-        use LefKey::{Polygon, Rect};
+        use LefKey::{Polygon, Rect, Path};
         match geom {
             LefGeometry::Iterate { .. } => unimplemented!(),
             LefGeometry::Shape(ref shape) => match shape {
@@ -305,8 +305,13 @@ impl<'wr> LefWriter<'wr> {
                         .join(" ");
                     self.write_line(format_args_f!("{Polygon} {ptstr} ;"))?;
                 }
-                LefShape::Path(_) => {
-                    self.fail(&format_f!("Unsupported Write: LefShape::Path"))?;
+                LefShape::Path(pts) => {
+                    let ptstr = pts
+                        .iter()
+                        .map(|x| x.to_string())
+                        .collect::<Vec<String>>()
+                        .join(" ");
+                    self.write_line(format_args_f!("{Path} {ptstr} ;"))?;
                 }
             },
         };
