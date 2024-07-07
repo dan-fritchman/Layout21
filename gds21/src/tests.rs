@@ -197,7 +197,7 @@ fn empty_lib_roundtrip() -> GdsResult<()> {
 #[test]
 fn empty_lib_to_json() -> GdsResult<()> {
     let lib = empty_lib();
-    Json.save(&lib, &resource("empty.gds.json"))
+    Json.save(&lib, &resource("empty1.gds.json"))
         .expect("save failed");
     Ok(())
 }
