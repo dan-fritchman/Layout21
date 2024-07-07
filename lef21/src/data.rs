@@ -202,7 +202,8 @@ pub struct LefMacro {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub eeq: Option<String>,
-
+    
+    // Fixed-Mask
     #[serde(default, skip_serializing)]
     #[builder(default)]
     pub fixed_mask: bool,

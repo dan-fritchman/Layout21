@@ -9,7 +9,8 @@ use std::path::Path;
 
 // Layout21 Imports
 use layout21utils as utils;
-pub use utils::{EnumStr, SerdeFile, SerializationFormat};
+// pub use utils::{EnumStr, SerdeFile, SerializationFormat};
+pub use utils::EnumStr;
 
 // Local imports
 use super::data::*;
@@ -246,11 +247,7 @@ impl<'wr> LefWriter<'wr> {
             self.write_line(format_args_f!("{MustJoin} {v} ; "))?;
         }
         // Most unsupported PINS features *would* go here.
-        // if pin.taper_rule.is_some()
-        //     || pin.net_expr.is_some()
-        //     || pin.supply_sensitivity.is_some()
-        //     || pin.ground_sensitivity.is_some()
-        //     || pin.must_join.is_some()
+        // if pin.net_expr.is_some()
         //     || pin.properties.is_some()
         // {
         //     return Err(LefError::Str("Unsupported LefPin Attr".into()));
@@ -377,11 +374,13 @@ impl<'wr> LefWriter<'wr> {
     fn write_line(&mut self, args: std::fmt::Arguments) -> std::io::Result<()> {
         writeln!(self.dest, "{}{}", self.indent.state, args)
     }
+    /*
     /// Failure Function
     /// Wraps error-message `msg` in a [LefError::Str].
     fn fail(&mut self, msg: &str) -> LefResult<()> {
         Err(LefError::Str(msg.to_string()))
     }
+    */
 }
 /// Helper function to call `T`'s [Display] method if `opt` is Some, or return an empty string if `opt` is None.
 fn display_option<T: std::fmt::Display>(opt: &Option<T>) -> String {
