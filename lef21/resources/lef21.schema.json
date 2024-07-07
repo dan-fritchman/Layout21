@@ -180,9 +180,10 @@
     "version": {
       "description": "Lef Spec Version",
       "type": [
-        "number",
+        "string",
         "null"
-      ]
+      ],
+      "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
     },
     "via_rule_generators": {
       "description": "Via Rules Generators",
@@ -411,7 +412,7 @@
     },
     "LefForeign": {
       "title": "Lef Foreign Cell Declaration",
-      "description": "Declares the linkage to another cell, commonly in DEF or GDSII format. Foreign-cell references are stored exacty as in the LEF format: as a string cell-name. The optional `ORIENT` feature is not supported.",
+      "description": "Declares the linkage to another cell, commonly in DEF or GDSII format. Foreign-cell references are stored exacty as in the LEF format: as a string cell-name.",
       "type": "object",
       "required": [
         "cell_name"
@@ -422,11 +423,10 @@
           "type": "string"
         },
         "orient": {
-          "description": "Orientation (Unsupported)",
-          "writeOnly": true,
+          "description": "Orientation",
           "anyOf": [
             {
-              "$ref": "#/definitions/Unsupported"
+              "$ref": "#/definitions/LefOrient"
             },
             {
               "type": "null"
@@ -540,9 +540,10 @@
         },
         "width": {
           "type": [
-            "number",
+            "string",
             "null"
-          ]
+          ],
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
         }
       }
     },
@@ -557,7 +558,8 @@
           ],
           "properties": {
             "Spacing": {
-              "type": "number"
+              "type": "string",
+              "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
             }
           },
           "additionalProperties": false
@@ -569,7 +571,8 @@
           ],
           "properties": {
             "DesignRuleWidth": {
-              "type": "number"
+              "type": "string",
+              "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
             }
           },
           "additionalProperties": false
@@ -581,6 +584,7 @@
       "description": "The primary block-level construct comprising each [LefLibrary]. Defines a hardware-block's physical abstract, including: * Pin definitions (`pins`) with locations, directions, and associated metadata * Required blockage-obstructions (`obs`) * A variety of other block-level metadata",
       "type": "object",
       "required": [
+        "fixed_mask",
         "name"
       ],
       "properties": {
@@ -608,28 +612,15 @@
           ]
         },
         "eeq": {
-          "description": "Electrically-Equivalent Cell (Unsupported)",
-          "writeOnly": true,
-          "anyOf": [
-            {
-              "$ref": "#/definitions/Unsupported"
-            },
-            {
-              "type": "null"
-            }
+          "description": "Electrically-Equivalent Cell",
+          "type": [
+            "string",
+            "null"
           ]
         },
         "fixed_mask": {
-          "description": "Fixed Mask Option (Unsupported)",
           "writeOnly": true,
-          "anyOf": [
-            {
-              "$ref": "#/definitions/Unsupported"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "type": "boolean"
         },
         "foreign": {
           "description": "Foreign (i.e. GDSII, DEF) Cell",
@@ -698,10 +689,12 @@
           ],
           "items": [
             {
-              "type": "number"
+              "type": "string",
+              "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
             },
             {
-              "type": "number"
+              "type": "string",
+              "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
             }
           ],
           "maxItems": 2,
@@ -872,6 +865,67 @@
         }
       ]
     },
+    "LefOrient": {
+      "description": "Specifies orientation for FOREIGN statement",
+      "oneOf": [
+        {
+          "description": "N",
+          "type": "string",
+          "enum": [
+            "N"
+          ]
+        },
+        {
+          "description": "S",
+          "type": "string",
+          "enum": [
+            "S"
+          ]
+        },
+        {
+          "description": "E",
+          "type": "string",
+          "enum": [
+            "E"
+          ]
+        },
+        {
+          "description": "W",
+          "type": "string",
+          "enum": [
+            "W"
+          ]
+        },
+        {
+          "description": "FN",
+          "type": "string",
+          "enum": [
+            "FN"
+          ]
+        },
+        {
+          "description": "FS",
+          "type": "string",
+          "enum": [
+            "FS"
+          ]
+        },
+        {
+          "description": "FE",
+          "type": "string",
+          "enum": [
+            "FE"
+          ]
+        },
+        {
+          "description": "FW",
+          "type": "string",
+          "enum": [
+            "FW"
+          ]
+        }
+      ]
+    },
     "LefPadClassType": {
       "description": "Sub-Types for Macros of Class [LefMacroClass::Pad]",
       "oneOf": [
@@ -958,27 +1012,17 @@
           ]
         },
         "ground_sensitivity": {
-          "description": "Ground Sensitivity (Unsupported)",
-          "writeOnly": true,
-          "anyOf": [
-            {
-              "$ref": "#/definitions/Unsupported"
-            },
-            {
-              "type": "null"
-            }
+          "description": "Ground Sensitivity",
+          "type": [
+            "string",
+            "null"
           ]
         },
         "must_join": {
-          "description": "Must-Join (Unsupported)",
-          "writeOnly": true,
-          "anyOf": [
-            {
-              "$ref": "#/definitions/Unsupported"
-            },
-            {
-              "type": "null"
-            }
+          "description": "Must-Join",
+          "type": [
+            "string",
+            "null"
           ]
         },
         "name": {
@@ -1028,27 +1072,17 @@
           ]
         },
         "supply_sensitivity": {
-          "description": "Supply Sensitivity (Unsupported)",
-          "writeOnly": true,
-          "anyOf": [
-            {
-              "$ref": "#/definitions/Unsupported"
-            },
-            {
-              "type": "null"
-            }
+          "description": "Supply Sensitivity",
+          "type": [
+            "string",
+            "null"
           ]
         },
         "taper_rule": {
-          "description": "Taper Rule (Unsupported)",
-          "writeOnly": true,
-          "anyOf": [
-            {
-              "$ref": "#/definitions/Unsupported"
-            },
-            {
-              "type": "null"
-            }
+          "description": "Taper Rule",
+          "type": [
+            "string",
+            "null"
           ]
         },
         "use": {
@@ -1083,7 +1117,8 @@
           ]
         },
         "val": {
-          "type": "number"
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
         }
       }
     },
@@ -1197,10 +1232,12 @@
       ],
       "properties": {
         "x": {
-          "type": "number"
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
         },
         "y": {
-          "type": "number"
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
         }
       }
     },
@@ -1352,10 +1389,12 @@
           "type": "array",
           "items": [
             {
-              "type": "number"
+              "type": "string",
+              "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
             },
             {
-              "type": "number"
+              "type": "string",
+              "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
             }
           ],
           "maxItems": 2,
@@ -1425,15 +1464,17 @@
       "properties": {
         "capacitance_pf": {
           "type": [
-            "number",
+            "string",
             "null"
-          ]
+          ],
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
         },
         "current_ma": {
           "type": [
-            "number",
+            "string",
             "null"
-          ]
+          ],
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
         },
         "database_microns": {
           "description": "Database Distance Units per Micron Defaults to 100, i.e. 1 DBU = 10nm",
@@ -1448,33 +1489,38 @@
         },
         "frequency_mhz": {
           "type": [
-            "number",
+            "string",
             "null"
-          ]
+          ],
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
         },
         "power_mw": {
           "type": [
-            "number",
+            "string",
             "null"
-          ]
+          ],
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
         },
         "resistance_ohms": {
           "type": [
-            "number",
+            "string",
             "null"
-          ]
+          ],
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
         },
         "time_ns": {
           "type": [
-            "number",
+            "string",
             "null"
-          ]
+          ],
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
         },
         "voltage_volts": {
           "type": [
-            "number",
+            "string",
             "null"
-          ]
+          ],
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
         }
       }
     },
