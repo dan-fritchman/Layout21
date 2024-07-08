@@ -19,8 +19,6 @@ impl Config {
     }
 }
 
-//fn parse_config(args:
-
 fn run() -> Result<(), Box<dyn Error>> {
     let args : Vec<String> = env::args().collect();
     let cfg = Config::new(&args)?;
