@@ -1030,15 +1030,10 @@
           "type": "string"
         },
         "net_expr": {
-          "description": "Net Expression (Unsupported)",
-          "writeOnly": true,
-          "anyOf": [
-            {
-              "$ref": "#/definitions/Unsupported"
-            },
-            {
-              "type": "null"
-            }
+          "description": "Net Expression",
+          "type": [
+            "string",
+            "null"
           ]
         },
         "ports": {

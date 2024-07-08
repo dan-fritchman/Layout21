@@ -211,7 +211,8 @@ impl<'wr> LefWriter<'wr> {
     }
     /// Write a [LefPin] definition
     fn write_pin(&mut self, pin: &LefPin) -> LefResult<()> {
-        use LefKey::{AntennaModel, Direction, End, GroundSensitivity, Layer, MustJoin, Pin, Shape, SupplySensitivity, TaperRule, Use};
+        use LefKey::{AntennaModel, Direction, End, GroundSensitivity, Layer, MustJoin,
+            NetExpr, Pin, Shape, SupplySensitivity, TaperRule, Use};
         self.write_line(format_args_f!("{Pin} {pin.name} "))?;
         self.indent += 1;
         if let Some(ref v) = pin.direction {
@@ -246,10 +247,12 @@ impl<'wr> LefWriter<'wr> {
         if let Some(ref v) = pin.must_join {
             self.write_line(format_args_f!("{MustJoin} {v} ; "))?;
         }
+        if let Some(ref v) = pin.net_expr {
+            self.write_line(format_args_f!("{NetExpr} {v} ; "))?;
+        }
+        
         // Most unsupported PINS features *would* go here.
-        // if pin.net_expr.is_some()
-        //     || pin.properties.is_some()
-        // {
+        // if pin.properties.is_some() {
         //     return Err(LefError::Str("Unsupported LefPin Attr".into()));
         // }
 

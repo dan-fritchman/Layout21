@@ -301,12 +301,13 @@ pub struct LefPin {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub must_join: Option<String>,
+    
+    /// Net Expression
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
+    pub net_expr: Option<String>,
 
     // Unsupported
-    /// Net Expression (Unsupported)
-    #[serde(default, skip_serializing)]
-    #[builder(default)]
-    pub net_expr: Option<Unsupported>,
     /// Properties (Unsupported)
     #[serde(default, skip_serializing)]
     #[builder(default)]

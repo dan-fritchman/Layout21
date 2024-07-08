@@ -715,8 +715,13 @@ impl<'src> LefParser<'src> {
                     self.expect(TokenType::SemiColon)?;
                     pin.ground_sensitivity(value)
                 }
-                LefKey::NetExpr
-                | LefKey::Property => self.fail(LefParseErrorType::Unsupported)?,
+                LefKey::NetExpr => {
+                    self.advance()?;
+                    let value_token = self.expect(TokenType::StringLiteral)?;
+                    self.expect(TokenType::SemiColon)?;
+                    pin.net_expr(String::from(self.txt(&value_token)))
+                }
+                LefKey::Property => self.fail(LefParseErrorType::Unsupported)?,
                 _ => self.fail(LefParseErrorType::InvalidKey)?,
             }
         }

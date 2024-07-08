@@ -154,7 +154,7 @@ fn it_writes_schema() -> LefResult<()> {
     let schema = schema_for!(LefLibrary);
 
     // NOTE: uncomment to overwrite golden data
-    Json.save(&schema, resource("lef21.schema.json"))?;
+    // Json.save(&schema, resource("lef21.schema.json"))?;
 
     // Load the golden version, and ensure they match
     let golden = Json.open(resource("lef21.schema.json"))?;
