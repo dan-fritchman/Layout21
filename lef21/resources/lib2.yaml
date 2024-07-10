@@ -1,5 +1,4 @@
 ---
-version: "5.4"
 macros:
   - name: macro_name
     pins:
@@ -10,11 +9,11 @@ macros:
                 geometries:
                   - Shape:
                       Rect:
-                        - - "88.4"
-                          - "0.0"
-                        - - "88.78"
-                          - "1.06"
-            class: ~
+                        - ~
+                        - x: "88.4"
+                          y: "0.0"
+                        - x: "88.78"
+                          y: "1.06"
         direction: Input
     class:
       Block:
@@ -26,5 +25,7 @@ macros:
       - X
       - Y
       - R90
+version: "5.4"
+use_min_spacing: "Off"
 units:
   database_microns: 2000

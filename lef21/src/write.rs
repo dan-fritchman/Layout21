@@ -52,8 +52,8 @@ impl<'wr> LefWriter<'wr> {
     /// Fields are written in the LEF-recommended order
     fn write_lib(&mut self, lib: &LefLibrary) -> LefResult<()> {
         use LefKey::{
-            BusBitChars, DividerChar, End, Library, NamesCaseSensitive, NoWireExtensionAtPin,
-            Units, Version,
+            BusBitChars, DividerChar, End, Library, NamesCaseSensitive, NoWireExtensionAtPin, Obs,
+            Units, UseMinSpacing, Version,
         };
         if let Some(ref v) = lib.version {
             // Save a copy in our session-state
@@ -84,6 +84,9 @@ impl<'wr> LefWriter<'wr> {
         }
         if let Some(ref v) = lib.divider_char {
             self.write_line(format_args_f!("{DividerChar} \"{}\" ; ", v))?;
+        }
+        if let Some(ref v) = lib.use_min_spacing {
+            self.write_line(format_args_f!("{UseMinSpacing} {Obs} {} ; ", v))?;
         }
         if let Some(ref v) = lib.units {
             self.write_line(format_args_f!("{Units} "))?;
@@ -294,8 +297,13 @@ impl<'wr> LefWriter<'wr> {
         match geom {
             LefGeometry::Iterate { .. } => unimplemented!(),
             LefGeometry::Shape(ref shape) => match shape {
-                LefShape::Rect(p0, p1) => {
-                    self.write_line(format_args_f!("{Rect} {p0} {p1} ; "))?;
+                LefShape::Rect(mask, p0, p1) => {
+                    let mut line = format!("{Rect} ");
+                    match mask {
+                        Some(mask) => line.push_str(&format!("MASK {mask} ")),
+                        None => (),
+                    };
+                    self.write_line(format_args_f!("{line}{p0} {p1} ; "))?;
                 }
                 LefShape::Polygon(pts) => {
                     let ptstr = pts
