@@ -170,7 +170,7 @@
       "writeOnly": true,
       "anyOf": [
         {
-          "$ref": "#/definitions/Unsupported"
+          "$ref": "#/definitions/LefOnOff"
         },
         {
           "type": "null"
@@ -846,6 +846,20 @@
         }
       ]
     },
+    "LefMask": {
+      "title": "Mask value",
+      "description": "Specifies which mask from double- or triple-patterning to use for this shape. Supports common mathematical operations (Add, Sub, increment, etc.).",
+      "type": "object",
+      "required": [
+        "mask"
+      ],
+      "properties": {
+        "mask": {
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+        }
+      }
+    },
     "LefOnOff": {
       "description": "Binary On/Off Settings, Denoted by `ON` and `OFF`",
       "oneOf": [
@@ -1301,14 +1315,24 @@
               "type": "array",
               "items": [
                 {
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/LefMask"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                {
                   "$ref": "#/definitions/LefPoint"
                 },
                 {
                   "$ref": "#/definitions/LefPoint"
                 }
               ],
-              "maxItems": 2,
-              "minItems": 2
+              "maxItems": 3,
+              "minItems": 3
             }
           },
           "additionalProperties": false

@@ -1,8 +1,7 @@
-use super::*;
 use super::read::{parse_str, LefLexer, LefParser, Token};
+use super::*;
+use crate::utils::SerializationFormat::{Json, Toml, Yaml};
 use std::path::Path;
-use crate::utils::SerializationFormat::{Yaml, Json, Toml};
-
 
 #[test]
 fn test_points() -> LefResult<()> {
@@ -62,6 +61,26 @@ fn it_parses_layer_geoms1() -> LefResult<()> {
         RECT 3.070000 2.085000 3.400000 2.465000 ;
         RECT 3.090000 0.255000 3.335000 0.615000 ;
         RECT 4.090000 2.085000 4.515000 2.465000 ;
+        RECT MASK 1 1.065000 1.075000 1.705000 1.325000 ;
+        RECT MASK 1 1.495000 0.615000 3.335000 0.785000 ;
+        RECT MASK 1 1.495000 0.785000 1.705000 1.075000 ;
+        RECT MASK 1 1.495000 1.325000 1.705000 1.495000 ;
+        RECT MASK 1 1.495000 1.495000 1.785000 2.465000 ;
+        RECT MASK 1 2.180000 0.255000 2.420000 0.615000 ;
+        RECT MASK 1 3.070000 1.915000 4.515000 2.085000 ;
+        RECT MASK 1 3.070000 2.085000 3.400000 2.465000 ;
+        RECT MASK 1 3.090000 0.255000 3.335000 0.615000 ;
+        RECT MASK 1 4.090000 2.085000 4.515000 2.465000 ;
+        RECT MASK 2 1.065000 1.075000 1.705000 1.325000 ;
+        RECT MASK 2 1.495000 0.615000 3.335000 0.785000 ;
+        RECT MASK 2 1.495000 0.785000 1.705000 1.075000 ;
+        RECT MASK 2 1.495000 1.325000 1.705000 1.495000 ;
+        RECT MASK 2 1.495000 1.495000 1.785000 2.465000 ;
+        RECT MASK 2 2.180000 0.255000 2.420000 0.615000 ;
+        RECT MASK 2 3.070000 1.915000 4.515000 2.085000 ;
+        RECT MASK 2 3.070000 2.085000 3.400000 2.465000 ;
+        RECT MASK 2 3.090000 0.255000 3.335000 0.615000 ;
+        RECT MASK 2 4.090000 2.085000 4.515000 2.465000 ;
     "#;
     let mut parser = LefParser::new(src)?;
     let geoms = parser.parse_layer_geometries()?;
@@ -73,6 +92,7 @@ fn it_parses_layer_geoms1() -> LefResult<()> {
 fn it_parses_lib2() -> LefResult<()> {
     let src = r#"
     VERSION 5.4 ; 
+    USEMINSPACING OBS OFF ;
     UNITS
         DATABASE MICRONS 2000 ;
     END UNITS
@@ -119,15 +139,18 @@ fn it_errors_no_end_library_5p5() -> LefResult<()> {
 
 #[test]
 fn empty_lib_to_yaml() {
-    Yaml.save(&LefLibrary::new(), &resource("empty_lib.lef.yaml")).unwrap();
+    Yaml.save(&LefLibrary::new(), &resource("empty_lib.lef.yaml"))
+        .unwrap();
 }
 #[test]
 fn empty_lib_to_json() {
-    Json.save(&LefLibrary::new(), &resource("empty_lib.lef.json")).unwrap();
+    Json.save(&LefLibrary::new(), &resource("empty_lib.lef.json"))
+        .unwrap();
 }
 #[test]
 fn empty_lib_to_toml() {
-    Toml.save(&LefLibrary::new(), &resource("empty_lib.lef.toml")).unwrap();
+    Toml.save(&LefLibrary::new(), &resource("empty_lib.lef.toml"))
+        .unwrap();
 }
 
 /// Helper function: Assert that `data` equals the content in YAML file `fname`

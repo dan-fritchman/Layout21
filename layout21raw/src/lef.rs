@@ -133,7 +133,7 @@ impl<'lib> LefExporter<'lib> {
         // Conver to a [LefShape]
         let inner: lef21::LefShape = match shape {
             Shape::Rect(ref r) => {
-                lef21::LefShape::Rect(self.export_point(&r.p0)?, self.export_point(&r.p1)?)
+                lef21::LefShape::Rect(None, self.export_point(&r.p0)?, self.export_point(&r.p1)?)
             }
             Shape::Polygon(ref poly) => {
                 let points = poly
@@ -379,7 +379,7 @@ impl LefImporter {
     ) -> LayoutResult<Shape> {
         use lef21::LefShape::{Path, Polygon, Rect};
         match lefshape {
-            Rect(ref p0, ref p1) => self.import_rect((p0, p1)),
+            Rect(_, ref p0, ref p1) => self.import_rect((p0, p1)),
             Polygon(ref pts) => self.import_polygon(pts),
             Path(ref pts) => self.import_path(pts, layer),
         }

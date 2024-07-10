@@ -94,7 +94,7 @@ pub struct LefLibrary {
     /// "Use Min Spacing" Option
     #[serde(default, skip_serializing)]
     #[builder(default)]
-    pub use_min_spacing: Option<Unsupported>,
+    pub use_min_spacing: Option<LefOnOff>,
     /// Clearance Measure
     #[serde(default, skip_serializing)]
     #[builder(default)]
@@ -427,7 +427,7 @@ pub enum LefGeometry {
 /// rectangles, polygons, and paths.
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub enum LefShape {
-    Rect(LefPoint, LefPoint),
+    Rect(Option<LefMask>, LefPoint, LefPoint),
     Polygon(Vec<LefPoint>),
     Path(Vec<LefPoint>),
 }
@@ -465,6 +465,38 @@ impl LefPoint {
 impl std::fmt::Display for LefPoint {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{} {}", self.x, self.y)
+    }
+}
+/// # Mask value
+///
+/// Specifies which mask from double- or triple-patterning to use for this shape.
+/// Supports common mathematical operations (Add, Sub, increment, etc.).  
+#[derive(
+    Clone,
+    Default,
+    Debug,
+    Deserialize,
+    Serialize,
+    JsonSchema,
+    PartialEq,
+    Eq,
+    Add,
+    AddAssign,
+    Sub,
+    SubAssign,
+)]
+pub struct LefMask {
+    pub mask: LefDecimal,
+}
+impl LefMask {
+    /// Create a new [LefMask]
+    pub fn new(mask: impl Into<LefDecimal>) -> Self {
+        Self { mask: mask.into() }
+    }
+}
+impl std::fmt::Display for LefMask {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.mask)
     }
 }
 /// # Lef Distance Units per Micron  
@@ -613,7 +645,9 @@ enumstr!(
         Bump: "BUMP",
         Eeq: "EEQ",
         FixedMask: "FIXEDMASK",
-        
+        Mask: "MASK",
+        UseMinSpacing: "USEMINSPACING",
+
         // UNITS Fields
         Units: "UNITS",
         Time: "TIME",
@@ -653,7 +687,6 @@ enumstr!(
         MustJoin: "MUSTJOIN",
         Property: "PROPERTY",
         ManufacturingGrid: "MANUFACTURINGGRID",
-        UseMinSpacing: "USEMINSPACING",
         ClearanceMeasure: "CLEARANCEMEASURE",
         PropertyDefinitions: "PROPERTYDEFINITIONS",
         MaxViaStack: "MAXVIASTACK",
