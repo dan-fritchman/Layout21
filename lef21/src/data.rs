@@ -77,32 +77,37 @@ pub struct LefLibrary {
     #[builder(default, setter(strip_option))]
     pub units: Option<LefUnits>,
 
+    // Fixed-Mask attribute
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub fixed_mask: bool,
+
+    /// Clearance Measure
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub clearance_measure: Option<LefClearanceStyle>,
+    
     // Unsupported fields recommended for *either* LEF "cell libraries" or "technologies"
     /// Via Definitions (Unsupported)
     #[serde(default, skip_serializing)]
     #[builder(default)]
     pub vias: Option<Unsupported>,
-    /// Syntax Extensions (Unsupported)
+    /// Syntax Extensions
     #[serde(default, skip_serializing)]
     #[builder(default)]
-    pub extensions: Option<Unsupported>,
+    pub extensions: Vec<LefExtension>,
     // Fields recommended for LEF technology descriptions, AKA "tech-lefs"
     /// Manufacturing Grid
     #[serde(default, skip_serializing)]
     #[builder(default)]
-    pub manufacturing_grid: Option<Unsupported>,
+    pub manufacturing_grid: Option<LefDecimal>,
     /// "Use Min Spacing" Option
     #[serde(default, skip_serializing)]
     #[builder(default)]
     pub use_min_spacing: Option<LefOnOff>,
-    /// Clearance Measure
-    #[serde(default, skip_serializing)]
-    #[builder(default)]
-    pub clearance_measure: Option<Unsupported>,
     /// Property Definitions
-    #[serde(default, skip_serializing)]
-    #[builder(default)]
-    pub property_definitions: Option<Unsupported>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub property_definitions: Vec<LefPropertyDefinition>,
     /// Layer Definitions
     #[serde(default, skip_serializing)]
     #[builder(default)]
@@ -250,6 +255,15 @@ pub struct LefForeign {
     pub pt: Option<LefPoint>,
     /// Orientation
     pub orient: Option<LefOrient>,
+}
+
+// Customized Syntax Extension
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+pub struct LefExtension {
+    /// Name of the extension
+    pub name: String,
+    /// Stringified data contained in the extension
+    pub data: String,
 }
 /// # Lef Pin Definition
 ///
@@ -409,6 +423,15 @@ pub struct LefVia {
 pub enum LefLayerSpacing {
     Spacing(LefDecimal),
     DesignRuleWidth(LefDecimal),
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+pub enum LefPropertyDefinition {
+    LefString(String, Option<String>),
+    LefReal(String, Option<LefDecimal>),
+    LefInteger(String, Option<LefDecimal>),
+    LefRealRange(String, Option<LefDecimal>, LefDecimal, LefDecimal),
+    LefIntegerRange(String, Option<LefDecimal>, LefDecimal, LefDecimal),
 }
 /// # Lef Geometric Object Enumeration
 /// Includes [LefShape]s and Iterators thereof
@@ -634,6 +657,7 @@ enumstr!(
         BusBitChars: "BUSBITCHARS",
         DividerChar: "DIVIDERCHAR",
         BeginExtension: "BEGINEXT",
+        EndExtension: "ENDEXT",
         Tristate: "TRISTATE",
         Input: "INPUT",
         Output: "OUTPUT",
@@ -679,6 +703,13 @@ enumstr!(
         AntennaMaxSideAreaCar: "ANTENNAMAXSIDEAREACAR",
         AntennaMaxCutCar: "ANTENNAMAXCUTCAR",
 
+        // PropertyDefinitions
+        PropertyDefinitions: "PROPERTYDEFINITIONS",
+        String: "STRING",
+        Real: "REAL",
+        Range: "RANGE",
+        Integer: "INTEGER",
+
         // Unsupported
         TaperRule: "TAPERRULE",
         NetExpr: "NETEXPR",
@@ -688,7 +719,6 @@ enumstr!(
         Property: "PROPERTY",
         ManufacturingGrid: "MANUFACTURINGGRID",
         ClearanceMeasure: "CLEARANCEMEASURE",
-        PropertyDefinitions: "PROPERTYDEFINITIONS",
         MaxViaStack: "MAXVIASTACK",
         ViaRule: "VIARULE",
         Generate: "GENERATE",
@@ -706,6 +736,13 @@ enumstr!(
     LefOnOff {
         On: "ON",
         Off: "OFF",
+    }
+);
+enumstr!(
+    /// Clearance Measure Spacing Styles
+    LefClearanceStyle {
+        MaxXY: "MAXXY",
+        Euclidean: "EUCLIDEAN",
     }
 );
 enumstr!(
