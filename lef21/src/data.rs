@@ -213,15 +213,16 @@ pub struct LefMacro {
     #[builder(default)]
     pub fixed_mask: bool,
 
+    /// Properties
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[builder(default)]
+    pub properties: Vec<LefProperty>,
+
     // Unsupported
     /// Density Objects (Unsupported)
     #[serde(default, skip_serializing)]
     #[builder(default)]
     pub density: Option<Unsupported>,
-    /// Properties (Unsupported)
-    #[serde(default, skip_serializing)]
-    #[builder(default)]
-    pub properties: Option<Unsupported>,
 }
 impl LefMacro {
     /// Create a new and initially empty [LefMacro] with name `name`
@@ -321,11 +322,11 @@ pub struct LefPin {
     #[builder(default, setter(strip_option))]
     pub net_expr: Option<String>,
 
-    // Unsupported
-    /// Properties (Unsupported)
-    #[serde(default, skip_serializing)]
+    /// Properties
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[builder(default)]
-    pub properties: Option<Unsupported>,
+    pub properties: Vec<LefProperty>,
+
 }
 /// # Lef Pin Direction
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
@@ -426,12 +427,22 @@ pub enum LefLayerSpacing {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+pub struct LefProperty {
+    pub name: String,
+    pub value: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+pub struct LefPropertyRange {
+    pub begin: LefDecimal,
+    pub end: LefDecimal,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub enum LefPropertyDefinition {
     LefString(String, Option<String>),
-    LefReal(String, Option<LefDecimal>),
-    LefInteger(String, Option<LefDecimal>),
-    LefRealRange(String, Option<LefDecimal>, LefDecimal, LefDecimal),
-    LefIntegerRange(String, Option<LefDecimal>, LefDecimal, LefDecimal),
+    LefReal(String, Option<LefDecimal>, Option<LefPropertyRange>),
+    LefInteger(String, Option<LefDecimal>, Option<LefPropertyRange>),
 }
 /// # Lef Geometric Object Enumeration
 /// Includes [LefShape]s and Iterators thereof

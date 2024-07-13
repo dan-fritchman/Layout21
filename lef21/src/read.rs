@@ -384,6 +384,7 @@ impl<'src> LefParser<'src> {
             _ => false,
         }
     }
+
     /// Assert the next token is a valid [LefKey], and if so return the associated [LefKey].  
     /// Does not advance the parser state.
     #[inline(always)]
@@ -445,7 +446,7 @@ impl<'src> LefParser<'src> {
         Ok(())
     }
     /// Assert that the next [Token] is a [TokenType::Name], and that its string value matches `ident`.
-    /// Unlike [LefParser::expect_keyword], this function matches literally, and does not convert to uppercase.
+    /// Unlike [LefParser::expect_key], this function matches literally, and does not convert to uppercase.
     fn expect_ident(&mut self, ident: &str) -> LefResult<()> {
         let txt = self.get_name()?;
         if txt == ident {
@@ -597,6 +598,7 @@ impl<'src> LefParser<'src> {
         mac = mac.name(name.clone());
         // Start parsing attributes, pins, and obstructions
         let mut pins = Vec::new();
+        let mut properties = Vec::new();
         loop {
             mac = match self.peek_key()? {
                 LefKey::Class => mac.class(self.parse_macro_class()?),
@@ -648,6 +650,10 @@ impl<'src> LefParser<'src> {
                     mac
                 }
                 LefKey::Obs => mac.obs(self.parse_obstructions()?),
+                LefKey::Property => {
+                    properties = self.parse_property(properties)?;
+                    mac
+                }
                 LefKey::Symmetry => mac.symmetry(self.parse_symmetries()?),
                 LefKey::Source => {
                     // Valid for versions <= 5.4
@@ -686,6 +692,7 @@ impl<'src> LefParser<'src> {
         pin = pin.name(name.clone());
         let mut ports = Vec::new();
         let mut antenna_attrs = Vec::new();
+        let mut properties = Vec::new();
         loop {
             pin = match self.peek_key()? {
                 LefKey::End => {
@@ -766,7 +773,10 @@ impl<'src> LefParser<'src> {
                     self.expect(TokenType::SemiColon)?;
                     pin.net_expr(String::from(self.txt(&value_token)))
                 }
-                LefKey::Property => self.fail(LefParseErrorType::Unsupported)?,
+                LefKey::Property => {
+                    properties = self.parse_property(properties)?;
+                    pin
+                }
                 _ => self.fail(LefParseErrorType::InvalidKey)?,
             }
         }
@@ -968,35 +978,41 @@ impl<'src> LefParser<'src> {
         Ok(LefPoint::new(self.parse_number()?, self.parse_number()?))
     }
 
-    fn parse_property_definition_tail(&mut self) -> LefResult<Option<Decimal>> {
-        let nexttok = self.next_token()?.unwrap();
-        //println!("{:?}", self.txt(&nexttok));
-        let value = match nexttok.ttype {
-            TokenType::SemiColon => None,
-            TokenType::Name => {
-                let txt = self.txt(&nexttok);
-                match LefKey::parse(txt) {
-                    Some(LefKey::Range) => {
-                        // expect RANGE VAL VAL?
-                        self.fail_msg(LefParseErrorType::Unsupported, "Range is not supported")?;
-                    },
-                    _ => self.fail(LefParseErrorType::InvalidKey)?,
+    fn parse_property(&mut self, mut propvec: Vec<LefProperty>) -> LefResult<Vec<LefProperty>> {
+        self.expect_key(LefKey::Property)?;
+        while !self.matches(TokenType::SemiColon) {
+            let name = self.parse_ident()?;
+            match self.peek_token() {
+                Some(t) if (t.ttype == TokenType::Name || t.ttype == TokenType::Number || t.ttype ==TokenType::StringLiteral) => {
+                    let value = String::from(self.txt(&t));
+                    self.advance()?;
+                    propvec.push(LefProperty {name: name, value: value})
                 }
-                None
-            },
-            TokenType::Number => {
-                let txt = self.txt(&nexttok);
-                let num = LefDecimal::from_str(txt)?;
-                //let num = self.parse_number()?;
-                self.expect(TokenType::SemiColon)?;
-                Some(num)
-            },
-            _ => {
-                self.fail(LefParseErrorType::Other)?;
-                None
-            },
-        };
-        return Ok(value);
+                None | Some(_) => {
+                    self.fail_msg(LefParseErrorType::InvalidValue, "Unexpected token while parsing PROPERTY, must be string/number/name")?;
+                    //self.fail(LefParseErrorType::InvalidValue)?;
+                }
+            }
+        }
+        self.expect(TokenType::SemiColon)?;
+        Ok(propvec)
+    }
+
+    // get the tail portion of a numeric PROPERTYDEFINITION entry which has an optional value and range
+    fn parse_property_definition_tail(&mut self) -> LefResult<(Option<LefDecimal>, Option<LefPropertyRange>)> {
+        let mut lvalue: Option<LefDecimal> = None;
+        let mut lrange: Option<LefPropertyRange> = None;
+        if self.matches(TokenType::Name) {
+            self.expect_key(LefKey::Range)?;
+            let rbegin = self.parse_number()?;
+            let rend = self.parse_number()?;
+            lrange = Some(LefPropertyRange {begin: rbegin, end: rend});
+        }
+        if self.matches(TokenType::Number) {
+            lvalue = Some(self.parse_number()?);
+        }
+        self.expect(TokenType::SemiColon)?;
+        return Ok((lvalue, lrange));
     }
 
     /// Parse [LefPropertyDefinition]s
@@ -1008,7 +1024,6 @@ impl<'src> LefParser<'src> {
         loop {
             match self.get_key()? {
                 Layer | Library | Macro | NonDefaultRule | Pin | Via | ViaRule => {
-                    
                     let propname = String::from(self.get_name()?); 
                     match self.get_key()? {
                         LefKey::String => {
@@ -1023,12 +1038,12 @@ impl<'src> LefParser<'src> {
                             propdefs.push(LefPropertyDefinition::LefString(propname, value));
                         }
                         LefKey::Real => {
-                            let optval = self.parse_property_definition_tail()?;
-                            propdefs.push(LefPropertyDefinition::LefReal(propname, optval));
+                            let (optval, optrange) = self.parse_property_definition_tail()?;
+                            propdefs.push(LefPropertyDefinition::LefReal(propname, optval, optrange));
                         }
                         LefKey::Integer => {
-                            let optval = self.parse_property_definition_tail()?;
-                            propdefs.push(LefPropertyDefinition::LefInteger(propname, optval));
+                            let (optval, optrange) = self.parse_property_definition_tail()?;
+                            propdefs.push(LefPropertyDefinition::LefInteger(propname, optval, optrange));
                         }
                         _ => self.fail(LefParseErrorType::InvalidKey)?,
                     }
