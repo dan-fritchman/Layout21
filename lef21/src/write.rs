@@ -53,7 +53,8 @@ impl<'wr> LefWriter<'wr> {
     /// Fields are written in the LEF-recommended order
     fn write_lib(&mut self, lib: &LefLibrary) -> LefResult<()> {
         use LefKey::{
-            BusBitChars, DividerChar, End, Library, NamesCaseSensitive, NoWireExtensionAtPin, Obs,
+            BusBitChars, ClearanceMeasure, DividerChar, End, FixedMask, Library, ManufacturingGrid,
+            NamesCaseSensitive, NoWireExtensionAtPin, Obs, PropertyDefinitions,
             Units, UseMinSpacing, Version,
         };
         if let Some(ref v) = lib.version {
@@ -86,9 +87,6 @@ impl<'wr> LefWriter<'wr> {
         if let Some(ref v) = lib.divider_char {
             self.write_line(format_args_f!("{DividerChar} \"{}\" ; ", v))?;
         }
-        if let Some(ref v) = lib.use_min_spacing {
-            self.write_line(format_args_f!("{UseMinSpacing} {Obs} {} ; ", v))?;
-        }
         if let Some(ref v) = lib.units {
             self.write_line(format_args_f!("{Units} "))?;
             self.indent += 1;
@@ -107,15 +105,60 @@ impl<'wr> LefWriter<'wr> {
             self.indent -= 1;
             self.write_line(format_args_f!("{End} {Units} "))?;
         }
+        // MANUFACTURINGGRID
+        if let Some(ref v) = lib.manufacturing_grid {
+            self.write_line(format_args_f!("{ManufacturingGrid} {} ; ", v))?;
+        }
+        // USEMINSPACING
+        if let Some(ref v) = lib.use_min_spacing {
+            self.write_line(format_args_f!("{UseMinSpacing} {Obs} {} ; ", v))?;
+        }
+        // CLEARANCEMEASURE
+        if let Some(ref v) = lib.clearance_measure {
+            self.write_line(format_args_f!("{ClearanceMeasure} {} ; ", v))?;
+        }
+        // PROPERTYDEFINITIONS
+        if lib.property_definitions.len() > 0 {
+        self.write_line(format_args_f!("{PropertyDefinitions} "))?;
+            self.indent += 1;
+            for propdef in lib.property_definitions.iter() {
+                let propdef_str: String = match propdef {
+                    LefPropertyDefinition::LefString(objtype, name, None) => {
+                        format!("{objtype} {name} {}", LefKey::String)
+                    },
+                    LefPropertyDefinition::LefString(objtype, name, Some(val)) => {
+                        format!("{objtype} {name} {} {}", LefKey::String, val)
+                    },
+                    LefPropertyDefinition::LefReal(objtype, name, value, range) => {
+                        self.format_numeric_prop_def(objtype, name, LefKey::Real, value, range)?
+                    },
+                    LefPropertyDefinition::LefInteger(objtype, name, value, range) => {
+                        self.format_numeric_prop_def(objtype, name, LefKey::Integer, value, range)?
+                    }
+                };
+                self.write_line(format_args_f!("{} ; ", propdef_str))?;
+            }
+            self.indent -= 1;
+            self.write_line(format_args_f!("{End} {PropertyDefinitions} "))?;
+        }
+        // FIXEDMASK
+        if lib.fixed_mask { 
+            self.write_line(format_args_f!("{FixedMask} ;"))?;
+        }
 
-        // VIAS would be written here
+        // LAYER
+        // MAXVIASTACK
+        // VIARULE GENERATE
+        // VIA
         // if let Some(ref v) = lib.vias { }
+        // VIARULE
+        // NONDEFAULTRULE
 
-        // Write each site definition
+        // Write each SITE definition
         for site in lib.sites.iter() {
             self.write_site(site)?;
         }
-        // Write each macro definition
+        // Write each MACRO definition
         for mac in lib.macros.iter() {
             self.write_macro(mac)?;
         }
@@ -124,13 +167,31 @@ impl<'wr> LefWriter<'wr> {
             use LefKey::{BeginExtension, EndExtension};
             self.write_line(format_args_f!("{BeginExtension} {ext.name} {ext.data} {EndExtension}"))?;
         }
-        // EXTENSIONS would be written here
-        // if let Some(ref v) = lib.extensions { }
 
         self.write_line(format_args_f!("{End} {Library} \n"))?;
         self.dest.flush()?;
         Ok(())
     }
+
+    fn format_numeric_prop_def(&mut self, objtype: &LefKey, name: &String, key: LefKey, value: &Option<LefDecimal>, range: &Option<LefPropertyRange>) -> LefResult<String> {
+        use LefKey::Range;
+        let mut string_list: Vec<String> = Vec::new();
+        string_list.push(objtype.to_string());
+        string_list.push(name.to_string());
+        string_list.push(key.to_string());
+        match range {
+            Some(r) => string_list.push(format!("{Range} {} {}", r.begin, r.end)),
+            None => ()
+        }
+        match value {
+            Some(v) => string_list.push(v.to_string()),
+            None => ()
+        }
+        Ok(string_list.join(" "))
+    }
+                
+    
+
     /// Write a [LefSite] definition
     fn write_site(&mut self, site: &LefSite) -> LefResult<()> {
         use LefKey::{By, Class, End, Site, Size};

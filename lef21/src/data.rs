@@ -440,9 +440,9 @@ pub struct LefPropertyRange {
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub enum LefPropertyDefinition {
-    LefString(String, Option<String>),
-    LefReal(String, Option<LefDecimal>, Option<LefPropertyRange>),
-    LefInteger(String, Option<LefDecimal>, Option<LefPropertyRange>),
+    LefString(LefKey, String, Option<String>),
+    LefReal(LefKey, String, Option<LefDecimal>, Option<LefPropertyRange>),
+    LefInteger(LefKey, String, Option<LefDecimal>, Option<LefPropertyRange>),
 }
 /// # Lef Geometric Object Enumeration
 /// Includes [LefShape]s and Iterators thereof

@@ -469,6 +469,7 @@ impl<'src> LefParser<'src> {
         let mut macros = Vec::new();
         let mut sites = Vec::new();
         let mut extensions = Vec::new();
+        let mut property_definitions = Vec::new();
         loop {
             if self.peek_token().is_none() && self.session.lef_version >= *V5P6 {
                 break; // End of input (without END LIBRARY), which is valid for lef 5.6+
@@ -571,7 +572,10 @@ impl<'src> LefParser<'src> {
                     extensions.push(LefExtension {name, data});
                     lib
                 }
-                LefKey::PropertyDefinitions => lib.property_definitions(self.parse_property_definitions()?),
+                LefKey::PropertyDefinitions => {
+                    property_definitions.extend(self.parse_property_definitions()?);
+                    lib
+                },
                 LefKey::MaxViaStack
                 | LefKey::ViaRule
                 | LefKey::Generate
@@ -582,6 +586,7 @@ impl<'src> LefParser<'src> {
         lib = lib.macros(macros);
         lib = lib.sites(sites);
         lib = lib.extensions(extensions);
+        lib = lib.property_definitions(property_definitions);
         self.ctx.pop();
         Ok(lib.build()?)
     }
@@ -1038,8 +1043,9 @@ impl<'src> LefParser<'src> {
         self.expect_key(PropertyDefinitions)?;
         let mut propdefs = Vec::new();
         loop {
-            match self.get_key()? {
+            match self.peek_key()? {
                 Layer | Library | Macro | NonDefaultRule | Pin | Via | ViaRule => {
+                    let objtype = self.get_key()?;
                     let propname = String::from(self.get_name()?); 
                     match self.get_key()? {
                         LefKey::String => {
@@ -1051,20 +1057,21 @@ impl<'src> LefParser<'src> {
                                 Some(String::from(txt))
                             };
                             self.expect(TokenType::SemiColon)?;
-                            propdefs.push(LefPropertyDefinition::LefString(propname, value));
+                            propdefs.push(LefPropertyDefinition::LefString(objtype, propname, value));
                         }
                         LefKey::Real => {
                             let (optval, optrange) = self.parse_property_definition_tail()?;
-                            propdefs.push(LefPropertyDefinition::LefReal(propname, optval, optrange));
+                            propdefs.push(LefPropertyDefinition::LefReal(objtype, propname, optval, optrange));
                         }
                         LefKey::Integer => {
                             let (optval, optrange) = self.parse_property_definition_tail()?;
-                            propdefs.push(LefPropertyDefinition::LefInteger(propname, optval, optrange));
+                            propdefs.push(LefPropertyDefinition::LefInteger(objtype, propname, optval, optrange));
                         }
                         _ => self.fail(LefParseErrorType::InvalidKey)?,
                     }
                 }
                 End => {
+                    self.advance()?;
                     self.expect_key(PropertyDefinitions)?;
                     break; // End of PROPERTYDEFINITIONS definitions
                 }
