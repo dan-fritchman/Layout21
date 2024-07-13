@@ -540,17 +540,32 @@ impl<'src> LefParser<'src> {
                     let name = String::from(self.txt(&value_token));
                     let mut data = String::from("");
                     loop {
-                        if self.peek_token().is_none() {
-                            self.fail(LefParseErrorType::InvalidKey)?;
-                        } else if self.peek_key()? == LefKey::EndExtension {
-                            break
-                        } else {
-                            let tok = self.lex.lex_one()?;
-                            match tok {
-                                None => continue,
-                                Some(tok) => data.push_str(self.txt(&tok)),
+                        // Keep grabbing tokens (including whitespace and newlines) until
+                        // we hit the ENDEXT token.
+                        let nexttok = self.next_token()?;
+                        match nexttok {
+                            Some(tok) => {
+                                if tok.ttype == TokenType::Name {
+                                    let txt = self.txt(&tok);
+                                    match LefKey::parse(txt) {
+                                        Some(key) => {
+                                            if key == LefKey::EndExtension {
+                                                break;
+                                            }
+                                            ()
+                                        },
+                                        None => {
+                                            let _ignore = self.fail::<LefError>(LefParseErrorType::InvalidKey);
+                                            ()
+                                        }
+                                    }
+                                }
+                                data.push_str(self.txt(&tok));
+                                data.push_str(" ")
+                            },
+                            None => {
+                                self.fail(LefParseErrorType::InvalidKey)?;
                             }
-                            
                         }
                     }
                     extensions.push(LefExtension {name, data});
@@ -566,6 +581,7 @@ impl<'src> LefParser<'src> {
         }
         lib = lib.macros(macros);
         lib = lib.sites(sites);
+        lib = lib.extensions(extensions);
         self.ctx.pop();
         Ok(lib.build()?)
     }

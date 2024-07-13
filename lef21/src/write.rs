@@ -120,6 +120,10 @@ impl<'wr> LefWriter<'wr> {
             self.write_macro(mac)?;
         }
 
+        for ext in lib.extensions.iter() {
+            use LefKey::{BeginExtension, EndExtension};
+            self.write_line(format_args_f!("{BeginExtension} {ext.name} {ext.data} {EndExtension}"))?;
+        }
         // EXTENSIONS would be written here
         // if let Some(ref v) = lib.extensions { }
 
@@ -203,15 +207,23 @@ impl<'wr> LefWriter<'wr> {
             self.indent -= 1;
             self.write_line(format_args_f!("{End} "))?;
         }
-
-        // DENSTITY and PROPERTIES would go here
+        for prop in mac.properties.iter() {
+            self.write_property(prop)?;
+        }
+        // DENSTITY would go here
         // if mac.density.is_some() { }
-        // if mac.properties.is_some() { }
 
         self.indent -= 1;
         self.write_line(format_args_f!("{End} {} ", mac.name))?;
         Ok(())
     }
+
+    fn write_property(&mut self, prop: &LefProperty) -> LefResult<()> {
+        use LefKey::Property;
+        self.write_line(format_args_f!("{Property} {} {}", prop.name, prop.value))?;
+        Ok(())
+    }
+
     /// Write a [LefPin] definition
     fn write_pin(&mut self, pin: &LefPin) -> LefResult<()> {
         use LefKey::{AntennaModel, Direction, End, GroundSensitivity, Layer, MustJoin,
@@ -253,7 +265,10 @@ impl<'wr> LefWriter<'wr> {
         if let Some(ref v) = pin.net_expr {
             self.write_line(format_args_f!("{NetExpr} {v} ; "))?;
         }
-        
+        for prop in pin.properties.iter() {
+            self.write_property(prop)?;
+        }
+
         // Most unsupported PINS features *would* go here.
         // if pin.properties.is_some() {
         //     return Err(LefError::Str("Unsupported LefPin Attr".into()));
