@@ -55,7 +55,7 @@ impl<'wr> LefWriter<'wr> {
         use LefKey::{
             BusBitChars, ClearanceMeasure, DividerChar, End, FixedMask, Library, ManufacturingGrid,
             NamesCaseSensitive, NoWireExtensionAtPin, Obs, PropertyDefinitions,
-            Units, UseMinSpacing, Version,
+            UseMinSpacing, Version,
         };
         if let Some(ref v) = lib.version {
             // Save a copy in our session-state
@@ -88,22 +88,7 @@ impl<'wr> LefWriter<'wr> {
             self.write_line(format_args_f!("{DividerChar} \"{}\" ; ", v))?;
         }
         if let Some(ref v) = lib.units {
-            self.write_line(format_args_f!("{Units} "))?;
-            self.indent += 1;
-            if let Some(ref db) = v.database_microns {
-                self.write_line(format_args_f!("DATABASE MICRONS {} ; ", db.0))?;
-            }
-            // Other {Units} would be written here
-            // if v.time_ns.is_some()
-            //     || v.capacitance_pf.is_some()
-            //     || v.resistance_ohms.is_some()
-            //     || v.power_mw.is_some()
-            //     || v.current_ma.is_some()
-            //     || v.voltage_volts.is_some()
-            //     || v.frequency_mhz.is_some()
-            // { }
-            self.indent -= 1;
-            self.write_line(format_args_f!("{End} {Units} "))?;
+            self.write_units(v)?
         }
         // MANUFACTURINGGRID
         if let Some(ref v) = lib.manufacturing_grid {
@@ -146,13 +131,13 @@ impl<'wr> LefWriter<'wr> {
             self.write_line(format_args_f!("{FixedMask} ;"))?;
         }
 
-        // LAYER
-        // MAXVIASTACK
-        // VIARULE GENERATE
-        // VIA
-        // if let Some(ref v) = lib.vias { }
-        // VIARULE
-        // NONDEFAULTRULE
+        // TODO: LAYER
+        // TODO: MAXVIASTACK
+        // TODO: VIARULE GENERATE
+        // TODO: VIA
+        //    if let Some(ref v) = lib.vias { }
+        // TODO: VIARULE
+        // TODO: NONDEFAULTRULE
 
         // Write each SITE definition
         for site in lib.sites.iter() {
@@ -173,6 +158,8 @@ impl<'wr> LefWriter<'wr> {
         Ok(())
     }
 
+    // helper function to format numeric PROPERTYDEFINITION entries
+    //   for "objType propName [RANGE begin end] [value]"
     fn format_numeric_prop_def(&mut self, objtype: &LefKey, name: &String, key: LefKey, value: &Option<LefDecimal>, range: &Option<LefPropertyRange>) -> LefResult<String> {
         use LefKey::Range;
         let mut string_list: Vec<String> = Vec::new();
@@ -189,8 +176,6 @@ impl<'wr> LefWriter<'wr> {
         }
         Ok(string_list.join(" "))
     }
-                
-    
 
     /// Write a [LefSite] definition
     fn write_site(&mut self, site: &LefSite) -> LefResult<()> {
@@ -208,6 +193,42 @@ impl<'wr> LefWriter<'wr> {
         self.write_line(format_args_f!("{End} {site.name} ; "))?;
         Ok(())
     }
+
+    /// Write a [LefUnits] block.
+    fn write_units(&mut self, units: &LefUnits) -> LefResult<()> {
+        use LefKey::{Capacitance, Current, Database, End, Frequency, Megahertz, Microns, Milliamps,
+            Milliwatts, Nanoseconds, Ohms, Picofarads, Power, Resistance, Time, Volts, Voltage, Units};
+        self.write_line(format_args_f!("{Units} "))?;
+        self.indent += 1;
+        if let Some(ref val) = units.time_ns {
+            self.write_line(format_args_f!("{Time} {Nanoseconds} {} ; ", val))?;
+        }
+        if let Some(ref val) = units.capacitance_pf {
+            self.write_line(format_args_f!("{Capacitance} {Picofarads} {} ; ", val))?;
+        }
+        if let Some(ref val) = units.resistance_ohms {
+            self.write_line(format_args_f!("{Resistance} {Ohms} {} ; ", val))?;
+        }
+        if let Some(ref val) = units.power_mw {
+            self.write_line(format_args_f!("{Power} {Milliwatts} {} ; ", val))?;
+        }
+        if let Some(ref val) = units.current_ma {
+            self.write_line(format_args_f!("{Current} {Milliamps} {} ; ", val))?;
+        }
+        if let Some(ref val) = units.voltage_volts {
+            self.write_line(format_args_f!("{Voltage} {Volts} {} ; ", val))?;
+        }
+        if let Some(ref db) = units.database_microns {
+            self.write_line(format_args_f!("{Database} {Microns} {} ; ", db.0))?;
+        }
+        if let Some(ref val) = units.frequency_mhz {
+            self.write_line(format_args_f!("{Frequency} {Megahertz} {} ; ", val))?;
+        }
+        self.indent -= 1;
+        self.write_line(format_args_f!("{End} {Units} "))?;
+        Ok(())
+    }
+
     /// Write a [LefMacro], in recommended order of fields.
     fn write_macro(&mut self, mac: &LefMacro) -> LefResult<()> {
         use LefKey::{By, Eeq, End, FixedMask, Foreign, Macro, Obs, Origin, Site, Size, Source};
