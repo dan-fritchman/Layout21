@@ -466,6 +466,9 @@ impl<'src> LefParser<'src> {
         let mut macros = Vec::new();
         let mut sites = Vec::new();
         loop {
+            if self.peek_token().is_none() && self.session.lef_version >= *V5P6 {
+                break; // End of input (without END LIBRARY), which is valid for lef 5.6+
+            }
             lib = match self.peek_key()? {
                 LefKey::Macro => {
                     macros.push(self.parse_macro()?);
@@ -564,22 +567,34 @@ impl<'src> LefParser<'src> {
                     self.expect(TokenType::SemiColon)?;
                     mac.site(id)
                 }
+                LefKey::Eeq => {
+                    self.advance()?; // Eat the EEQ key
+                    let cell_name = self.parse_ident()?;
+                    self.expect(TokenType::SemiColon)?;
+                    mac.eeq(cell_name)
+                }
+                LefKey::FixedMask => {
+                    self.advance()?; // Eat the FIXEDMASK key
+                    self.expect(TokenType::SemiColon)?;
+                    mac.fixed_mask(true)
+                }
                 LefKey::Foreign => {
                     self.advance()?; // Eat the FOREIGN key
                     let cell_name = self.parse_ident()?;
+                    
                     let mut pt = None;
                     if !self.matches(TokenType::SemiColon) {
                         pt = Some(self.parse_point()?);
                     }
-                    // The optional `ORIENT` field is not supported
-                    if self.matches(TokenType::Name) {
-                        self.fail(LefParseErrorType::Unsupported)?;
+                    let mut orient = None;
+                    if !self.matches(TokenType::SemiColon) {
+                        orient = Some(self.parse_enum::<LefOrient>()?);
                     }
                     self.expect(TokenType::SemiColon)?;
                     mac.foreign(LefForeign {
                         cell_name,
                         pt,
-                        orient: None,
+                        orient: orient,
                     })
                 }
                 LefKey::Origin => {
@@ -657,7 +672,9 @@ impl<'src> LefParser<'src> {
                 }
                 LefKey::AntennaModel => {
                     self.advance()?;
-                    pin.antenna_model(self.parse_enum::<LefAntennaModel>()?)
+                    let e = self.parse_enum::<LefAntennaModel>()?;
+                    self.expect(TokenType::SemiColon)?;
+                    pin.antenna_model(e)
                 }
                 LefKey::AntennaDiffArea
                 | LefKey::AntennaGateArea
@@ -680,12 +697,37 @@ impl<'src> LefParser<'src> {
                     antenna_attrs.push(LefPinAntennaAttr { key, val, layer });
                     pin
                 }
-                LefKey::TaperRule
-                | LefKey::NetExpr
-                | LefKey::SupplySensitivity
-                | LefKey::GroundSensitivity
-                | LefKey::MustJoin
-                | LefKey::Property => self.fail(LefParseErrorType::Unsupported)?,
+                LefKey::TaperRule => {
+                    self.advance()?;
+                    let value = self.parse_ident()?;
+                    self.expect(TokenType::SemiColon)?;
+                    pin.taper_rule(value)
+                }
+                LefKey::MustJoin => {
+                    self.advance()?;
+                    let value = self.parse_ident()?;
+                    self.expect(TokenType::SemiColon)?;
+                    pin.must_join(value)
+                }
+                LefKey::SupplySensitivity => {
+                    self.advance()?;
+                    let value = self.parse_ident()?;
+                    self.expect(TokenType::SemiColon)?;
+                    pin.supply_sensitivity(value)
+                }
+                LefKey::GroundSensitivity => {
+                    self.advance()?;
+                    let value = self.parse_ident()?;
+                    self.expect(TokenType::SemiColon)?;
+                    pin.ground_sensitivity(value)
+                }
+                LefKey::NetExpr => {
+                    self.advance()?;
+                    let value_token = self.expect(TokenType::StringLiteral)?;
+                    self.expect(TokenType::SemiColon)?;
+                    pin.net_expr(String::from(self.txt(&value_token)))
+                }
+                LefKey::Property => self.fail(LefParseErrorType::Unsupported)?,
                 _ => self.fail(LefParseErrorType::InvalidKey)?,
             }
         }

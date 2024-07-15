@@ -9,7 +9,8 @@ use std::path::Path;
 
 // Layout21 Imports
 use layout21utils as utils;
-pub use utils::{EnumStr, SerdeFile, SerializationFormat};
+// pub use utils::{EnumStr, SerdeFile, SerializationFormat};
+pub use utils::EnumStr;
 
 // Local imports
 use super::data::*;
@@ -144,21 +145,26 @@ impl<'wr> LefWriter<'wr> {
     }
     /// Write a [LefMacro], in recommended order of fields.
     fn write_macro(&mut self, mac: &LefMacro) -> LefResult<()> {
-        use LefKey::{By, End, Foreign, Macro, Obs, Origin, Site, Size, Source};
-        self.write_line(format_args_f!("{Macro} {mac.name} ; "))?;
+        use LefKey::{By, Eeq, End, FixedMask, Foreign, Macro, Obs, Origin, Site, Size, Source};
+        self.write_line(format_args_f!("{Macro} {mac.name}"))?;
         self.indent += 1;
 
         if let Some(ref v) = mac.class {
             self.write_macro_class(v)?;
         }
-        // FIXEDMASK would be written here
-        // if mac.fixed_mask.is_some() { }
+        if mac.fixed_mask { 
+            self.write_line(format_args_f!("{FixedMask} ;"))?;
+        }
         if let Some(ref v) = mac.foreign {
             let pt = match v.pt {
                 Some(ref p) => p.to_string(),
                 None => "".into(),
             };
-            self.write_line(format_args_f!("{Foreign} {v.cell_name} {pt} ;"))?;
+            let orient = match v.orient {
+                Some(ref o) => o.to_string(),
+                None => "".into(),
+            };
+            self.write_line(format_args_f!("{Foreign} {v.cell_name} {pt} {orient} ;"))?;
         }
         if let Some(ref v) = mac.origin {
             self.write_line(format_args_f!("{Origin} {v} ;"))?;
@@ -172,8 +178,10 @@ impl<'wr> LefWriter<'wr> {
             }
             self.write_line(format_args_f!("{Source} {v} ;"))?;
         }
-        // EEQ would be written here
-        // if mac.eeq.is_some() { }
+        
+        if let Some(ref cell) = mac.eeq {
+            self.write_line(format_args_f!("{Eeq} {cell} ;"))?;
+        }
         if let Some(ref v) = mac.size {
             self.write_line(format_args_f!("{Size} {v.0} {By} {v.1} ;"))?;
         }
@@ -206,7 +214,8 @@ impl<'wr> LefWriter<'wr> {
     }
     /// Write a [LefPin] definition
     fn write_pin(&mut self, pin: &LefPin) -> LefResult<()> {
-        use LefKey::{AntennaModel, Direction, End, Layer, Pin, Shape, Use};
+        use LefKey::{AntennaModel, Direction, End, GroundSensitivity, Layer, MustJoin,
+            NetExpr, Pin, Shape, SupplySensitivity, TaperRule, Use};
         self.write_line(format_args_f!("{Pin} {pin.name} "))?;
         self.indent += 1;
         if let Some(ref v) = pin.direction {
@@ -229,15 +238,24 @@ impl<'wr> LefWriter<'wr> {
             };
             self.write_line(format_args_f!("{attr.key} {attr.val} {layer} ;"))?;
         }
-
+        if let Some(ref v) = pin.taper_rule {
+            self.write_line(format_args_f!("{TaperRule} {v} ; "))?;
+        }
+        if let Some(ref v) = pin.supply_sensitivity {
+            self.write_line(format_args_f!("{SupplySensitivity} {v} ; "))?;
+        }
+        if let Some(ref v) = pin.ground_sensitivity {
+            self.write_line(format_args_f!("{GroundSensitivity} {v} ; "))?;
+        }
+        if let Some(ref v) = pin.must_join {
+            self.write_line(format_args_f!("{MustJoin} {v} ; "))?;
+        }
+        if let Some(ref v) = pin.net_expr {
+            self.write_line(format_args_f!("{NetExpr} {v} ; "))?;
+        }
+        
         // Most unsupported PINS features *would* go here.
-        // if pin.taper_rule.is_some()
-        //     || pin.net_expr.is_some()
-        //     || pin.supply_sensitivity.is_some()
-        //     || pin.ground_sensitivity.is_some()
-        //     || pin.must_join.is_some()
-        //     || pin.properties.is_some()
-        // {
+        // if pin.properties.is_some() {
         //     return Err(LefError::Str("Unsupported LefPin Attr".into()));
         // }
 
@@ -293,7 +311,7 @@ impl<'wr> LefWriter<'wr> {
         Ok(()) // Note [LefLayerGeometries] have no "END" or other closing delimeter.
     }
     fn write_geom(&mut self, geom: &LefGeometry) -> LefResult<()> {
-        use LefKey::{Polygon, Rect};
+        use LefKey::{Polygon, Rect, Path};
         match geom {
             LefGeometry::Iterate { .. } => unimplemented!(),
             LefGeometry::Shape(ref shape) => match shape {
@@ -313,8 +331,13 @@ impl<'wr> LefWriter<'wr> {
                         .join(" ");
                     self.write_line(format_args_f!("{Polygon} {ptstr} ;"))?;
                 }
-                LefShape::Path(_) => {
-                    self.fail(&format_f!("Unsupported Write: LefShape::Path"))?;
+                LefShape::Path(pts) => {
+                    let ptstr = pts
+                        .iter()
+                        .map(|x| x.to_string())
+                        .collect::<Vec<String>>()
+                        .join(" ");
+                    self.write_line(format_args_f!("{Path} {ptstr} ;"))?;
                 }
             },
         };
@@ -362,11 +385,13 @@ impl<'wr> LefWriter<'wr> {
     fn write_line(&mut self, args: std::fmt::Arguments) -> std::io::Result<()> {
         writeln!(self.dest, "{}{}", self.indent.state, args)
     }
+    /*
     /// Failure Function
     /// Wraps error-message `msg` in a [LefError::Str].
     fn fail(&mut self, msg: &str) -> LefResult<()> {
         Err(LefError::Str(msg.to_string()))
     }
+    */
 }
 /// Helper function to call `T`'s [Display] method if `opt` is Some, or return an empty string if `opt` is None.
 fn display_option<T: std::fmt::Display>(opt: &Option<T>) -> String {

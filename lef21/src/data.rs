@@ -31,6 +31,7 @@ pub type LefDecimal = rust_decimal::Decimal;
 // Note [`once_cell`](https://docs.rs/once_cell/1.8.0/once_cell/#lazy-initialized-global-data)
 // demands these be `static`, not `const`, for reasons outside our grasp.
 pub(crate) static V5P4: Lazy<LefDecimal> = Lazy::new(|| LefDecimal::from_str("5.4").unwrap());
+pub(crate) static V5P6: Lazy<LefDecimal> = Lazy::new(|| LefDecimal::from_str("5.6").unwrap());
 pub(crate) static V5P8: Lazy<LefDecimal> = Lazy::new(|| LefDecimal::from_str("5.8").unwrap());
 
 /// # Lef Library
@@ -197,15 +198,17 @@ pub struct LefMacro {
     #[builder(default, setter(strip_option))]
     pub source: Option<LefDefSource>,
 
+    /// Electrically-Equivalent Cell
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
+    pub eeq: Option<String>,
+    
+    // Fixed-Mask
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub fixed_mask: bool,
+
     // Unsupported
-    /// Fixed Mask Option (Unsupported)
-    #[serde(default, skip_serializing)]
-    #[builder(default)]
-    pub fixed_mask: Option<Unsupported>,
-    /// Electrically-Equivalent Cell (Unsupported)
-    #[serde(default, skip_serializing)]
-    #[builder(default)]
-    pub eeq: Option<Unsupported>,
     /// Density Objects (Unsupported)
     #[serde(default, skip_serializing)]
     #[builder(default)]
@@ -239,18 +242,14 @@ pub enum LefMacroClass {
 ///
 /// Declares the linkage to another cell, commonly in DEF or GDSII format.
 /// Foreign-cell references are stored exacty as in the LEF format: as a string cell-name.
-/// The optional `ORIENT` feature is not supported.
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub struct LefForeign {
     /// Foreign Cell Name
     pub cell_name: String,
     /// Location
     pub pt: Option<LefPoint>,
-
-    // Unsupported Fields
-    /// Orientation (Unsupported)
-    #[serde(default, skip_serializing)]
-    pub orient: Option<Unsupported>,
+    /// Orientation
+    pub orient: Option<LefOrient>,
 }
 /// # Lef Pin Definition
 ///
@@ -286,27 +285,29 @@ pub struct LefPin {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub antenna_attrs: Vec<LefPinAntennaAttr>,
 
+    /// Taper Rule
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
+    pub taper_rule: Option<String>,
+    /// Supply Sensitivity
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
+    pub supply_sensitivity: Option<String>,
+    /// Ground Sensitivity
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
+    pub ground_sensitivity: Option<String>,
+    /// Must-Join
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
+    pub must_join: Option<String>,
+    
+    /// Net Expression
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
+    pub net_expr: Option<String>,
+
     // Unsupported
-    /// Taper Rule (Unsupported)
-    #[serde(default, skip_serializing)]
-    #[builder(default)]
-    pub taper_rule: Option<Unsupported>,
-    /// Net Expression (Unsupported)
-    #[serde(default, skip_serializing)]
-    #[builder(default)]
-    pub net_expr: Option<Unsupported>,
-    /// Supply Sensitivity (Unsupported)
-    #[serde(default, skip_serializing)]
-    #[builder(default)]
-    pub supply_sensitivity: Option<Unsupported>,
-    /// Ground Sensitivity (Unsupported)
-    #[serde(default, skip_serializing)]
-    #[builder(default)]
-    pub ground_sensitivity: Option<Unsupported>,
-    /// Must-Join (Unsupported)
-    #[serde(default, skip_serializing)]
-    #[builder(default)]
-    pub must_join: Option<Unsupported>,
     /// Properties (Unsupported)
     #[serde(default, skip_serializing)]
     #[builder(default)]
@@ -642,6 +643,8 @@ enumstr!(
         DesignRuleWidth: "DESIGNRULEWIDTH",
         Spacing: "SPACING",
         Bump: "BUMP",
+        Eeq: "EEQ",
+        FixedMask: "FIXEDMASK",
         Mask: "MASK",
         UseMinSpacing: "USEMINSPACING",
 
@@ -726,6 +729,20 @@ enumstr!(
         R90: "R90"
     }
 );
+enumstr!(
+    /// Specifies orientation for FOREIGN statement
+    LefOrient {
+        N: "N",
+        S: "S",
+        E: "E",
+        W: "W",
+        FN: "FN",
+        FS: "FS",
+        FE: "FE",
+        FW: "FW"
+    }
+);
+
 enumstr!(
     /// # Lef Pin-Usage
     ///
