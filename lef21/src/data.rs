@@ -83,26 +83,26 @@ pub struct LefLibrary {
     pub fixed_mask: bool,
 
     /// Clearance Measure
-    #[serde(default, skip_serializing)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default)]
     pub clearance_measure: Option<LefClearanceStyle>,
-    
+
     // Unsupported fields recommended for *either* LEF "cell libraries" or "technologies"
     /// Via Definitions (Unsupported)
     #[serde(default, skip_serializing)]
     #[builder(default)]
     pub vias: Option<Unsupported>,
     /// Syntax Extensions
-    #[serde(default, skip_serializing)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[builder(default)]
     pub extensions: Vec<LefExtension>,
     // Fields recommended for LEF technology descriptions, AKA "tech-lefs"
     /// Manufacturing Grid
-    #[serde(default, skip_serializing)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default)]
     pub manufacturing_grid: Option<LefDecimal>,
     /// "Use Min Spacing" Option
-    #[serde(default, skip_serializing)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default)]
     pub use_min_spacing: Option<LefOnOff>,
     /// Property Definitions
@@ -426,23 +426,26 @@ pub enum LefLayerSpacing {
     DesignRuleWidth(LefDecimal),
 }
 
+/// # User Defined Property Instantiation
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub struct LefProperty {
     pub name: String,
     pub value: String,
 }
 
+/// # Numeric Range for [LefPropertyDefinition]
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub struct LefPropertyRange {
     pub begin: LefDecimal,
     pub end: LefDecimal,
 }
 
+/// # User Defined Property Definition
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub enum LefPropertyDefinition {
-    LefString(LefKey, String, Option<String>),
-    LefReal(LefKey, String, Option<LefDecimal>, Option<LefPropertyRange>),
-    LefInteger(LefKey, String, Option<LefDecimal>, Option<LefPropertyRange>),
+    LefString(LefPropertyDefinitionObjectType, String, Option<String>),
+    LefReal(LefPropertyDefinitionObjectType, String, Option<LefDecimal>, Option<LefPropertyRange>),
+    LefInteger(LefPropertyDefinitionObjectType, String, Option<LefDecimal>, Option<LefPropertyRange>),
 }
 /// # Lef Geometric Object Enumeration
 /// Includes [LefShape]s and Iterators thereof
@@ -682,6 +685,14 @@ enumstr!(
         FixedMask: "FIXEDMASK",
         Mask: "MASK",
         UseMinSpacing: "USEMINSPACING",
+        TaperRule: "TAPERRULE",
+        NetExpr: "NETEXPR",
+        SupplySensitivity: "SUPPLYSENSITIVITY",
+        GroundSensitivity: "GROUNDSENSITIVITY",
+        MustJoin: "MUSTJOIN",
+        Property: "PROPERTY",
+        ManufacturingGrid: "MANUFACTURINGGRID",
+        ClearanceMeasure: "CLEARANCEMEASURE",
 
         // UNITS Fields
         Units: "UNITS",
@@ -722,14 +733,6 @@ enumstr!(
         Integer: "INTEGER",
 
         // Unsupported
-        TaperRule: "TAPERRULE",
-        NetExpr: "NETEXPR",
-        SupplySensitivity: "SUPPLYSENSITIVITY",
-        GroundSensitivity: "GROUNDSENSITIVITY",
-        MustJoin: "MUSTJOIN",
-        Property: "PROPERTY",
-        ManufacturingGrid: "MANUFACTURINGGRID",
-        ClearanceMeasure: "CLEARANCEMEASURE",
         MaxViaStack: "MAXVIASTACK",
         ViaRule: "VIARULE",
         Generate: "GENERATE",
@@ -888,7 +891,18 @@ enumstr!(
         Oxide4: "OXIDE4",
     }
 );
-
+enumstr!(
+    /// Valid object types for [LefPropertyDefinition]
+    LefPropertyDefinitionObjectType {
+        Layer: "LAYER",
+        Library: "LIBRARY",
+        Macro: "MACRO",
+        NonDefaultRule: "NONDEFAULTRULE",
+        Pin: "PIN",
+        Via: "VIA",
+        ViaRule: "VIARULE",
+    }
+);
 use super::read::{LefParseErrorType, ParserState};
 
 /// # Lef Error Enumeration

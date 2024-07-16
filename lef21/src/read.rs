@@ -1045,7 +1045,7 @@ impl<'src> LefParser<'src> {
         loop {
             match self.peek_key()? {
                 Layer | Library | Macro | NonDefaultRule | Pin | Via | ViaRule => {
-                    let objtype = self.get_key()?;
+                    let objtype = self.parse_enum::<LefPropertyDefinitionObjectType>()?;
                     let propname = String::from(self.get_name()?); 
                     match self.get_key()? {
                         LefKey::String => {

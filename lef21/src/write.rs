@@ -160,7 +160,7 @@ impl<'wr> LefWriter<'wr> {
 
     // helper function to format numeric PROPERTYDEFINITION entries
     //   for "objType propName [RANGE begin end] [value]"
-    fn format_numeric_prop_def(&mut self, objtype: &LefKey, name: &String, key: LefKey, value: &Option<LefDecimal>, range: &Option<LefPropertyRange>) -> LefResult<String> {
+    fn format_numeric_prop_def(&mut self, objtype: &LefPropertyDefinitionObjectType, name: &String, key: LefKey, value: &Option<LefDecimal>, range: &Option<LefPropertyRange>) -> LefResult<String> {
         use LefKey::Range;
         let mut string_list: Vec<String> = Vec::new();
         string_list.push(objtype.to_string());
