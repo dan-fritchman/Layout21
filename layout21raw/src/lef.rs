@@ -125,7 +125,7 @@ impl<'lib> LefExporter<'lib> {
         let layers = self.lib.layers.read()?;
         let name = layers
             .get_name(layerkey)
-            .unwrapper(self, format!("Invalid un-named layer for LEF export"))?;
+            .or_handle(self, format!("Invalid un-named layer for LEF export"))?;
         Ok(name.to_string())
     }
     /// Export a [Shape] to a [lef21::LefGeometry]
@@ -253,7 +253,7 @@ impl LefImporter {
         // Create an outline-rectangle.
         let outline = {
             // Grab a [Point] from the `size` field
-            let lefsize = lefmacro.size.as_ref().unwrapper(self, "Missing LEF size")?;
+            let lefsize = lefmacro.size.as_ref().or_handle(self, "Missing LEF size")?;
             let lefsize = lef21::LefPoint::new(lefsize.0, lefsize.1);
             let Point { x, y } = self.import_point(&lefsize)?;
 
@@ -408,7 +408,7 @@ impl LefImporter {
         // And *our* paths are integer-width'ed, so they better have a zero-valued fractional part.
         let width = layer
             .width
-            .unwrapper(self, "Invalid LEF Path with no Width")?;
+            .or_handle(self, "Invalid LEF Path with no Width")?;
         let width = self.import_dist(&width)?;
         let width = usize::try_from(width)?;
         // Convert each of the Points
