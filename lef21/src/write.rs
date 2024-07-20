@@ -323,7 +323,7 @@ impl<'wr> LefWriter<'wr> {
                     };
                     self.write_line(format_args_f!("{line}{p0} {p1} ; "))?;
                 }
-                LefShape::Polygon(pts) => {
+                LefShape::Polygon(_mask, pts) => {
                     let ptstr = pts
                         .iter()
                         .map(|x| x.to_string())
@@ -331,7 +331,7 @@ impl<'wr> LefWriter<'wr> {
                         .join(" ");
                     self.write_line(format_args_f!("{Polygon} {ptstr} ;"))?;
                 }
-                LefShape::Path(pts) => {
+                LefShape::Path(_mask, pts) => {
                     let ptstr = pts
                         .iter()
                         .map(|x| x.to_string())

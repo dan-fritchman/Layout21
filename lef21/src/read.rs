@@ -873,21 +873,27 @@ impl<'src> LefParser<'src> {
         self.ctx.pop();
         Ok(layer)
     }
+
+    /// Parse the [LefMask] statement on a [LefGeometry]
+    fn parse_geometry_mask(&mut self) -> LefResult<Option<LefMask>> {
+        let mut mask: Option<LefMask> = None;
+        if self.matches(TokenType::Name) {
+            if self.get_key()? == LefKey::Mask {
+                mask = Some(LefMask::new(self.parse_number()?));
+            } else {
+                // The ITERATE construction would go here, but is not supported.
+                self.fail(LefParseErrorType::Unsupported)?;
+            }
+        }
+        Ok(mask)
+    }
     /// Parse a [LefGeometry] statement
     /// Each can be a shape or iteration thereof
     fn parse_geometry(&mut self) -> LefResult<LefGeometry> {
         match self.peek_key()? {
             LefKey::Rect => {
                 self.advance()?;
-                let mut mask = None;
-                if self.matches(TokenType::Name) {
-                    if self.get_key()? == LefKey::Mask {
-                        mask = Some(LefMask::new(self.parse_number()?));
-                    } else {
-                        // The ITERATE construction would go here, but is not supported.
-                        self.fail(LefParseErrorType::Unsupported)?;
-                    }
-                }
+                let mask = self.parse_geometry_mask()?;
                 // Parse the two points
                 let p1 = self.parse_point()?;
                 let p2 = self.parse_point()?;
@@ -897,21 +903,23 @@ impl<'src> LefParser<'src> {
             }
             LefKey::Polygon => {
                 self.advance()?;
+                let mask = self.parse_geometry_mask()?;
                 let points = self.parse_point_list()?;
                 if points.len() < 3 {
                     self.fail(LefParseErrorType::InvalidValue)?;
                 }
                 self.expect(TokenType::SemiColon)?;
-                Ok(LefGeometry::Shape(LefShape::Polygon(points)))
+                Ok(LefGeometry::Shape(LefShape::Polygon(mask, points)))
             }
             LefKey::Path => {
                 self.advance()?;
+                let mask = self.parse_geometry_mask()?;
                 let points = self.parse_point_list()?;
                 if points.len() < 2 {
                     self.fail(LefParseErrorType::InvalidValue)?;
                 }
                 self.expect(TokenType::SemiColon)?;
-                Ok(LefGeometry::Shape(LefShape::Path(points)))
+                Ok(LefGeometry::Shape(LefShape::Path(mask, points)))
             }
             _ => self.fail(LefParseErrorType::InvalidKey)?,
         }
