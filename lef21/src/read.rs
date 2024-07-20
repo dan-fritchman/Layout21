@@ -890,9 +890,8 @@ impl<'src> LefParser<'src> {
     /// Parse a [LefGeometry] statement
     /// Each can be a shape or iteration thereof
     fn parse_geometry(&mut self) -> LefResult<LefGeometry> {
-        match self.peek_key()? {
+        match self.get_key()? {
             LefKey::Rect => {
-                self.advance()?;
                 let mask = self.parse_geometry_mask()?;
                 // Parse the two points
                 let p1 = self.parse_point()?;
@@ -902,7 +901,6 @@ impl<'src> LefParser<'src> {
                 Ok(LefGeometry::Shape(LefShape::Rect(mask, p1, p2)))
             }
             LefKey::Polygon => {
-                self.advance()?;
                 let mask = self.parse_geometry_mask()?;
                 let points = self.parse_point_list()?;
                 if points.len() < 3 {
@@ -912,7 +910,6 @@ impl<'src> LefParser<'src> {
                 Ok(LefGeometry::Shape(LefShape::Polygon(mask, points)))
             }
             LefKey::Path => {
-                self.advance()?;
                 let mask = self.parse_geometry_mask()?;
                 let points = self.parse_point_list()?;
                 if points.len() < 2 {
