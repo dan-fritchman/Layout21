@@ -311,38 +311,42 @@ impl<'wr> LefWriter<'wr> {
         Ok(()) // Note [LefLayerGeometries] have no "END" or other closing delimeter.
     }
     fn write_geom(&mut self, geom: &LefGeometry) -> LefResult<()> {
+        let mut wordlist: Vec<String> = Vec::new();
         use LefKey::{Polygon, Rect, Path};
         match geom {
             LefGeometry::Iterate { .. } => unimplemented!(),
             LefGeometry::Shape(ref shape) => match shape {
                 LefShape::Rect(mask, p0, p1) => {
-                    let mut line = format!("{Rect} ");
-                    match mask {
-                        Some(mask) => line.push_str(&format!("MASK {mask} ")),
-                        None => (),
-                    };
-                    self.write_line(format_args_f!("{line}{p0} {p1} ; "))?;
+                    wordlist.push(Rect.to_string());
+                    wordlist.extend(self.format_mask(mask));
+                    wordlist.push(p0.to_string());
+                    wordlist.push(p1.to_string());
                 }
-                LefShape::Polygon(_mask, pts) => {
-                    let ptstr = pts
-                        .iter()
-                        .map(|x| x.to_string())
-                        .collect::<Vec<String>>()
-                        .join(" ");
-                    self.write_line(format_args_f!("{Polygon} {ptstr} ;"))?;
+                LefShape::Polygon(mask, pts) => {
+                    wordlist.push(Polygon.to_string());
+                    wordlist.extend(self.format_mask(mask));
+                    wordlist.extend(pts.iter().map(|x| x.to_string()));
                 }
-                LefShape::Path(_mask, pts) => {
-                    let ptstr = pts
-                        .iter()
-                        .map(|x| x.to_string())
-                        .collect::<Vec<String>>()
-                        .join(" ");
-                    self.write_line(format_args_f!("{Path} {ptstr} ;"))?;
+                LefShape::Path(mask, pts) => {
+                    wordlist.push(Path.to_string());
+                    wordlist.extend(self.format_mask(mask));
+                    wordlist.extend(pts.iter().map(|x| x.to_string()));
                 }
             },
         };
+        let linestr = wordlist.join(" ");
+        self.write_line(format_args_f!("{linestr} ;"))?;
         Ok(())
     }
+
+    /// Format mask
+    fn format_mask(&mut self, mask: &Option<LefMask>) -> Vec<String> {
+        match mask {
+            Some(mask) => vec![LefKey::Mask.to_string(), mask.to_string()],
+            None => <Vec<String>>::new(),
+        }
+    }
+
     /// Write a vector of [LefSymmetry] to the SYMMETRY statement
     fn write_symmetries(&mut self, symms: &Vec<LefSymmetry>) -> LefResult<()> {
         use LefKey::Symmetry;
