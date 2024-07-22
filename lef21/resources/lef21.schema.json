@@ -473,18 +473,12 @@
             "Iterate": {
               "type": "object",
               "required": [
+                "pattern",
                 "shape"
               ],
               "properties": {
                 "pattern": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/definitions/Unsupported"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
+                  "$ref": "#/definitions/LefStepPattern"
                 },
                 "shape": {
                   "$ref": "#/definitions/LefShape"
@@ -1483,6 +1477,34 @@
           ]
         }
       ]
+    },
+    "LefStepPattern": {
+      "title": "Lef Step Pattern for ITERATE",
+      "type": "object",
+      "required": [
+        "numx",
+        "numy",
+        "spacex",
+        "spacey"
+      ],
+      "properties": {
+        "numx": {
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+        },
+        "numy": {
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+        },
+        "spacex": {
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+        },
+        "spacey": {
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+        }
+      }
     },
     "LefSymmetry": {
       "description": "Specifies which MACRO orientations are valid for placement",

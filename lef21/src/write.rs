@@ -312,33 +312,61 @@ impl<'wr> LefWriter<'wr> {
     }
     fn write_geom(&mut self, geom: &LefGeometry) -> LefResult<()> {
         let mut wordlist: Vec<String> = Vec::new();
-        use LefKey::{Polygon, Rect, Path};
         match geom {
-            LefGeometry::Iterate { .. } => unimplemented!(),
-            LefGeometry::Shape(ref shape) => match shape {
-                LefShape::Rect(mask, p0, p1) => {
-                    wordlist.push(Rect.to_string());
-                    wordlist.extend(self.format_mask(mask));
-                    wordlist.push(p0.to_string());
-                    wordlist.push(p1.to_string());
-                }
-                LefShape::Polygon(mask, pts) => {
-                    wordlist.push(Polygon.to_string());
-                    wordlist.extend(self.format_mask(mask));
-                    wordlist.extend(pts.iter().map(|x| x.to_string()));
-                }
-                LefShape::Path(mask, pts) => {
-                    wordlist.push(Path.to_string());
-                    wordlist.extend(self.format_mask(mask));
-                    wordlist.extend(pts.iter().map(|x| x.to_string()));
-                }
-            },
+            LefGeometry::Iterate { shape, pattern  } => 
+                wordlist.extend(self.format_geom(shape, Some(pattern))),
+            LefGeometry::Shape(ref shape) => 
+                wordlist.extend(self.format_geom(shape, None)),
         };
         let linestr = wordlist.join(" ");
         self.write_line(format_args_f!("{linestr} ;"))?;
         Ok(())
     }
 
+    fn format_geom(&mut self, shape: &LefShape, step_pattern: Option<&LefStepPattern>) -> Vec<String> {
+        let mut wordlist: Vec<String> = Vec::new();
+        match shape {
+            LefShape::Rect(mask, p0, p1) => {
+                wordlist.push(LefKey::Rect.to_string());
+                wordlist.extend(self.format_mask(mask));
+                if step_pattern != None {
+                    wordlist.push(LefKey::Iterate.to_string());
+                }
+                wordlist.push(p0.to_string());
+                wordlist.push(p1.to_string());
+            }
+            LefShape::Polygon(mask, pts) => {
+                wordlist.push(LefKey::Polygon.to_string());
+                wordlist.extend(self.format_mask(mask));
+                if step_pattern != None {
+                    wordlist.push(LefKey::Iterate.to_string());
+                }
+                wordlist.extend(pts.iter().map(|x| x.to_string()));
+            }
+            LefShape::Path(mask, pts) => {
+                wordlist.push(LefKey::Path.to_string());
+                wordlist.extend(self.format_mask(mask));
+                if step_pattern != None {
+                    wordlist.push(LefKey::Iterate.to_string());
+                }
+                wordlist.extend(pts.iter().map(|x| x.to_string()));
+            }
+        }
+        match step_pattern {
+            Some(pattern) => {
+                wordlist.push(LefKey::Do.to_string());
+                wordlist.push(pattern.numx.to_string());
+                wordlist.push(LefKey::By.to_string());
+                wordlist.push(pattern.numy.to_string());
+                wordlist.push(LefKey::Step.to_string());
+                wordlist.push(pattern.spacex.to_string());
+                wordlist.push(pattern.spacey.to_string());
+            },
+            _ => {},
+        }
+    
+        wordlist
+    }
     /// Format mask
     fn format_mask(&mut self, mask: &Option<LefMask>) -> Vec<String> {
         match mask {

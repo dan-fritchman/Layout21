@@ -419,8 +419,17 @@ pub enum LefGeometry {
     /// Repeated Iteration/ Array of Shapes (Unsupported)
     Iterate {
         shape: LefShape,
-        pattern: Option<Unsupported>,
+        pattern: LefStepPattern,
     },
+}
+
+/// # Lef Step Pattern for ITERATE
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+pub struct LefStepPattern {
+    pub numx: LefDecimal,
+    pub numy: LefDecimal,
+    pub spacex: LefDecimal,
+    pub spacey: LefDecimal,
 }
 /// # Lef Shape Enumeration
 /// Includes each of LEF's individual geometric primitives:
@@ -630,6 +639,9 @@ enumstr!(
         RowPattern: "ROWPATTERN",
         Site: "SITE",
         Size: "SIZE",
+        Do: "DO",
+        Iterate: "ITERATE",
+        Step: "STEP",
         By: "BY",
         BusBitChars: "BUSBITCHARS",
         DividerChar: "DIVIDERCHAR",
