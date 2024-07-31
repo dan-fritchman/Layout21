@@ -218,12 +218,12 @@ pub struct LefMacro {
     #[builder(default)]
     pub properties: Vec<LefProperty>,
 
-    // Unsupported
-    /// Density Objects (Unsupported)
-    #[serde(default, skip_serializing)]
-    #[builder(default)]
-    pub density: Option<Unsupported>,
+    /// Density Objects
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
+    pub density: Option<Vec<LefDensityGeometries>>,
 }
+
 impl LefMacro {
     /// Create a new and initially empty [LefMacro] with name `name`
     pub fn new(name: impl Into<String>) -> LefMacro {
@@ -405,6 +405,37 @@ pub struct LefLayerGeometries {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub width: Option<LefDecimal>,
+}
+
+/// # Lef Density Geometry Store
+///
+/// Most LEF spatial data (e.g. ports, blockages) is organized by layer.
+/// [LefDensityGeometries] stores the combination of a layer (name)
+/// and a suite of rectangle density data on that layer.
+///
+/// [LefDensityGeometries] are the primary building block of [LefDensity].
+///
+#[derive(Clone, Default, Builder, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[builder(pattern = "owned", setter(into))]
+pub struct LefDensityGeometries {
+    // Required
+    /// Layer Name
+    pub layer_name: String,
+    /// Geometries
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub geometries: Vec<LefDensityRectangle>,
+}
+
+/// # Lef Density Rectangle
+/// Defined as a rectangle with a numeric density value.  One or more of these geometries are associated
+/// with a layer name in [LefDensityGeometries]
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+pub struct LefDensityRectangle {
+    /// Location
+    pub pt1: LefPoint,
+    pub pt2: LefPoint,
+    /// Density Value
+    pub density_value: LefDecimal,
 }
 /// # Lef Via Instance
 ///
@@ -693,7 +724,8 @@ enumstr!(
         Property: "PROPERTY",
         ManufacturingGrid: "MANUFACTURINGGRID",
         ClearanceMeasure: "CLEARANCEMEASURE",
-
+        Density: "DENSITY",
+        
         // UNITS Fields
         Units: "UNITS",
         Time: "TIME",
