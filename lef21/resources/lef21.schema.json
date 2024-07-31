@@ -3,6 +3,9 @@
   "title": "Lef Library",
   "description": "LEF's primary design-content container, including a set of macro/cell definitions and associated metadata.",
   "type": "object",
+  "required": [
+    "fixed_mask"
+  ],
   "properties": {
     "bus_bit_chars": {
       "description": "Bus-Bit Separator Characters",
@@ -27,10 +30,9 @@
     },
     "clearance_measure": {
       "description": "Clearance Measure",
-      "writeOnly": true,
       "anyOf": [
         {
-          "$ref": "#/definitions/Unsupported"
+          "$ref": "#/definitions/LefClearanceStyle"
         },
         {
           "type": "null"
@@ -47,16 +49,15 @@
       "minLength": 1
     },
     "extensions": {
-      "description": "Syntax Extensions (Unsupported)",
+      "description": "Syntax Extensions",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/LefExtension"
+      }
+    },
+    "fixed_mask": {
       "writeOnly": true,
-      "anyOf": [
-        {
-          "$ref": "#/definitions/Unsupported"
-        },
-        {
-          "type": "null"
-        }
-      ]
+      "type": "boolean"
     },
     "layers": {
       "description": "Layer Definitions",
@@ -79,15 +80,11 @@
     },
     "manufacturing_grid": {
       "description": "Manufacturing Grid",
-      "writeOnly": true,
-      "anyOf": [
-        {
-          "$ref": "#/definitions/Unsupported"
-        },
-        {
-          "type": "null"
-        }
-      ]
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
     },
     "max_via_stack": {
       "description": "Max Via Stack",
@@ -137,15 +134,10 @@
     },
     "property_definitions": {
       "description": "Property Definitions",
-      "writeOnly": true,
-      "anyOf": [
-        {
-          "$ref": "#/definitions/Unsupported"
-        },
-        {
-          "type": "null"
-        }
-      ]
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/LefPropertyDefinition"
+      }
     },
     "sites": {
       "description": "Site Definitions",
@@ -167,7 +159,6 @@
     },
     "use_min_spacing": {
       "description": "\"Use Min Spacing\" Option",
-      "writeOnly": true,
       "anyOf": [
         {
           "$ref": "#/definitions/LefOnOff"
@@ -271,6 +262,25 @@
           "type": "string",
           "enum": [
             "Soft"
+          ]
+        }
+      ]
+    },
+    "LefClearanceStyle": {
+      "description": "Clearance Measure Spacing Styles",
+      "oneOf": [
+        {
+          "description": "MAXXY",
+          "type": "string",
+          "enum": [
+            "MaxXY"
+          ]
+        },
+        {
+          "description": "EUCLIDEAN",
+          "type": "string",
+          "enum": [
+            "Euclidean"
           ]
         }
       ]
@@ -458,6 +468,23 @@
           ]
         }
       ]
+    },
+    "LefExtension": {
+      "type": "object",
+      "required": [
+        "data",
+        "name"
+      ],
+      "properties": {
+        "data": {
+          "description": "Stringified data contained in the extension",
+          "type": "string"
+        },
+        "name": {
+          "description": "Name of the extension",
+          "type": "string"
+        }
+      }
     },
     "LefForeign": {
       "title": "Lef Foreign Cell Declaration",
@@ -710,16 +737,11 @@
           }
         },
         "properties": {
-          "description": "Properties (Unsupported)",
-          "writeOnly": true,
-          "anyOf": [
-            {
-              "$ref": "#/definitions/Unsupported"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "description": "Properties",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/LefProperty"
+          }
         },
         "site": {
           "description": "Site Name Note the optional `SITEPATTERN` is not supported",
@@ -1105,16 +1127,11 @@
           }
         },
         "properties": {
-          "description": "Properties (Unsupported)",
-          "writeOnly": true,
-          "anyOf": [
-            {
-              "$ref": "#/definitions/Unsupported"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "description": "Properties",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/LefProperty"
+          }
         },
         "shape": {
           "description": "Shape",
@@ -1347,6 +1364,205 @@
           ]
         }
       ]
+    },
+    "LefProperty": {
+      "title": "User Defined Property Instantiation",
+      "type": "object",
+      "required": [
+        "name",
+        "value"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      }
+    },
+    "LefPropertyDefinition": {
+      "title": "User Defined Property Definition",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "LefString"
+          ],
+          "properties": {
+            "LefString": {
+              "type": "array",
+              "items": [
+                {
+                  "$ref": "#/definitions/LefPropertyDefinitionObjectType"
+                },
+                {
+                  "type": "string"
+                },
+                {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              ],
+              "maxItems": 3,
+              "minItems": 3
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "LefReal"
+          ],
+          "properties": {
+            "LefReal": {
+              "type": "array",
+              "items": [
+                {
+                  "$ref": "#/definitions/LefPropertyDefinitionObjectType"
+                },
+                {
+                  "type": "string"
+                },
+                {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+                },
+                {
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/LefPropertyRange"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              ],
+              "maxItems": 4,
+              "minItems": 4
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "LefInteger"
+          ],
+          "properties": {
+            "LefInteger": {
+              "type": "array",
+              "items": [
+                {
+                  "$ref": "#/definitions/LefPropertyDefinitionObjectType"
+                },
+                {
+                  "type": "string"
+                },
+                {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+                },
+                {
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/LefPropertyRange"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              ],
+              "maxItems": 4,
+              "minItems": 4
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "LefPropertyDefinitionObjectType": {
+      "description": "Valid object types for [LefPropertyDefinition]",
+      "oneOf": [
+        {
+          "description": "LAYER",
+          "type": "string",
+          "enum": [
+            "Layer"
+          ]
+        },
+        {
+          "description": "LIBRARY",
+          "type": "string",
+          "enum": [
+            "Library"
+          ]
+        },
+        {
+          "description": "MACRO",
+          "type": "string",
+          "enum": [
+            "Macro"
+          ]
+        },
+        {
+          "description": "NONDEFAULTRULE",
+          "type": "string",
+          "enum": [
+            "NonDefaultRule"
+          ]
+        },
+        {
+          "description": "PIN",
+          "type": "string",
+          "enum": [
+            "Pin"
+          ]
+        },
+        {
+          "description": "VIA",
+          "type": "string",
+          "enum": [
+            "Via"
+          ]
+        },
+        {
+          "description": "VIARULE",
+          "type": "string",
+          "enum": [
+            "ViaRule"
+          ]
+        }
+      ]
+    },
+    "LefPropertyRange": {
+      "title": "Numeric Range for [LefPropertyDefinition]",
+      "type": "object",
+      "required": [
+        "begin",
+        "end"
+      ],
+      "properties": {
+        "begin": {
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+        },
+        "end": {
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+        }
+      }
     },
     "LefShape": {
       "title": "Lef Shape Enumeration",
