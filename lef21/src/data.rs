@@ -426,7 +426,7 @@ pub struct LefDensityRectangle {
 /// # Lef Via Instance
 ///
 /// A located instance of via-type `via_name`, typically used as part of a [LefLayerGeometries] definition.
-/// The via-type is generally interpreted as a string-valued reference into tech-lef data.
+/// The via-type is generally interpreted as a string-valued <reference into tech-lef data.
 /// It is stored in each [LefVia] exactly as in LEF, as a string type-name.
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub struct LefVia {
@@ -451,8 +451,17 @@ pub enum LefGeometry {
     /// Repeated Iteration/ Array of Shapes (Unsupported)
     Iterate {
         shape: LefShape,
-        pattern: Option<Unsupported>,
+        pattern: LefStepPattern,
     },
+}
+
+/// # Lef Step Pattern for ITERATE
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+pub struct LefStepPattern {
+    pub numx: LefDecimal,
+    pub numy: LefDecimal,
+    pub spacex: LefDecimal,
+    pub spacey: LefDecimal,
 }
 /// # Lef Shape Enumeration
 /// Includes each of LEF's individual geometric primitives:
@@ -460,8 +469,8 @@ pub enum LefGeometry {
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub enum LefShape {
     Rect(Option<LefMask>, LefPoint, LefPoint),
-    Polygon(Vec<LefPoint>),
-    Path(Vec<LefPoint>),
+    Polygon(Option<LefMask>, Vec<LefPoint>),
+    Path(Option<LefMask>, Vec<LefPoint>),
 }
 /// # Lef X-Y Spatial Point
 ///
@@ -662,6 +671,9 @@ enumstr!(
         RowPattern: "ROWPATTERN",
         Site: "SITE",
         Size: "SIZE",
+        Do: "DO",
+        Iterate: "ITERATE",
+        Step: "STEP",
         By: "BY",
         BusBitChars: "BUSBITCHARS",
         DividerChar: "DIVIDERCHAR",
