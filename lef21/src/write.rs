@@ -203,9 +203,10 @@ impl<'wr> LefWriter<'wr> {
             self.indent -= 1;
             self.write_line(format_args_f!("{End} "))?;
         }
-
-        // DENSTITY and PROPERTIES would go here
-        // if mac.density.is_some() { }
+        if let Some(ref v) = mac.density {
+            self.write_density(v)?;
+        }
+        // PROPERTIES would go here
         // if mac.properties.is_some() { }
 
         self.indent -= 1;
@@ -386,6 +387,23 @@ impl<'wr> LefWriter<'wr> {
         self.write_line(format_args_f!("{Symmetry} {symmstr} ;"))?;
         Ok(())
     }
+
+    /// Write the DENSITY construct which includes LAYER and density RECT statements.
+    fn write_density(&mut self, dens_geoms: &Vec<LefDensityGeometries>) -> LefResult<()> {
+        use LefKey::{Density, End, Layer, Rect};
+        self.write_line(format_args_f!("{Density} "))?;
+        self.indent += 1;
+        for layer_geom_set in dens_geoms.iter() {
+            self.write_line(format_args_f!("{Layer} {layer_geom_set.layer_name} ; "))?;
+            for dens_rect in layer_geom_set.geometries.iter() {
+                self.write_line(format_args_f!("{Rect} {dens_rect.pt1} {dens_rect.pt2} {dens_rect.density_value} ; "))?;
+            }
+        }
+        self.indent -= 1;
+        self.write_line(format_args_f!("{End} "))?;
+        Ok(())
+    }
+
     /// Write the [LefMacroClass] enumerations.
     /// Note most sub-types use their macro-generated [Display] implementations.
     fn write_macro_class(&mut self, class: &LefMacroClass) -> LefResult<()> {

@@ -142,6 +142,28 @@ fn it_parses_colored_geometries() -> LefResult<()> {
 }
 
 #[test]
+fn it_parses_density_lib() -> LefResult<()> {
+    let src = r#"
+    VERSION 5.8 ;
+    UNITS DATABASE MICRONS 2000 ; END UNITS
+    MACRO macro_dens
+        CLASS BLOCK ;
+        SIZE 100.0 BY 100.0 ;
+        DENSITY
+        LAYER met6 ;
+        RECT 0.0 0.0 40.0 50.0 46.6 ;
+        RECT 0.0 50.0 100.0 100.0 90 ;
+        LAYER met2 ;
+        RECT 1.0 2.0 3.0 4.0 5.55 ;
+        END
+    END macro_dens
+    "#;
+    let lib = parse_str(src)?;
+    //check_yaml(&lib, &resource("lib2.yaml"));
+    Ok(())
+}
+
+#[test]
 fn it_parses_no_end_library_5p6() -> LefResult<()> {
     let src = r#"
     VERSION 5.6 ;

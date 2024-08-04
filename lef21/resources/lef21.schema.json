@@ -363,6 +363,55 @@
         }
       ]
     },
+    "LefDensityGeometries": {
+      "title": "Lef Density Geometry Store",
+      "description": "Most LEF spatial data (e.g. ports, blockages) is organized by layer. [LefDensityGeometries] stores the combination of a layer (name) and a suite of rectangle density data on that layer.\n\n[LefDensityGeometries] are the primary building block of [LefDensity].",
+      "type": "object",
+      "required": [
+        "layer_name"
+      ],
+      "properties": {
+        "geometries": {
+          "description": "Geometries",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/LefDensityRectangle"
+          }
+        },
+        "layer_name": {
+          "description": "Layer Name",
+          "type": "string"
+        }
+      }
+    },
+    "LefDensityRectangle": {
+      "title": "Lef Density Rectangle",
+      "description": "Defined as a rectangle with a numeric density value.  One or more of these geometries are associated with a layer name in [LefDensityGeometries]",
+      "type": "object",
+      "required": [
+        "density_value",
+        "pt1",
+        "pt2"
+      ],
+      "properties": {
+        "density_value": {
+          "description": "Density Value",
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+        },
+        "pt1": {
+          "description": "Location",
+          "allOf": [
+            {
+              "$ref": "#/definitions/LefPoint"
+            }
+          ]
+        },
+        "pt2": {
+          "$ref": "#/definitions/LefPoint"
+        }
+      }
+    },
     "LefEndCapClassType": {
       "description": "Sub-Types for Macros of Class [LefMacroClass::EndCap]",
       "oneOf": [
@@ -594,16 +643,14 @@
           ]
         },
         "density": {
-          "description": "Density Objects (Unsupported)",
-          "writeOnly": true,
-          "anyOf": [
-            {
-              "$ref": "#/definitions/Unsupported"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "description": "Density Objects",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/LefDensityGeometries"
+          }
         },
         "eeq": {
           "description": "Electrically-Equivalent Cell",

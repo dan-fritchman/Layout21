@@ -305,6 +305,7 @@ pub enum LefParseContext {
     Geometry,
     Site,
     Units,
+    Density,
     Unknown,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -623,6 +624,9 @@ impl<'src> LefParser<'src> {
                     self.expect(TokenType::SemiColon)?;
                     mac.source(e)
                 }
+                LefKey::Density => {
+                    mac.density(self.parse_density()?)
+                }
                 LefKey::End => {
                     self.advance()?; // End of Macro. Eat the END key
                     break;
@@ -790,6 +794,54 @@ impl<'src> LefParser<'src> {
         self.ctx.pop();
         Ok(LefPort { layers, class })
     }
+    /// Parse a MACRO::DENSITY definition into a [Vec<LefDensityGeometries>]
+    fn parse_density(&mut self) -> LefResult<Vec<LefDensityGeometries>> {
+        self.ctx.push(LefParseContext::Density);
+        self.expect_key(LefKey::Density)?;
+        let mut dens_geoms: Vec<LefDensityGeometries> = Vec::new();
+
+        // Parse attributes and geometries
+        // Note this peeks rather than taking the next token,
+        // largely to accommodate the closing-delimeter-free `LAYER` / [LefDensityGeometries] definitions.
+        // Other keys generally advance by a Token *after* matching.
+
+        loop {
+            match self.peek_key()? {
+                LefKey::Layer => {
+                    self.expect_key(LefKey::Layer)?; // Eat the opening LAYER keyword
+                    let mut layer = LefDensityGeometriesBuilder::default();
+                    layer = layer.layer_name(self.parse_ident()?); // Parse the layer-name
+                    self.expect(TokenType::SemiColon)?;
+                    let mut rects: Vec<LefDensityRectangle> = Vec::new();
+
+                    loop {
+                        match self.peek_key()? {
+                            LefKey::Layer | LefKey::End => break, // End of geometries. (Really start/end of something else.)
+                            LefKey::Rect => {
+                                self.advance()?; // Eat the RECT keyword
+                                let p1: LefPoint = self.parse_point()?;
+                                let p2: LefPoint = self.parse_point()?;
+                                let dens_value: LefDecimal = self.parse_number()?;
+                                rects.push(LefDensityRectangle { pt1: p1, pt2: p2, density_value: dens_value });
+                                self.expect(TokenType::SemiColon)?;
+                            }
+                            _ => self.fail(LefParseErrorType::InvalidKey)?,
+                        }
+                    }
+                    layer = layer.geometries(rects);
+                    let layer = layer.build()?;
+                    dens_geoms.push(layer);
+                }
+                LefKey::End => {
+                    self.advance()?; // Eat the END Token
+                    break;
+                }
+                _ => self.fail(LefParseErrorType::InvalidKey)?,
+            }
+        }
+        self.ctx.pop();
+        Ok(dens_geoms)
+    }
     /// Parse a [LefMacro]'s obstruction definitions
     fn parse_obstructions(&mut self) -> LefResult<Vec<LefLayerGeometries>> {
         self.expect_key(LefKey::Obs)?;
@@ -835,7 +887,7 @@ impl<'src> LefParser<'src> {
         // and exit when another LAYER or END (of a higher-level thing) turn up.
         // Note that on end-of-file, i.e. `peek_token` returning `None`, this will exit and return a valid [LefLayerGeometries].
         // (Objects above it in the tree may error instead.)
-        let mut geoms = Vec::new();
+        let mut geoms: Vec<LefGeometry> = Vec::new();
         let mut vias = Vec::new();
         loop {
             if self.peek_token().is_none() {
