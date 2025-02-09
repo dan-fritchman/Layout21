@@ -110,6 +110,9 @@ impl<'wr> LefWriter<'wr> {
 
         // VIAS would be written here
         // if let Some(ref v) = lib.vias { }
+        for via in lib.vias.iter() {
+            self.write_via(via)?;
+        }
 
         // Write each site definition
         for site in lib.sites.iter() {
@@ -125,6 +128,38 @@ impl<'wr> LefWriter<'wr> {
 
         self.write_line(format_args_f!("{End} {Library} \n"))?;
         self.dest.flush()?;
+        Ok(())
+    }
+    /// Write a [LefViaDef], in recommended order of fields.
+    fn write_via(&mut self, via: &LefViaDef) -> LefResult<()> {
+        use LefKey::{Default, End, Resistance, Via};
+
+        if via.default {
+            self.write_line(format_args_f!("{Via} {via.name} {Default}"))?;
+        } else {
+            self.write_line(format_args_f!("{Via} {via.name}"))?;
+        }
+        self.indent += 1;
+
+        match &via.data {
+            LefViaDefData::Fixed(via) => {
+                if let Some(r) = via.resistance_ohms {
+                    self.write_line(format_args_f!("{Resistance} {r} ; "))?;
+                }
+                for layer in via.layers.iter() {
+                    self.write_via_layer_geom(layer)?;
+                }
+            }
+            _ => {
+                return Err(LefError::Str("Generated vias are unsupported".into()));
+            }
+        }
+
+        // PROPERTIES would go here
+        // if via.properties.is_some() { }
+
+        self.indent -= 1;
+        self.write_line(format_args_f!("{End} {} ", via.name))?;
         Ok(())
     }
     /// Write a [LefSite] definition
@@ -152,7 +187,7 @@ impl<'wr> LefWriter<'wr> {
         if let Some(ref v) = mac.class {
             self.write_macro_class(v)?;
         }
-        if mac.fixed_mask { 
+        if mac.fixed_mask {
             self.write_line(format_args_f!("{FixedMask} ;"))?;
         }
         if let Some(ref v) = mac.foreign {
@@ -178,7 +213,7 @@ impl<'wr> LefWriter<'wr> {
             }
             self.write_line(format_args_f!("{Source} {v} ;"))?;
         }
-        
+
         if let Some(ref cell) = mac.eeq {
             self.write_line(format_args_f!("{Eeq} {cell} ;"))?;
         }
@@ -215,8 +250,10 @@ impl<'wr> LefWriter<'wr> {
     }
     /// Write a [LefPin] definition
     fn write_pin(&mut self, pin: &LefPin) -> LefResult<()> {
-        use LefKey::{AntennaModel, Direction, End, GroundSensitivity, Layer, MustJoin,
-            NetExpr, Pin, Shape, SupplySensitivity, TaperRule, Use};
+        use LefKey::{
+            AntennaModel, Direction, End, GroundSensitivity, Layer, MustJoin, NetExpr, Pin, Shape,
+            SupplySensitivity, TaperRule, Use,
+        };
         self.write_line(format_args_f!("{Pin} {pin.name} "))?;
         self.indent += 1;
         if let Some(ref v) = pin.direction {
@@ -254,7 +291,7 @@ impl<'wr> LefWriter<'wr> {
         if let Some(ref v) = pin.net_expr {
             self.write_line(format_args_f!("{NetExpr} {v} ; "))?;
         }
-        
+
         // Most unsupported PINS features *would* go here.
         // if pin.properties.is_some() {
         //     return Err(LefError::Str("Unsupported LefPin Attr".into()));
@@ -311,8 +348,47 @@ impl<'wr> LefWriter<'wr> {
         self.indent -= 1;
         Ok(()) // Note [LefLayerGeometries] have no "END" or other closing delimeter.
     }
+    /// Write the [LefLayerGeometries], common to both ports and obstructions
+    fn write_via_layer_geom(&mut self, layer: &LefViaLayerGeometries) -> LefResult<()> {
+        use LefKey::Layer;
+        self.write_line(format_args_f!("{Layer} {layer.layer_name} ;"))?;
+        self.indent += 1;
+
+        for shape in layer.shapes.iter() {
+            self.write_via_shape(shape)?;
+        }
+        self.indent -= 1;
+        Ok(()) // Note [LefLayerGeometries] have no "END" or other closing delimeter.
+    }
+    fn write_via_shape(&mut self, shape: &LefViaShape) -> LefResult<()> {
+        use LefKey::{Polygon, Rect};
+        match shape {
+            LefViaShape::Rect(mask, p0, p1) => {
+                let mut line = format!("{Rect} ");
+                match mask {
+                    Some(mask) => line.push_str(&format!("MASK {mask} ")),
+                    None => (),
+                };
+                self.write_line(format_args_f!("{line}{p0} {p1} ; "))?;
+            }
+            LefViaShape::Polygon(mask, pts) => {
+                let mut line = format!("{Polygon} ");
+                match mask {
+                    Some(mask) => line.push_str(&format!("MASK {mask} ")),
+                    None => (),
+                };
+                let ptstr = pts
+                    .iter()
+                    .map(|x| x.to_string())
+                    .collect::<Vec<String>>()
+                    .join(" ");
+                self.write_line(format_args_f!("{line}{ptstr} ;"))?;
+            }
+        };
+        Ok(())
+    }
     fn write_geom(&mut self, geom: &LefGeometry) -> LefResult<()> {
-        use LefKey::{Polygon, Rect, Path};
+        use LefKey::{Path, Polygon, Rect};
         match geom {
             LefGeometry::Iterate { .. } => unimplemented!(),
             LefGeometry::Shape(ref shape) => match shape {
@@ -364,7 +440,9 @@ impl<'wr> LefWriter<'wr> {
         for layer_geom_set in dens_geoms.iter() {
             self.write_line(format_args_f!("{Layer} {layer_geom_set.layer_name} ; "))?;
             for dens_rect in layer_geom_set.geometries.iter() {
-                self.write_line(format_args_f!("{Rect} {dens_rect.pt1} {dens_rect.pt2} {dens_rect.density_value} ; "))?;
+                self.write_line(format_args_f!(
+                    "{Rect} {dens_rect.pt1} {dens_rect.pt2} {dens_rect.density_value} ; "
+                ))?;
             }
         }
         self.indent -= 1;

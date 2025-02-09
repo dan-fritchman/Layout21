@@ -47,6 +47,10 @@ pub struct LefLibrary {
     /// Site Definitions
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sites: Vec<LefSite>,
+    /// Via Definitions
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[builder(default)]
+    pub vias: Vec<LefViaDef>,
 
     // Optional
     /// Lef Spec Version
@@ -78,10 +82,6 @@ pub struct LefLibrary {
     pub units: Option<LefUnits>,
 
     // Unsupported fields recommended for *either* LEF "cell libraries" or "technologies"
-    /// Via Definitions (Unsupported)
-    #[serde(default, skip_serializing)]
-    #[builder(default)]
-    pub vias: Option<Unsupported>,
     /// Syntax Extensions (Unsupported)
     #[serde(default, skip_serializing)]
     #[builder(default)]
@@ -202,7 +202,7 @@ pub struct LefMacro {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub eeq: Option<String>,
-    
+
     // Fixed-Mask
     #[serde(default, skip_serializing)]
     #[builder(default)]
@@ -302,7 +302,7 @@ pub struct LefPin {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub must_join: Option<String>,
-    
+
     /// Net Expression
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
@@ -434,6 +434,78 @@ pub struct LefVia {
     pub via_name: String,
     /// Location
     pub pt: LefPoint,
+}
+/// # Lef Via Definition
+///
+/// LEF supports two kinds of vias: fixed vias and generated vias.
+/// Fixed vias contain a set of shapes (rectangles and/or polygons).
+/// Generated vias use a VIARULE statement to define via parameters.
+///
+/// Generated vias are currently unsupported.
+#[derive(Builder, Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[builder(pattern = "owned", setter(into))]
+pub struct LefViaDef {
+    /// The name of the via.
+    pub name: String,
+    /// Indicates that this via is a default via for connecting a pair of metal layers.
+    ///
+    /// The metal layers connected are inferrred from the via's [`LefViaLayerGeometries`],
+    /// which normally contain geometry on two metal layers and one cut layer.
+    #[serde(default)]
+    #[builder(default)]
+    pub default: bool,
+    /// The actual content of the via definition, which may be a fixed via or a generated via.
+    pub data: LefViaDefData,
+    // Unsupported
+    /// Properties (Unsupported)
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub properties: Option<Unsupported>,
+}
+/// # Lef Via Definition Data
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+pub enum LefViaDefData {
+    Fixed(LefFixedViaDef),
+    Generated(Unsupported),
+}
+/// # Lef Fixed Via Definition
+#[derive(Builder, Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[builder(pattern = "owned", setter(into))]
+pub struct LefFixedViaDef {
+    /// Resistance of the via.
+    ///
+    /// Using this field is not recommended.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub resistance_ohms: Option<LefDecimal>,
+    /// Layers & Geometries
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[builder(default)]
+    pub layers: Vec<LefViaLayerGeometries>,
+}
+/// # Lef Single-Layer Geometry Store for Vias
+///
+/// [LefViaLayerGeometries] stores the combination of a layer (name)
+/// and suite of geometric primitives (rectangles and/or polygons) on that layer.
+///
+/// [LefViaLayerGeometries] are the primary building block of [LefFixedViaDef]s.
+///
+#[derive(Clone, Default, Builder, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[builder(pattern = "owned", setter(into))]
+pub struct LefViaLayerGeometries {
+    // Required
+    /// Layer Name
+    pub layer_name: String,
+    /// Geometries
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shapes: Vec<LefViaShape>,
+}
+/// # Lef Via Shape Enumeration
+/// These are the geometric primitives that can be included in a via definition.
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+pub enum LefViaShape {
+    Rect(Option<LefMask>, LefPoint, LefPoint),
+    Polygon(Option<LefMask>, Vec<LefPoint>),
 }
 /// # Enumerated Layer-Spacing Options
 /// Includes absolute spacing and design-rule-width modifiers.
@@ -686,7 +758,7 @@ enumstr!(
         SupplySensitivity: "SUPPLYSENSITIVITY",
         GroundSensitivity: "GROUNDSENSITIVITY",
         MustJoin: "MUSTJOIN",
-        
+
         // UNITS Fields
         Units: "UNITS",
         Time: "TIME",
@@ -717,6 +789,9 @@ enumstr!(
         AntennaMaxAreaCar: "ANTENNAMAXAREACAR",
         AntennaMaxSideAreaCar: "ANTENNAMAXSIDEAREACAR",
         AntennaMaxCutCar: "ANTENNAMAXCUTCAR",
+
+        // VIA Fields
+        Default: "DEFAULT",
 
         // Unsupported
         Property: "PROPERTY",
