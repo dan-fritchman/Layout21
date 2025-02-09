@@ -130,7 +130,7 @@ impl<'wr> LefWriter<'wr> {
         self.dest.flush()?;
         Ok(())
     }
-    /// Write a [LefViaDef], in recommended order of fields.
+    /// Write a [LefViaDef].
     fn write_via(&mut self, via: &LefViaDef) -> LefResult<()> {
         use LefKey::{Default, End, Resistance, Via};
 
@@ -348,7 +348,7 @@ impl<'wr> LefWriter<'wr> {
         self.indent -= 1;
         Ok(()) // Note [LefLayerGeometries] have no "END" or other closing delimeter.
     }
-    /// Write the [LefLayerGeometries], common to both ports and obstructions
+    /// Write [LefViaLayerGeometries].
     fn write_via_layer_geom(&mut self, layer: &LefViaLayerGeometries) -> LefResult<()> {
         use LefKey::Layer;
         self.write_line(format_args_f!("{Layer} {layer.layer_name} ;"))?;
@@ -358,8 +358,9 @@ impl<'wr> LefWriter<'wr> {
             self.write_via_shape(shape)?;
         }
         self.indent -= 1;
-        Ok(()) // Note [LefLayerGeometries] have no "END" or other closing delimeter.
+        Ok(()) // No END token.
     }
+    /// Writes a [`LefViaShape`].
     fn write_via_shape(&mut self, shape: &LefViaShape) -> LefResult<()> {
         use LefKey::{Polygon, Rect};
         match shape {

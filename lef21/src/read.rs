@@ -942,12 +942,6 @@ impl<'src> LefParser<'src> {
         layer = layer.layer_name(self.parse_ident()?); // Parse the layer-name
         self.expect(TokenType::SemiColon)?;
 
-        // Now parse the layer-geom body.
-        //
-        // LayerGeometries don't have an END card, so this needs to peek at the next token,
-        // and exit when another LAYER or END (of a higher-level thing) turn up.
-        // Note that on end-of-file, i.e. `peek_token` returning `None`, this will exit and return a valid [LefLayerGeometries].
-        // (Objects above it in the tree may error instead.)
         let mut shapes: Vec<LefViaShape> = Vec::new();
         loop {
             if self.peek_token().is_none() {
@@ -1281,7 +1275,6 @@ impl<'src> LefParser<'src> {
         }
         // Parse the END-enclosing macro-name
         self.expect_ident(&name)?;
-        // Set the pins, build our struct and return it
         self.ctx.pop();
         Ok(via.build()?)
     }
