@@ -145,7 +145,7 @@ fn it_parses_via_lib() -> LefResult<()> {
     VERSION 5.8 ;
     UNITS DATABASE MICRONS 2000 ; END UNITS
     VIA via1 DEFAULT
-      RESISTANCE 21.0
+      RESISTANCE 21.0 ;
       LAYER met1 ;
         RECT MASK 0 -0.5 -0.5 0.5 0.5 ;
       LAYER cut1 ;
@@ -171,9 +171,19 @@ fn it_parses_via_lib() -> LefResult<()> {
       ENCLOSURE 0.1 0.2 0.4 0.2 ;
       ROWCOL 2 3 ;
     END via3
+    VIA via4
+      # comment
+      DEFAULT
+      # another comment
+      RESISTANCE 2.00 ;
+      LAYER met4 ; RECT -1 -1 1 1 ;
+      # yet another comment
+      LAYER via4 ; RECT -0.5 -0.5 0.5 0.5 ;
+      LAYER met5 ; RECT -2 -2 2 2 ;
+    END via4
     "#;
     let lib = parse_str(src)?;
-    assert_eq!(lib.vias.len(), 3);
+    assert_eq!(lib.vias.len(), 4);
     let via2 = &lib.vias[1];
     assert_eq!(
         *via2,

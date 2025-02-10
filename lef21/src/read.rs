@@ -1321,6 +1321,7 @@ impl<'src> LefParser<'src> {
             if let LefKey::Resistance = self.peek_key()? {
                 self.advance()?; // Eat the RESISTANCE key
                 data = data.resistance_ohms(self.parse_number()?);
+                self.expect(TokenType::SemiColon)?;
             }
 
             let mut layers = Vec::new();
