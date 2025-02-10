@@ -542,10 +542,10 @@ pub struct LefRowCol {
 #[derive(Builder, Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[builder(pattern = "owned", setter(into))]
 pub struct LefOffset {
-    pub x_bot: LefDecimal,
-    pub y_bot: LefDecimal,
-    pub x_top: LefDecimal,
-    pub y_top: LefDecimal,
+    pub bot_x: LefDecimal,
+    pub bot_y: LefDecimal,
+    pub top_x: LefDecimal,
+    pub top_y: LefDecimal,
 }
 /// # Lef Single-Layer Geometry Store for Vias
 ///

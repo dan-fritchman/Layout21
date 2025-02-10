@@ -1047,25 +1047,25 @@
       "title": "Lef Offset",
       "type": "object",
       "required": [
-        "x_bot",
-        "x_top",
-        "y_bot",
-        "y_top"
+        "bot_x",
+        "bot_y",
+        "top_x",
+        "top_y"
       ],
       "properties": {
-        "x_bot": {
+        "bot_x": {
           "type": "string",
           "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
         },
-        "x_top": {
+        "bot_y": {
           "type": "string",
           "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
         },
-        "y_bot": {
+        "top_x": {
           "type": "string",
           "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
         },
-        "y_top": {
+        "top_y": {
           "type": "string",
           "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
         }

@@ -1298,10 +1298,10 @@ impl<'src> LefParser<'src> {
                     LefKey::Offset => {
                         self.advance()?; // Eat the OFFSET key
                         data = data.offset(LefOffset {
-                            x_bot: self.parse_number()?,
-                            y_bot: self.parse_number()?,
-                            x_top: self.parse_number()?,
-                            y_top: self.parse_number()?,
+                            bot_x: self.parse_number()?,
+                            bot_y: self.parse_number()?,
+                            top_x: self.parse_number()?,
+                            top_y: self.parse_number()?,
                         });
                         self.expect(TokenType::SemiColon)?;
                     }

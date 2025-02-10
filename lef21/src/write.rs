@@ -132,7 +132,10 @@ impl<'wr> LefWriter<'wr> {
     }
     /// Write a [LefViaDef].
     fn write_via(&mut self, via: &LefViaDef) -> LefResult<()> {
-        use LefKey::{Default, End, Resistance, Via};
+        use LefKey::{
+            CutSize, CutSpacing, Default, Enclosure, End, Layers, Offset, Origin, Resistance,
+            RowCol, Via, ViaRule,
+        };
 
         if via.default {
             self.write_line(format_args_f!("{Via} {via.name} {Default}"))?;
@@ -150,13 +153,36 @@ impl<'wr> LefWriter<'wr> {
                     self.write_via_layer_geom(layer)?;
                 }
             }
-            _ => {
-                return Err(LefError::Str("Generated vias are unsupported".into()));
+            LefViaDefData::Generated(via) => {
+                self.write_line(format_args_f!("{ViaRule} {via.via_rule_name} ; "))?;
+                self.write_line(format_args_f!(
+                    "{CutSize} {via.cut_size_x} {via.cut_size_y} ; "
+                ))?;
+                self.write_line(format_args_f!(
+                    "{Layers} {via.bot_metal_layer} {via.cut_layer} {via.top_metal_layer} ; "
+                ))?;
+                self.write_line(format_args_f!(
+                    "{CutSpacing} {via.cut_spacing_x} {via.cut_spacing_y} ; "
+                ))?;
+                self.write_line(format_args_f!(
+                    "{Enclosure} {via.bot_enc_x} {via.bot_enc_y} {via.top_enc_x} {via.top_enc_y} ; "
+                ))?;
+                if let Some(ref rowcol) = via.rowcol {
+                    self.write_line(format_args_f!("{RowCol} {rowcol.rows} {rowcol.cols} ; "))?;
+                }
+                if let Some(ref origin) = via.origin {
+                    self.write_line(format_args_f!("{Origin} {origin.x} {origin.y} ; "))?;
+                }
+                if let Some(ref offset) = via.offset {
+                    self.write_line(format_args_f!(
+                        "{Offset} {offset.bot_x} {offset.bot_y} {offset.top_x} {offset.top_y} ; "
+                    ))?;
+                }
+                // PATTERN would go here
             }
         }
 
         // PROPERTIES would go here
-        // if via.properties.is_some() { }
 
         self.indent -= 1;
         self.write_line(format_args_f!("{End} {} ", via.name))?;
