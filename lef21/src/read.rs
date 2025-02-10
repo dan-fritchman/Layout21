@@ -1249,22 +1249,87 @@ impl<'src> LefParser<'src> {
         }
 
         if let LefKey::ViaRule = self.peek_key()? {
-            self.fail(LefParseErrorType::Unsupported)?;
-        }
+            self.advance()?; // Eat the VIARULE key
+            let mut data = LefGeneratedViaDefBuilder::default();
+            data = data.via_rule_name(self.parse_ident()?);
+            self.expect(TokenType::SemiColon)?;
+            loop {
+                match self.peek_key()? {
+                    LefKey::CutSize => {
+                        self.advance()?; // Eat the CUTSIZE key
+                        data = data.cut_size_x(self.parse_number()?);
+                        data = data.cut_size_y(self.parse_number()?);
+                        self.expect(TokenType::SemiColon)?;
+                    }
+                    LefKey::Layers => {
+                        self.advance()?; // Eat the LAYERS key
+                        data = data.bot_metal_layer(self.parse_ident()?);
+                        data = data.cut_layer(self.parse_ident()?);
+                        data = data.top_metal_layer(self.parse_ident()?);
+                        self.expect(TokenType::SemiColon)?;
+                    }
+                    LefKey::CutSpacing => {
+                        self.advance()?; // Eat the CUTSPACING key
+                        data = data.cut_spacing_x(self.parse_number()?);
+                        data = data.cut_spacing_y(self.parse_number()?);
+                        self.expect(TokenType::SemiColon)?;
+                    }
+                    LefKey::Enclosure => {
+                        self.advance()?; // Eat the ENCLOSURE key
+                        data = data.bot_enc_x(self.parse_number()?);
+                        data = data.bot_enc_y(self.parse_number()?);
+                        data = data.top_enc_x(self.parse_number()?);
+                        data = data.top_enc_y(self.parse_number()?);
+                        self.expect(TokenType::SemiColon)?;
+                    }
+                    LefKey::RowCol => {
+                        self.advance()?; // Eat the ROWCOL key
+                        data = data.rowcol(LefRowCol {
+                            rows: self.parse_number()?,
+                            cols: self.parse_number()?,
+                        });
+                        self.expect(TokenType::SemiColon)?;
+                    }
+                    LefKey::Origin => {
+                        self.advance()?; // Eat the ORIGIN key
+                        data = data.origin(self.parse_point()?);
+                        self.expect(TokenType::SemiColon)?;
+                    }
+                    LefKey::Offset => {
+                        self.advance()?; // Eat the OFFSET key
+                        data = data.offset(LefOffset {
+                            x_bot: self.parse_number()?,
+                            y_bot: self.parse_number()?,
+                            x_top: self.parse_number()?,
+                            y_top: self.parse_number()?,
+                        });
+                        self.expect(TokenType::SemiColon)?;
+                    }
+                    LefKey::Pattern | LefKey::Property => {
+                        self.fail(LefParseErrorType::Unsupported)?
+                    }
+                    LefKey::End => {
+                        break;
+                    }
+                    _ => self.fail(LefParseErrorType::InvalidKey)?,
+                }
+            }
+            via = via.data(LefViaDefData::Generated(data.build()?));
+        } else {
+            let mut data = LefFixedViaDefBuilder::default();
 
-        let mut data = LefFixedViaDefBuilder::default();
+            if let LefKey::Resistance = self.peek_key()? {
+                self.advance()?; // Eat the RESISTANCE key
+                data = data.resistance_ohms(self.parse_number()?);
+            }
 
-        if let LefKey::Resistance = self.peek_key()? {
-            self.advance()?; // Consume the DEFAULT
-            data = data.resistance_ohms(self.parse_number()?);
+            let mut layers = Vec::new();
+            while let LefKey::Layer = self.peek_key()? {
+                layers.push(self.parse_via_layer_geometries()?);
+            }
+            data = data.layers(layers);
+            via = via.data(LefViaDefData::Fixed(data.build()?));
         }
-
-        let mut layers = Vec::new();
-        while let LefKey::Layer = self.peek_key()? {
-            layers.push(self.parse_via_layer_geometries()?);
-        }
-        data = data.layers(layers);
-        via = via.data(LefViaDefData::Fixed(data.build()?));
 
         match self.peek_key()? {
             LefKey::Property => self.fail(LefParseErrorType::Unsupported)?,

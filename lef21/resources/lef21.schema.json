@@ -210,16 +210,11 @@
       ]
     },
     "vias": {
-      "description": "Via Definitions (Unsupported)",
-      "writeOnly": true,
-      "anyOf": [
-        {
-          "$ref": "#/definitions/Unsupported"
-        },
-        {
-          "type": "null"
-        }
-      ]
+      "description": "Via Definitions",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/LefViaDef"
+      }
     }
   },
   "definitions": {
@@ -459,6 +454,27 @@
         }
       ]
     },
+    "LefFixedViaDef": {
+      "title": "Lef Fixed Via Definition",
+      "type": "object",
+      "properties": {
+        "layers": {
+          "description": "Layers & Geometries",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/LefViaLayerGeometries"
+          }
+        },
+        "resistance_ohms": {
+          "description": "Resistance of the via.\n\nUsing this field is not recommended.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+        }
+      }
+    },
     "LefForeign": {
       "title": "Lef Foreign Cell Declaration",
       "description": "Declares the linkage to another cell, commonly in DEF or GDSII format. Foreign-cell references are stored exacty as in the LEF format: as a string cell-name.",
@@ -492,6 +508,126 @@
               "type": "null"
             }
           ]
+        }
+      }
+    },
+    "LefGeneratedViaDef": {
+      "title": "Lef Generated Via Definition",
+      "type": "object",
+      "required": [
+        "bot_enc_x",
+        "bot_enc_y",
+        "bot_metal_layer",
+        "cut_layer",
+        "cut_size_x",
+        "cut_size_y",
+        "cut_spacing_x",
+        "cut_spacing_y",
+        "top_enc_x",
+        "top_enc_y",
+        "top_metal_layer",
+        "via_rule_name"
+      ],
+      "properties": {
+        "bot_enc_x": {
+          "description": "Horizontal enclosure of vias by bottom metal layer.",
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+        },
+        "bot_enc_y": {
+          "description": "Vertical enclosure of vias by bottom metal layer.",
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+        },
+        "bot_metal_layer": {
+          "description": "The bottom metal layer.",
+          "type": "string"
+        },
+        "cut_layer": {
+          "description": "The cut (via) layer.",
+          "type": "string"
+        },
+        "cut_size_x": {
+          "description": "The width of the via rectangles.",
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+        },
+        "cut_size_y": {
+          "description": "The height of the via rectangles.",
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+        },
+        "cut_spacing_x": {
+          "description": "The horizontal spacing (right edge to next left edge) between cuts.",
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+        },
+        "cut_spacing_y": {
+          "description": "The vertical spacing (top edge to bottom edge of cut above) between cuts.",
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+        },
+        "offset": {
+          "description": "Offsets of top and bottom metal layers.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/LefOffset"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "origin": {
+          "description": "The origin of the coordinate system specifying all of the via's shapes.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/LefPoint"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pattern": {
+          "description": "Specifies a pattern identifying which cuts are missing from the array.\n\nIn the absence of a specified pattern, all cuts are present. This field is currently unsupported.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Unsupported"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rowcol": {
+          "description": "The via array's number of rows and columns.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/LefRowCol"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "top_enc_x": {
+          "description": "Horizontal enclosure of vias by top metal layer.",
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+        },
+        "top_enc_y": {
+          "description": "Vertical enclosure of vias by top metal layer.",
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+        },
+        "top_metal_layer": {
+          "description": "The top metal layer.",
+          "type": "string"
+        },
+        "via_rule_name": {
+          "description": "The name of the VIARULE.\n\nMust refer to a previously defined VIARULE GENERATE statement.",
+          "type": "string"
         }
       }
     },
@@ -902,6 +1038,34 @@
       ],
       "properties": {
         "mask": {
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+        }
+      }
+    },
+    "LefOffset": {
+      "title": "Lef Offset",
+      "type": "object",
+      "required": [
+        "x_bot",
+        "x_top",
+        "y_bot",
+        "y_top"
+      ],
+      "properties": {
+        "x_bot": {
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+        },
+        "x_top": {
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+        },
+        "y_bot": {
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+        },
+        "y_top": {
           "type": "string",
           "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
         }
@@ -1348,6 +1512,24 @@
         }
       ]
     },
+    "LefRowCol": {
+      "title": "Lef Row and Column",
+      "type": "object",
+      "required": [
+        "cols",
+        "rows"
+      ],
+      "properties": {
+        "cols": {
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+        },
+        "rows": {
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+        }
+      }
+    },
     "LefShape": {
       "title": "Lef Shape Enumeration",
       "description": "Includes each of LEF's individual geometric primitives: rectangles, polygons, and paths.",
@@ -1612,6 +1794,166 @@
           "type": "string"
         }
       }
+    },
+    "LefViaDef": {
+      "title": "Lef Via Definition",
+      "description": "LEF supports two kinds of vias: fixed vias and generated vias. Fixed vias contain a set of shapes (rectangles and/or polygons). Generated vias use a VIARULE statement to define via parameters.",
+      "type": "object",
+      "required": [
+        "data",
+        "name"
+      ],
+      "properties": {
+        "data": {
+          "description": "The actual content of the via definition, which may be a fixed via or a generated via.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/LefViaDefData"
+            }
+          ]
+        },
+        "default": {
+          "description": "Indicates that this via is a default via for connecting a pair of metal layers.\n\nThe metal layers connected are inferrred from the via's [`LefViaLayerGeometries`], which normally contain geometry on two metal layers and one cut layer.",
+          "default": false,
+          "type": "boolean"
+        },
+        "name": {
+          "description": "The name of the via.",
+          "type": "string"
+        },
+        "properties": {
+          "description": "Properties (Unsupported)",
+          "writeOnly": true,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Unsupported"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "LefViaDefData": {
+      "title": "Lef Via Definition Data",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "Fixed"
+          ],
+          "properties": {
+            "Fixed": {
+              "$ref": "#/definitions/LefFixedViaDef"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "Generated"
+          ],
+          "properties": {
+            "Generated": {
+              "$ref": "#/definitions/LefGeneratedViaDef"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "LefViaLayerGeometries": {
+      "title": "Lef Single-Layer Geometry Store for Vias",
+      "description": "[LefViaLayerGeometries] stores the combination of a layer (name) and suite of geometric primitives (rectangles and/or polygons) on that layer.\n\n[LefViaLayerGeometries] are the primary building block of [LefFixedViaDef]s.",
+      "type": "object",
+      "required": [
+        "layer_name"
+      ],
+      "properties": {
+        "layer_name": {
+          "description": "Layer Name",
+          "type": "string"
+        },
+        "shapes": {
+          "description": "Geometries",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/LefViaShape"
+          }
+        }
+      }
+    },
+    "LefViaShape": {
+      "title": "Lef Via Shape Enumeration",
+      "description": "These are the geometric primitives that can be included in a via definition.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "Rect"
+          ],
+          "properties": {
+            "Rect": {
+              "type": "array",
+              "items": [
+                {
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/LefMask"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                {
+                  "$ref": "#/definitions/LefPoint"
+                },
+                {
+                  "$ref": "#/definitions/LefPoint"
+                }
+              ],
+              "maxItems": 3,
+              "minItems": 3
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "Polygon"
+          ],
+          "properties": {
+            "Polygon": {
+              "type": "array",
+              "items": [
+                {
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/LefMask"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/LefPoint"
+                  }
+                }
+              ],
+              "maxItems": 2,
+              "minItems": 2
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
     },
     "Unsupported": {
       "title": "Unsupported Feature",

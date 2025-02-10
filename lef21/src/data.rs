@@ -440,8 +440,6 @@ pub struct LefVia {
 /// LEF supports two kinds of vias: fixed vias and generated vias.
 /// Fixed vias contain a set of shapes (rectangles and/or polygons).
 /// Generated vias use a VIARULE statement to define via parameters.
-///
-/// Generated vias are currently unsupported.
 #[derive(Builder, Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[builder(pattern = "owned", setter(into))]
 pub struct LefViaDef {
@@ -466,7 +464,7 @@ pub struct LefViaDef {
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub enum LefViaDefData {
     Fixed(LefFixedViaDef),
-    Generated(Unsupported),
+    Generated(LefGeneratedViaDef),
 }
 /// # Lef Fixed Via Definition
 #[derive(Builder, Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
@@ -482,6 +480,72 @@ pub struct LefFixedViaDef {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[builder(default)]
     pub layers: Vec<LefViaLayerGeometries>,
+}
+/// # Lef Generated Via Definition
+#[derive(Builder, Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[builder(pattern = "owned", setter(into))]
+pub struct LefGeneratedViaDef {
+    /// The name of the VIARULE.
+    ///
+    /// Must refer to a previously defined VIARULE GENERATE statement.
+    pub via_rule_name: String,
+    /// The width of the via rectangles.
+    pub cut_size_x: LefDecimal,
+    /// The height of the via rectangles.
+    pub cut_size_y: LefDecimal,
+    /// The bottom metal layer.
+    pub bot_metal_layer: String,
+    /// The cut (via) layer.
+    pub cut_layer: String,
+    /// The top metal layer.
+    pub top_metal_layer: String,
+    /// The horizontal spacing (right edge to next left edge) between cuts.
+    pub cut_spacing_x: LefDecimal,
+    /// The vertical spacing (top edge to bottom edge of cut above) between cuts.
+    pub cut_spacing_y: LefDecimal,
+    /// Horizontal enclosure of vias by bottom metal layer.
+    pub bot_enc_x: LefDecimal,
+    /// Vertical enclosure of vias by bottom metal layer.
+    pub bot_enc_y: LefDecimal,
+    /// Horizontal enclosure of vias by top metal layer.
+    pub top_enc_x: LefDecimal,
+    /// Vertical enclosure of vias by top metal layer.
+    pub top_enc_y: LefDecimal,
+    /// The via array's number of rows and columns.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
+    pub rowcol: Option<LefRowCol>,
+    /// The origin of the coordinate system specifying all of the via's shapes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
+    pub origin: Option<LefPoint>,
+    /// Offsets of top and bottom metal layers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
+    pub offset: Option<LefOffset>,
+    /// Specifies a pattern identifying which cuts are missing from the array.
+    ///
+    /// In the absence of a specified pattern, all cuts are present.
+    /// This field is currently unsupported.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
+    pub pattern: Option<Unsupported>,
+}
+/// # Lef Row and Column
+#[derive(Builder, Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[builder(pattern = "owned", setter(into))]
+pub struct LefRowCol {
+    pub rows: LefDecimal,
+    pub cols: LefDecimal,
+}
+/// # Lef Offset
+#[derive(Builder, Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[builder(pattern = "owned", setter(into))]
+pub struct LefOffset {
+    pub x_bot: LefDecimal,
+    pub y_bot: LefDecimal,
+    pub x_top: LefDecimal,
+    pub y_top: LefDecimal,
 }
 /// # Lef Single-Layer Geometry Store for Vias
 ///
@@ -792,6 +856,14 @@ enumstr!(
 
         // VIA Fields
         Default: "DEFAULT",
+        ViaRule: "VIARULE",
+        CutSize: "CUTSIZE",
+        Layers: "LAYERS",
+        CutSpacing: "CUTSPACING",
+        Enclosure: "ENCLOSURE",
+        RowCol: "ROWCOL",
+        Offset: "OFFSET",
+        Pattern: "PATTERN",
 
         // Unsupported
         Property: "PROPERTY",
@@ -799,7 +871,6 @@ enumstr!(
         ClearanceMeasure: "CLEARANCEMEASURE",
         PropertyDefinitions: "PROPERTYDEFINITIONS",
         MaxViaStack: "MAXVIASTACK",
-        ViaRule: "VIARULE",
         Generate: "GENERATE",
         NonDefaultRule: "NONDEFAULTRULE",
     }
