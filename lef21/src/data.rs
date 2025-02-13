@@ -81,28 +81,33 @@ pub struct LefLibrary {
     #[builder(default, setter(strip_option))]
     pub units: Option<LefUnits>,
 
+    // Fixed-Mask attribute
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub fixed_mask: bool,
+
+    /// Clearance Measure
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub clearance_measure: Option<LefClearanceStyle>,
+
     // Unsupported fields recommended for *either* LEF "cell libraries" or "technologies"
     /// Syntax Extensions (Unsupported)
     #[serde(default, skip_serializing)]
     #[builder(default)]
-    pub extensions: Option<Unsupported>,
+    pub extensions: Vec<LefExtension>,
     // Fields recommended for LEF technology descriptions, AKA "tech-lefs"
     /// Manufacturing Grid
-    #[serde(default, skip_serializing)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default)]
-    pub manufacturing_grid: Option<Unsupported>,
+    pub manufacturing_grid: Option<LefDecimal>,
     /// "Use Min Spacing" Option
-    #[serde(default, skip_serializing)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default)]
     pub use_min_spacing: Option<LefOnOff>,
-    /// Clearance Measure
-    #[serde(default, skip_serializing)]
-    #[builder(default)]
-    pub clearance_measure: Option<Unsupported>,
     /// Property Definitions
-    #[serde(default, skip_serializing)]
-    #[builder(default)]
-    pub property_definitions: Option<Unsupported>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub property_definitions: Vec<LefPropertyDefinition>,
     /// Layer Definitions
     #[serde(default, skip_serializing)]
     #[builder(default)]
@@ -208,17 +213,17 @@ pub struct LefMacro {
     #[builder(default)]
     pub fixed_mask: bool,
 
+    /// Properties
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[builder(default)]
+    pub properties: Vec<LefProperty>,
+
     /// Density Objects
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub density: Option<Vec<LefDensityGeometries>>,
-
-    // Unsupported
-    /// Properties (Unsupported)
-    #[serde(default, skip_serializing)]
-    #[builder(default)]
-    pub properties: Option<Unsupported>,
 }
+
 impl LefMacro {
     /// Create a new and initially empty [LefMacro] with name `name`
     pub fn new(name: impl Into<String>) -> LefMacro {
@@ -251,6 +256,15 @@ pub struct LefForeign {
     pub pt: Option<LefPoint>,
     /// Orientation
     pub orient: Option<LefOrient>,
+}
+
+// Customized Syntax Extension
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+pub struct LefExtension {
+    /// Name of the extension
+    pub name: String,
+    /// Stringified data contained in the extension
+    pub data: String,
 }
 /// # Lef Pin Definition
 ///
@@ -308,11 +322,10 @@ pub struct LefPin {
     #[builder(default, setter(strip_option))]
     pub net_expr: Option<String>,
 
-    // Unsupported
-    /// Properties (Unsupported)
-    #[serde(default, skip_serializing)]
+    /// Properties
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[builder(default)]
-    pub properties: Option<Unsupported>,
+    pub properties: Vec<LefProperty>,
 }
 /// # Lef Pin Direction
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
@@ -426,7 +439,7 @@ pub struct LefDensityRectangle {
 /// # Lef Via Instance
 ///
 /// A located instance of via-type `via_name`, typically used as part of a [LefLayerGeometries] definition.
-/// The via-type is generally interpreted as a string-valued reference into tech-lef data.
+/// The via-type is generally interpreted as a string-valued <reference into tech-lef data.
 /// It is stored in each [LefVia] exactly as in LEF, as a string type-name.
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub struct LefVia {
@@ -578,6 +591,38 @@ pub enum LefLayerSpacing {
     Spacing(LefDecimal),
     DesignRuleWidth(LefDecimal),
 }
+
+/// # User Defined Property Instantiation
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+pub struct LefProperty {
+    pub name: String,
+    pub value: String,
+}
+
+/// # Numeric Range for [LefPropertyDefinition]
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+pub struct LefPropertyRange {
+    pub begin: LefDecimal,
+    pub end: LefDecimal,
+}
+
+/// # User Defined Property Definition
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+pub enum LefPropertyDefinition {
+    LefString(LefPropertyDefinitionObjectType, String, Option<String>),
+    LefReal(
+        LefPropertyDefinitionObjectType,
+        String,
+        Option<LefDecimal>,
+        Option<LefPropertyRange>,
+    ),
+    LefInteger(
+        LefPropertyDefinitionObjectType,
+        String,
+        Option<LefDecimal>,
+        Option<LefPropertyRange>,
+    ),
+}
 /// # Lef Geometric Object Enumeration
 /// Includes [LefShape]s and Iterators thereof
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
@@ -587,8 +632,17 @@ pub enum LefGeometry {
     /// Repeated Iteration/ Array of Shapes (Unsupported)
     Iterate {
         shape: LefShape,
-        pattern: Option<Unsupported>,
+        pattern: LefStepPattern,
     },
+}
+
+/// # Lef Step Pattern for ITERATE
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+pub struct LefStepPattern {
+    pub numx: LefDecimal,
+    pub numy: LefDecimal,
+    pub spacex: LefDecimal,
+    pub spacey: LefDecimal,
 }
 /// # Lef Shape Enumeration
 /// Includes each of LEF's individual geometric primitives:
@@ -596,8 +650,8 @@ pub enum LefGeometry {
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub enum LefShape {
     Rect(Option<LefMask>, LefPoint, LefPoint),
-    Polygon(Vec<LefPoint>),
-    Path(Vec<LefPoint>),
+    Polygon(Option<LefMask>, Vec<LefPoint>),
+    Path(Option<LefMask>, Vec<LefPoint>),
 }
 /// # Lef X-Y Spatial Point
 ///
@@ -798,10 +852,14 @@ enumstr!(
         RowPattern: "ROWPATTERN",
         Site: "SITE",
         Size: "SIZE",
+        Do: "DO",
+        Iterate: "ITERATE",
+        Step: "STEP",
         By: "BY",
         BusBitChars: "BUSBITCHARS",
         DividerChar: "DIVIDERCHAR",
         BeginExtension: "BEGINEXT",
+        EndExtension: "ENDEXT",
         Tristate: "TRISTATE",
         Input: "INPUT",
         Output: "OUTPUT",
@@ -815,13 +873,15 @@ enumstr!(
         FixedMask: "FIXEDMASK",
         Mask: "MASK",
         UseMinSpacing: "USEMINSPACING",
-
-        Density: "DENSITY",
         TaperRule: "TAPERRULE",
         NetExpr: "NETEXPR",
         SupplySensitivity: "SUPPLYSENSITIVITY",
         GroundSensitivity: "GROUNDSENSITIVITY",
         MustJoin: "MUSTJOIN",
+        Property: "PROPERTY",
+        ManufacturingGrid: "MANUFACTURINGGRID",
+        ClearanceMeasure: "CLEARANCEMEASURE",
+        Density: "DENSITY",
 
         // UNITS Fields
         Units: "UNITS",
@@ -865,11 +925,14 @@ enumstr!(
         Offset: "OFFSET",
         Pattern: "PATTERN",
 
-        // Unsupported
-        Property: "PROPERTY",
-        ManufacturingGrid: "MANUFACTURINGGRID",
-        ClearanceMeasure: "CLEARANCEMEASURE",
+        // PropertyDefinitions
         PropertyDefinitions: "PROPERTYDEFINITIONS",
+        String: "STRING",
+        Real: "REAL",
+        Range: "RANGE",
+        Integer: "INTEGER",
+
+        // Unsupported
         MaxViaStack: "MAXVIASTACK",
         Generate: "GENERATE",
         NonDefaultRule: "NONDEFAULTRULE",
@@ -886,6 +949,13 @@ enumstr!(
     LefOnOff {
         On: "ON",
         Off: "OFF",
+    }
+);
+enumstr!(
+    /// Clearance Measure Spacing Styles
+    LefClearanceStyle {
+        MaxXY: "MAXXY",
+        Euclidean: "EUCLIDEAN",
     }
 );
 enumstr!(
@@ -1020,7 +1090,18 @@ enumstr!(
         Oxide4: "OXIDE4",
     }
 );
-
+enumstr!(
+    /// Valid object types for [LefPropertyDefinition]
+    LefPropertyDefinitionObjectType {
+        Layer: "LAYER",
+        Library: "LIBRARY",
+        Macro: "MACRO",
+        NonDefaultRule: "NONDEFAULTRULE",
+        Pin: "PIN",
+        Via: "VIA",
+        ViaRule: "VIARULE",
+    }
+);
 use super::read::{LefParseErrorType, ParserState};
 
 /// # Lef Error Enumeration

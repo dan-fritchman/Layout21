@@ -53,8 +53,9 @@ impl<'wr> LefWriter<'wr> {
     /// Fields are written in the LEF-recommended order
     fn write_lib(&mut self, lib: &LefLibrary) -> LefResult<()> {
         use LefKey::{
-            BusBitChars, DividerChar, End, Library, NamesCaseSensitive, NoWireExtensionAtPin, Obs,
-            Units, UseMinSpacing, Version,
+            BusBitChars, ClearanceMeasure, DividerChar, End, FixedMask, Library, ManufacturingGrid,
+            NamesCaseSensitive, NoWireExtensionAtPin, Obs, PropertyDefinitions, UseMinSpacing,
+            Version,
         };
         if let Some(ref v) = lib.version {
             // Save a copy in our session-state
@@ -86,49 +87,81 @@ impl<'wr> LefWriter<'wr> {
         if let Some(ref v) = lib.divider_char {
             self.write_line(format_args_f!("{DividerChar} \"{}\" ; ", v))?;
         }
+        if let Some(ref v) = lib.units {
+            self.write_units(v)?
+        }
+        // MANUFACTURINGGRID
+        if let Some(ref v) = lib.manufacturing_grid {
+            self.write_line(format_args_f!("{ManufacturingGrid} {} ; ", v))?;
+        }
+        // USEMINSPACING
         if let Some(ref v) = lib.use_min_spacing {
             self.write_line(format_args_f!("{UseMinSpacing} {Obs} {} ; ", v))?;
         }
-        if let Some(ref v) = lib.units {
-            self.write_line(format_args_f!("{Units} "))?;
-            self.indent += 1;
-            if let Some(ref db) = v.database_microns {
-                self.write_line(format_args_f!("DATABASE MICRONS {} ; ", db.0))?;
-            }
-            // Other {Units} would be written here
-            // if v.time_ns.is_some()
-            //     || v.capacitance_pf.is_some()
-            //     || v.resistance_ohms.is_some()
-            //     || v.power_mw.is_some()
-            //     || v.current_ma.is_some()
-            //     || v.voltage_volts.is_some()
-            //     || v.frequency_mhz.is_some()
-            // { }
-            self.indent -= 1;
-            self.write_line(format_args_f!("{End} {Units} "))?;
+        // CLEARANCEMEASURE
+        if let Some(ref v) = lib.clearance_measure {
+            self.write_line(format_args_f!("{ClearanceMeasure} {} ; ", v))?;
         }
+        // PROPERTYDEFINITIONS
+        if lib.property_definitions.len() > 0 {
+            self.write_line(format_args_f!("{PropertyDefinitions} "))?;
+            self.indent += 1;
+            for propdef in lib.property_definitions.iter() {
+                let propdef_str: String = match propdef {
+                    LefPropertyDefinition::LefString(objtype, name, None) => {
+                        format!("{objtype} {name} {}", LefKey::String)
+                    }
+                    LefPropertyDefinition::LefString(objtype, name, Some(val)) => {
+                        format!("{objtype} {name} {} {}", LefKey::String, val)
+                    }
+                    LefPropertyDefinition::LefReal(objtype, name, value, range) => {
+                        self.format_numeric_prop_def(objtype, name, LefKey::Real, value, range)?
+                    }
+                    LefPropertyDefinition::LefInteger(objtype, name, value, range) => {
+                        self.format_numeric_prop_def(objtype, name, LefKey::Integer, value, range)?
+                    }
+                };
+                self.write_line(format_args_f!("{} ; ", propdef_str))?;
+            }
+            self.indent -= 1;
+            self.write_line(format_args_f!("{End} {PropertyDefinitions} "))?;
+        }
+        // FIXEDMASK
+        if lib.fixed_mask {
+            self.write_line(format_args_f!("{FixedMask} ;"))?;
+        }
+
+        // TODO: LAYER
+        // TODO: MAXVIASTACK
 
         // Write each via definition
         for via in lib.vias.iter() {
             self.write_via(via)?;
         }
 
-        // Write each site definition
+        // TODO: NONDEFAULTRULE
+
+        // Write each SITE definition
         for site in lib.sites.iter() {
             self.write_site(site)?;
         }
-        // Write each macro definition
+        // Write each MACRO definition
         for mac in lib.macros.iter() {
             self.write_macro(mac)?;
         }
 
-        // EXTENSIONS would be written here
-        // if let Some(ref v) = lib.extensions { }
+        for ext in lib.extensions.iter() {
+            use LefKey::{BeginExtension, EndExtension};
+            self.write_line(format_args_f!(
+                "{BeginExtension} {ext.name} {ext.data} {EndExtension}"
+            ))?;
+        }
 
         self.write_line(format_args_f!("{End} {Library} \n"))?;
         self.dest.flush()?;
         Ok(())
     }
+
     /// Write a [LefViaDef].
     fn write_via(&mut self, via: &LefViaDef) -> LefResult<()> {
         use LefKey::{
@@ -187,6 +220,33 @@ impl<'wr> LefWriter<'wr> {
         self.write_line(format_args_f!("{End} {} ", via.name))?;
         Ok(())
     }
+
+    // helper function to format numeric PROPERTYDEFINITION entries
+    //   for "objType propName [RANGE begin end] [value]"
+    fn format_numeric_prop_def(
+        &mut self,
+        objtype: &LefPropertyDefinitionObjectType,
+        name: &String,
+        key: LefKey,
+        value: &Option<LefDecimal>,
+        range: &Option<LefPropertyRange>,
+    ) -> LefResult<String> {
+        use LefKey::Range;
+        let mut string_list: Vec<String> = Vec::new();
+        string_list.push(objtype.to_string());
+        string_list.push(name.to_string());
+        string_list.push(key.to_string());
+        match range {
+            Some(r) => string_list.push(format!("{Range} {} {}", r.begin, r.end)),
+            None => (),
+        }
+        match value {
+            Some(v) => string_list.push(v.to_string()),
+            None => (),
+        }
+        Ok(string_list.join(" "))
+    }
+
     /// Write a [LefSite] definition
     fn write_site(&mut self, site: &LefSite) -> LefResult<()> {
         use LefKey::{By, Class, End, Site, Size};
@@ -203,6 +263,45 @@ impl<'wr> LefWriter<'wr> {
         self.write_line(format_args_f!("{End} {site.name} ; "))?;
         Ok(())
     }
+
+    /// Write a [LefUnits] block.
+    fn write_units(&mut self, units: &LefUnits) -> LefResult<()> {
+        use LefKey::{
+            Capacitance, Current, Database, End, Frequency, Megahertz, Microns, Milliamps,
+            Milliwatts, Nanoseconds, Ohms, Picofarads, Power, Resistance, Time, Units, Voltage,
+            Volts,
+        };
+        self.write_line(format_args_f!("{Units} "))?;
+        self.indent += 1;
+        if let Some(ref val) = units.time_ns {
+            self.write_line(format_args_f!("{Time} {Nanoseconds} {} ; ", val))?;
+        }
+        if let Some(ref val) = units.capacitance_pf {
+            self.write_line(format_args_f!("{Capacitance} {Picofarads} {} ; ", val))?;
+        }
+        if let Some(ref val) = units.resistance_ohms {
+            self.write_line(format_args_f!("{Resistance} {Ohms} {} ; ", val))?;
+        }
+        if let Some(ref val) = units.power_mw {
+            self.write_line(format_args_f!("{Power} {Milliwatts} {} ; ", val))?;
+        }
+        if let Some(ref val) = units.current_ma {
+            self.write_line(format_args_f!("{Current} {Milliamps} {} ; ", val))?;
+        }
+        if let Some(ref val) = units.voltage_volts {
+            self.write_line(format_args_f!("{Voltage} {Volts} {} ; ", val))?;
+        }
+        if let Some(ref db) = units.database_microns {
+            self.write_line(format_args_f!("{Database} {Microns} {} ; ", db.0))?;
+        }
+        if let Some(ref val) = units.frequency_mhz {
+            self.write_line(format_args_f!("{Frequency} {Megahertz} {} ; ", val))?;
+        }
+        self.indent -= 1;
+        self.write_line(format_args_f!("{End} {Units} "))?;
+        Ok(())
+    }
+
     /// Write a [LefMacro], in recommended order of fields.
     fn write_macro(&mut self, mac: &LefMacro) -> LefResult<()> {
         use LefKey::{By, Eeq, End, FixedMask, Foreign, Macro, Obs, Origin, Site, Size, Source};
@@ -263,16 +362,24 @@ impl<'wr> LefWriter<'wr> {
             self.indent -= 1;
             self.write_line(format_args_f!("{End} "))?;
         }
+        for prop in mac.properties.iter() {
+            self.write_property(prop)?;
+        }
         if let Some(ref v) = mac.density {
             self.write_density(v)?;
         }
-        // PROPERTIES would go here
-        // if mac.properties.is_some() { }
 
         self.indent -= 1;
         self.write_line(format_args_f!("{End} {} ", mac.name))?;
         Ok(())
     }
+
+    fn write_property(&mut self, prop: &LefProperty) -> LefResult<()> {
+        use LefKey::Property;
+        self.write_line(format_args_f!("{Property} {} {}", prop.name, prop.value))?;
+        Ok(())
+    }
+
     /// Write a [LefPin] definition
     fn write_pin(&mut self, pin: &LefPin) -> LefResult<()> {
         use LefKey::{
@@ -315,6 +422,9 @@ impl<'wr> LefWriter<'wr> {
         }
         if let Some(ref v) = pin.net_expr {
             self.write_line(format_args_f!("{NetExpr} {v} ; "))?;
+        }
+        for prop in pin.properties.iter() {
+            self.write_property(prop)?;
         }
 
         // Most unsupported PINS features *would* go here.
@@ -387,22 +497,20 @@ impl<'wr> LefWriter<'wr> {
     }
     /// Writes a [`LefViaShape`].
     fn write_via_shape(&mut self, shape: &LefViaShape) -> LefResult<()> {
-        use LefKey::{Polygon, Rect};
+        use LefKey::{Mask, Polygon, Rect};
         match shape {
             LefViaShape::Rect(mask, p0, p1) => {
                 let mut line = format!("{Rect} ");
-                match mask {
-                    Some(mask) => line.push_str(&format!("MASK {mask} ")),
-                    None => (),
-                };
+                if let Some(mask) = mask {
+                    line.push_str(&format!("{Mask} {mask} "));
+                }
                 self.write_line(format_args_f!("{line}{p0} {p1} ; "))?;
             }
             LefViaShape::Polygon(mask, pts) => {
                 let mut line = format!("{Polygon} ");
-                match mask {
-                    Some(mask) => line.push_str(&format!("MASK {mask} ")),
-                    None => (),
-                };
+                if let Some(mask) = mask {
+                    line.push_str(&format!("{Mask} {mask} "));
+                }
                 let ptstr = pts
                     .iter()
                     .map(|x| x.to_string())
@@ -414,38 +522,74 @@ impl<'wr> LefWriter<'wr> {
         Ok(())
     }
     fn write_geom(&mut self, geom: &LefGeometry) -> LefResult<()> {
-        use LefKey::{Path, Polygon, Rect};
+        let mut wordlist: Vec<String> = Vec::new();
         match geom {
-            LefGeometry::Iterate { .. } => unimplemented!(),
-            LefGeometry::Shape(ref shape) => match shape {
-                LefShape::Rect(mask, p0, p1) => {
-                    let mut line = format!("{Rect} ");
-                    match mask {
-                        Some(mask) => line.push_str(&format!("MASK {mask} ")),
-                        None => (),
-                    };
-                    self.write_line(format_args_f!("{line}{p0} {p1} ; "))?;
-                }
-                LefShape::Polygon(pts) => {
-                    let ptstr = pts
-                        .iter()
-                        .map(|x| x.to_string())
-                        .collect::<Vec<String>>()
-                        .join(" ");
-                    self.write_line(format_args_f!("{Polygon} {ptstr} ;"))?;
-                }
-                LefShape::Path(pts) => {
-                    let ptstr = pts
-                        .iter()
-                        .map(|x| x.to_string())
-                        .collect::<Vec<String>>()
-                        .join(" ");
-                    self.write_line(format_args_f!("{Path} {ptstr} ;"))?;
-                }
-            },
+            LefGeometry::Iterate { shape, pattern } => {
+                wordlist.extend(self.format_geom(shape, Some(pattern)))
+            }
+            LefGeometry::Shape(ref shape) => wordlist.extend(self.format_geom(shape, None)),
         };
+        let linestr = wordlist.join(" ");
+        self.write_line(format_args_f!("{linestr} ;"))?;
         Ok(())
     }
+
+    fn format_geom(
+        &mut self,
+        shape: &LefShape,
+        step_pattern: Option<&LefStepPattern>,
+    ) -> Vec<String> {
+        let mut wordlist: Vec<String> = Vec::new();
+        match shape {
+            LefShape::Rect(mask, p0, p1) => {
+                wordlist.push(LefKey::Rect.to_string());
+                wordlist.extend(self.format_mask(mask));
+                if step_pattern != None {
+                    wordlist.push(LefKey::Iterate.to_string());
+                }
+                wordlist.push(p0.to_string());
+                wordlist.push(p1.to_string());
+            }
+            LefShape::Polygon(mask, pts) => {
+                wordlist.push(LefKey::Polygon.to_string());
+                wordlist.extend(self.format_mask(mask));
+                if step_pattern != None {
+                    wordlist.push(LefKey::Iterate.to_string());
+                }
+                wordlist.extend(pts.iter().map(|x| x.to_string()));
+            }
+            LefShape::Path(mask, pts) => {
+                wordlist.push(LefKey::Path.to_string());
+                wordlist.extend(self.format_mask(mask));
+                if step_pattern != None {
+                    wordlist.push(LefKey::Iterate.to_string());
+                }
+                wordlist.extend(pts.iter().map(|x| x.to_string()));
+            }
+        }
+        match step_pattern {
+            Some(pattern) => {
+                wordlist.push(LefKey::Do.to_string());
+                wordlist.push(pattern.numx.to_string());
+                wordlist.push(LefKey::By.to_string());
+                wordlist.push(pattern.numy.to_string());
+                wordlist.push(LefKey::Step.to_string());
+                wordlist.push(pattern.spacex.to_string());
+                wordlist.push(pattern.spacey.to_string());
+            }
+            _ => {}
+        }
+
+        wordlist
+    }
+    /// Format mask
+    fn format_mask(&mut self, mask: &Option<LefMask>) -> Vec<String> {
+        match mask {
+            Some(mask) => vec![LefKey::Mask.to_string(), mask.to_string()],
+            None => <Vec<String>>::new(),
+        }
+    }
+
     /// Write a vector of [LefSymmetry] to the SYMMETRY statement
     fn write_symmetries(&mut self, symms: &Vec<LefSymmetry>) -> LefResult<()> {
         use LefKey::Symmetry;
