@@ -7,6 +7,7 @@
 
 // Standard Lib Imports
 use std::io::Read;
+use std::num::FpCategory;
 use std::path::Path;
 use std::str::Chars;
 
@@ -302,6 +303,7 @@ pub enum LefParseContext {
     Macro,
     Pin,
     Port,
+    PropertyDefinitions,
     Geometry,
     Site,
     Units,
@@ -383,6 +385,7 @@ impl<'src> LefParser<'src> {
             _ => false,
         }
     }
+
     /// Assert the next token is a valid [LefKey], and if so return the associated [LefKey].  
     /// Does not advance the parser state.
     #[inline(always)]
@@ -444,7 +447,7 @@ impl<'src> LefParser<'src> {
         Ok(())
     }
     /// Assert that the next [Token] is a [TokenType::Name], and that its string value matches `ident`.
-    /// Unlike [LefParser::expect_keyword], this function matches literally, and does not convert to uppercase.
+    /// Unlike [LefParser::expect_key], this function matches literally, and does not convert to uppercase.
     fn expect_ident(&mut self, ident: &str) -> LefResult<()> {
         let txt = self.get_name()?;
         if txt == ident {
@@ -466,6 +469,8 @@ impl<'src> LefParser<'src> {
         let mut lib = LefLibraryBuilder::default();
         let mut macros = Vec::new();
         let mut sites = Vec::new();
+        let mut extensions = Vec::new();
+        let mut property_definitions = Vec::new();
         loop {
             if self.peek_token().is_none() && self.session.lef_version >= *V5P6 {
                 break; // End of input (without END LIBRARY), which is valid for lef 5.6+
@@ -507,6 +512,11 @@ impl<'src> LefParser<'src> {
                     self.expect_key(LefKey::Library)?; // Expect END LIBRARY
                     break;
                 }
+                LefKey::FixedMask => {
+                    self.advance()?; // Eat the FIXEDMASK key
+                    self.expect(TokenType::SemiColon)?;
+                    lib.fixed_mask(true)
+                }
                 LefKey::UseMinSpacing => {
                     self.advance()?;
                     self.expect_key(LefKey::Obs)?;
@@ -514,11 +524,60 @@ impl<'src> LefParser<'src> {
                     self.expect(TokenType::SemiColon)?;
                     lib.use_min_spacing(e)
                 }
-                LefKey::BeginExtension
-                | LefKey::ManufacturingGrid
-                | LefKey::ClearanceMeasure
-                | LefKey::PropertyDefinitions
-                | LefKey::MaxViaStack
+                LefKey::ClearanceMeasure => {
+                    self.advance()?;
+                    let e = self.parse_enum::<LefClearanceStyle>()?;
+                    self.expect(TokenType::SemiColon)?;
+                    lib.clearance_measure(e)
+                }
+                LefKey::ManufacturingGrid => {
+                    self.advance()?;
+                    let e = self.parse_number()?;
+                    self.expect(TokenType::SemiColon)?;
+                    lib.manufacturing_grid(e)
+                }
+                LefKey::BeginExtension => {
+                    self.advance()?;
+                    let value_token = self.expect(TokenType::StringLiteral)?;
+                    let name = String::from(self.txt(&value_token));
+                    let mut data = String::from("");
+                    loop {
+                        // Keep grabbing tokens (including whitespace and newlines) until
+                        // we hit the ENDEXT token.
+                        let nexttok = self.next_token()?;
+                        match nexttok {
+                            Some(tok) => {
+                                if tok.ttype == TokenType::Name {
+                                    let txt = self.txt(&tok);
+                                    match LefKey::parse(txt) {
+                                        Some(key) => {
+                                            if key == LefKey::EndExtension {
+                                                break;
+                                            }
+                                            ()
+                                        },
+                                        None => {
+                                            let _ignore = self.fail::<LefError>(LefParseErrorType::InvalidKey);
+                                            ()
+                                        }
+                                    }
+                                }
+                                data.push_str(self.txt(&tok));
+                                data.push_str(" ")
+                            },
+                            None => {
+                                self.fail(LefParseErrorType::InvalidKey)?;
+                            }
+                        }
+                    }
+                    extensions.push(LefExtension {name, data});
+                    lib
+                }
+                LefKey::PropertyDefinitions => {
+                    property_definitions.extend(self.parse_property_definitions()?);
+                    lib
+                },
+                LefKey::MaxViaStack
                 | LefKey::ViaRule
                 | LefKey::Generate
                 | LefKey::NonDefaultRule => self.fail(LefParseErrorType::Unsupported)?,
@@ -527,6 +586,8 @@ impl<'src> LefParser<'src> {
         }
         lib = lib.macros(macros);
         lib = lib.sites(sites);
+        lib = lib.extensions(extensions);
+        lib = lib.property_definitions(property_definitions);
         self.ctx.pop();
         Ok(lib.build()?)
     }
@@ -559,6 +620,7 @@ impl<'src> LefParser<'src> {
         mac = mac.name(name.clone());
         // Start parsing attributes, pins, and obstructions
         let mut pins = Vec::new();
+        let mut properties = Vec::new();
         loop {
             mac = match self.peek_key()? {
                 LefKey::Class => mac.class(self.parse_macro_class()?),
@@ -610,6 +672,10 @@ impl<'src> LefParser<'src> {
                     mac
                 }
                 LefKey::Obs => mac.obs(self.parse_obstructions()?),
+                LefKey::Property => {
+                    properties = self.parse_property(properties)?;
+                    mac
+                }
                 LefKey::Symmetry => mac.symmetry(self.parse_symmetries()?),
                 LefKey::Source => {
                     // Valid for versions <= 5.4
@@ -651,6 +717,7 @@ impl<'src> LefParser<'src> {
         pin = pin.name(name.clone());
         let mut ports = Vec::new();
         let mut antenna_attrs = Vec::new();
+        let mut properties = Vec::new();
         loop {
             pin = match self.peek_key()? {
                 LefKey::End => {
@@ -731,7 +798,10 @@ impl<'src> LefParser<'src> {
                     self.expect(TokenType::SemiColon)?;
                     pin.net_expr(String::from(self.txt(&value_token)))
                 }
-                LefKey::Property => self.fail(LefParseErrorType::Unsupported)?,
+                LefKey::Property => {
+                    properties = self.parse_property(properties)?;
+                    pin
+                }
                 _ => self.fail(LefParseErrorType::InvalidKey)?,
             }
         }
@@ -980,6 +1050,91 @@ impl<'src> LefParser<'src> {
     fn parse_point(&mut self) -> LefResult<LefPoint> {
         Ok(LefPoint::new(self.parse_number()?, self.parse_number()?))
     }
+
+    fn parse_property(&mut self, mut propvec: Vec<LefProperty>) -> LefResult<Vec<LefProperty>> {
+        self.expect_key(LefKey::Property)?;
+        while !self.matches(TokenType::SemiColon) {
+            let name = self.parse_ident()?;
+            match self.peek_token() {
+                Some(t) if (t.ttype == TokenType::Name || t.ttype == TokenType::Number || t.ttype ==TokenType::StringLiteral) => {
+                    let value = String::from(self.txt(&t));
+                    self.advance()?;
+                    propvec.push(LefProperty {name: name, value: value})
+                }
+                None | Some(_) => {
+                    self.fail_msg(LefParseErrorType::InvalidValue, "Unexpected token while parsing PROPERTY, must be string/number/name")?;
+                    //self.fail(LefParseErrorType::InvalidValue)?;
+                }
+            }
+        }
+        self.expect(TokenType::SemiColon)?;
+        Ok(propvec)
+    }
+
+    // get the tail portion of a numeric PROPERTYDEFINITION entry which has an optional value and range
+    fn parse_property_definition_tail(&mut self) -> LefResult<(Option<LefDecimal>, Option<LefPropertyRange>)> {
+        let mut lvalue: Option<LefDecimal> = None;
+        let mut lrange: Option<LefPropertyRange> = None;
+        if self.matches(TokenType::Name) {
+            self.expect_key(LefKey::Range)?;
+            let rbegin = self.parse_number()?;
+            let rend = self.parse_number()?;
+            lrange = Some(LefPropertyRange {begin: rbegin, end: rend});
+        }
+        if self.matches(TokenType::Number) {
+            lvalue = Some(self.parse_number()?);
+        }
+        self.expect(TokenType::SemiColon)?;
+        return Ok((lvalue, lrange));
+    }
+
+    /// Parse [LefPropertyDefinition]s
+    fn parse_property_definitions(&mut self) -> LefResult<Vec<LefPropertyDefinition>> {
+        use LefKey::{End, Layer, Library, Macro, NonDefaultRule, Pin, PropertyDefinitions, Via, ViaRule};
+        self.ctx.push(LefParseContext::PropertyDefinitions);
+        self.expect_key(PropertyDefinitions)?;
+        let mut propdefs = Vec::new();
+        loop {
+            match self.peek_key()? {
+                Layer | Library | Macro | NonDefaultRule | Pin | Via | ViaRule => {
+                    let objtype = self.parse_enum::<LefPropertyDefinitionObjectType>()?;
+                    let propname = String::from(self.get_name()?); 
+                    match self.get_key()? {
+                        LefKey::String => {
+                            let value = if self.matches(TokenType::SemiColon) {
+                                None
+                            } else {
+                                let tok = self.expect(TokenType::StringLiteral)?;
+                                let txt = self.txt(&tok);
+                                Some(String::from(txt))
+                            };
+                            self.expect(TokenType::SemiColon)?;
+                            propdefs.push(LefPropertyDefinition::LefString(objtype, propname, value));
+                        }
+                        LefKey::Real => {
+                            let (optval, optrange) = self.parse_property_definition_tail()?;
+                            propdefs.push(LefPropertyDefinition::LefReal(objtype, propname, optval, optrange));
+                        }
+                        LefKey::Integer => {
+                            let (optval, optrange) = self.parse_property_definition_tail()?;
+                            propdefs.push(LefPropertyDefinition::LefInteger(objtype, propname, optval, optrange));
+                        }
+                        _ => self.fail(LefParseErrorType::InvalidKey)?,
+                    }
+                }
+                End => {
+                    self.advance()?;
+                    self.expect_key(PropertyDefinitions)?;
+                    break; // End of PROPERTYDEFINITIONS definitions
+                }
+                _ => self.fail(LefParseErrorType::InvalidKey)?,
+            }
+        }
+        self.ctx.pop();
+        Ok(propdefs)
+    }
+
+
     /// Parse [LefUnits] definitions
     fn parse_units(&mut self) -> LefResult<LefUnits> {
         use LefKey::{
