@@ -80,22 +80,20 @@ pub struct LefLibrary {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub units: Option<LefUnits>,
-
     // Fixed-Mask attribute
     #[serde(default, skip_serializing)]
     #[builder(default)]
     pub fixed_mask: bool,
-
     /// Clearance Measure
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default)]
     pub clearance_measure: Option<LefClearanceStyle>,
-
-    // Unsupported fields recommended for *either* LEF "cell libraries" or "technologies"
-    /// Syntax Extensions (Unsupported)
-    #[serde(default, skip_serializing)]
+    /// Syntax Extensions
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[builder(default)]
     pub extensions: Vec<LefExtension>,
+
+    // Unsupported fields recommended for *either* LEF "cell libraries" or "technologies"
     // Fields recommended for LEF technology descriptions, AKA "tech-lefs"
     /// Manufacturing Grid
     #[serde(default, skip_serializing_if = "Option::is_none")]

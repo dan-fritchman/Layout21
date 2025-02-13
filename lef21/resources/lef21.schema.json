@@ -4,7 +4,6 @@
   "description": "LEF's primary design-content container, including a set of macro/cell definitions and associated metadata.",
   "type": "object",
   "required": [
-    "extensions",
     "fixed_mask"
   ],
   "properties": {
@@ -50,8 +49,7 @@
       "minLength": 1
     },
     "extensions": {
-      "description": "Syntax Extensions (Unsupported)",
-      "writeOnly": true,
+      "description": "Syntax Extensions",
       "type": "array",
       "items": {
         "$ref": "#/definitions/LefExtension"
