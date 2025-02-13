@@ -178,8 +178,11 @@ impl<'src> LefLexer<'src> {
         if self.accept_char('#') {
             return self.lex_comment();
         }
-        if self.accept(|c| c.is_digit(10) || c == '-') {
-            return self.lex_number();
+        match self.peek_char() {
+            Some(ref c) if c.is_digit(10) || *c == '.' || *c == '-' => {
+                return self.lex_number(*c);
+            }
+            _ => {}
         }
         if self.accept(char::is_alphabetic) {
             return self.lex_name();
@@ -202,12 +205,25 @@ impl<'src> LefLexer<'src> {
         let tok = self.emit(TokenType::WhiteSpace);
         Ok(Some(tok))
     }
-    /// Lex a number
-    fn lex_number(&mut self) -> LefResult<Option<Token>> {
-        while self.accept(|c| c.is_digit(10) || c == '.') {
+    /// Lex a number, but if not truly a number, return token with ttype [TokenType::Name]
+    fn lex_number(&mut self, leadchar: char) -> LefResult<Option<Token>> {
+        let mut nstring = String::new();
+        nstring.push(leadchar);
+        // get string slice for current char iterator here
+        let buf = self.chars.as_str();
+        // Accept everything until the next white-space
+        while self.accept(|c| !c.is_whitespace()) {
             continue;
         }
-        let tok = self.emit(TokenType::Number);
+        // add the rest of the numberish &str to the String
+        let subbuf = &buf[0.. self.pos - self.start - 1];
+        nstring.push_str(subbuf);
+        let numslice = nstring.as_str();
+        let tok = if i32::from_str(numslice).is_ok() || f64::from_str(numslice).is_ok() {
+            self.emit(TokenType::Number)
+        } else {
+            self.emit(TokenType::Name)
+        };
         Ok(Some(tok))
     }
     /// Lex a string literal
@@ -1454,6 +1470,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn it_lexes_numbers_and_names() -> LefResult<()> {
+        let src = "STUFF 101 -98765 .01 1.23 -0.87 1e6 1.06E-7 18T ;";
+        let lex = LefLexer::new(src)?;
+        let toks_vec: Vec<Token> = lex.collect(); // Collect up all tokens
+        let tok_strs: Vec<&str> = toks_vec.iter().map(|t| t.substr(src)).collect();
+        assert_eq!(tok_strs, vec!["STUFF", "101", "-98765", ".01", "1.23", "-0.87", "1e6", "1.06E-7", "18T", ";"]);
+        let tok_types: Vec<TokenType> = toks_vec.iter().map(|t| t.ttype).collect();
+        assert_eq!(tok_types, vec![TokenType::Name, TokenType::Number, TokenType::Number, TokenType::Number, TokenType::Number,
+            TokenType::Number, TokenType::Number, TokenType::Number, TokenType::Name, TokenType::SemiColon]);
+        Ok(())
+    }
+    #[test]
     fn it_parses_units() -> LefResult<()> {
         // Parse UNITS content into LefUnits
 
@@ -1493,7 +1521,7 @@ mod tests {
 
         // Check that for version 5.3 this same MACRO parses successfully
         let src = r#"
-        VERSION 5.3;
+        VERSION 5.3 ;
         MACRO valid_source_user
             SOURCE USER ;
         END valid_source_user
@@ -1503,7 +1531,7 @@ mod tests {
 
         // Check that for version 5.5 the same MACRO produces an error
         let src = r#"
-        VERSION 5.5;
+        VERSION 5.5 ;
         MACRO invalid_source_user
             SOURCE USER ;
         END invalid_source_user
