@@ -47,6 +47,10 @@ pub struct LefLibrary {
     /// Site Definitions
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sites: Vec<LefSite>,
+    /// Via Definitions
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[builder(default)]
+    pub vias: Vec<LefViaDef>,
 
     // Optional
     /// Lef Spec Version
@@ -76,26 +80,20 @@ pub struct LefLibrary {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub units: Option<LefUnits>,
-
     // Fixed-Mask attribute
     #[serde(default, skip_serializing)]
     #[builder(default)]
     pub fixed_mask: bool,
-
     /// Clearance Measure
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default)]
     pub clearance_measure: Option<LefClearanceStyle>,
-
-    // Unsupported fields recommended for *either* LEF "cell libraries" or "technologies"
-    /// Via Definitions (Unsupported)
-    #[serde(default, skip_serializing)]
-    #[builder(default)]
-    pub vias: Option<Unsupported>,
     /// Syntax Extensions
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[builder(default)]
     pub extensions: Vec<LefExtension>,
+
+    // Unsupported fields recommended for *either* LEF "cell libraries" or "technologies"
     // Fields recommended for LEF technology descriptions, AKA "tech-lefs"
     /// Manufacturing Grid
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -207,7 +205,7 @@ pub struct LefMacro {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub eeq: Option<String>,
-    
+
     // Fixed-Mask
     #[serde(default, skip_serializing)]
     #[builder(default)]
@@ -316,7 +314,7 @@ pub struct LefPin {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub must_join: Option<String>,
-    
+
     /// Net Expression
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
@@ -326,7 +324,6 @@ pub struct LefPin {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[builder(default)]
     pub properties: Vec<LefProperty>,
-
 }
 /// # Lef Pin Direction
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
@@ -449,6 +446,142 @@ pub struct LefVia {
     /// Location
     pub pt: LefPoint,
 }
+/// # Lef Via Definition
+///
+/// LEF supports two kinds of vias: fixed vias and generated vias.
+/// Fixed vias contain a set of shapes (rectangles and/or polygons).
+/// Generated vias use a VIARULE statement to define via parameters.
+#[derive(Builder, Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[builder(pattern = "owned", setter(into))]
+pub struct LefViaDef {
+    /// The name of the via.
+    pub name: String,
+    /// Indicates that this via is a default via for connecting a pair of metal layers.
+    ///
+    /// The metal layers connected are inferrred from the via's [`LefViaLayerGeometries`],
+    /// which normally contain geometry on two metal layers and one cut layer.
+    #[serde(default)]
+    #[builder(default)]
+    pub default: bool,
+    /// The actual content of the via definition, which may be a fixed via or a generated via.
+    pub data: LefViaDefData,
+    // Unsupported
+    /// Properties (Unsupported)
+    #[serde(default, skip_serializing)]
+    #[builder(default)]
+    pub properties: Option<Unsupported>,
+}
+/// # Lef Via Definition Data
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+pub enum LefViaDefData {
+    Fixed(LefFixedViaDef),
+    Generated(LefGeneratedViaDef),
+}
+/// # Lef Fixed Via Definition
+#[derive(Builder, Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[builder(pattern = "owned", setter(into))]
+pub struct LefFixedViaDef {
+    /// Resistance of the via.
+    ///
+    /// Using this field is not recommended.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub resistance_ohms: Option<LefDecimal>,
+    /// Layers & Geometries
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[builder(default)]
+    pub layers: Vec<LefViaLayerGeometries>,
+}
+/// # Lef Generated Via Definition
+#[derive(Builder, Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[builder(pattern = "owned", setter(into))]
+pub struct LefGeneratedViaDef {
+    /// The name of the VIARULE.
+    ///
+    /// Must refer to a previously defined VIARULE GENERATE statement.
+    pub via_rule_name: String,
+    /// The width of the via rectangles.
+    pub cut_size_x: LefDecimal,
+    /// The height of the via rectangles.
+    pub cut_size_y: LefDecimal,
+    /// The bottom metal layer.
+    pub bot_metal_layer: String,
+    /// The cut (via) layer.
+    pub cut_layer: String,
+    /// The top metal layer.
+    pub top_metal_layer: String,
+    /// The horizontal spacing (right edge to next left edge) between cuts.
+    pub cut_spacing_x: LefDecimal,
+    /// The vertical spacing (top edge to bottom edge of cut above) between cuts.
+    pub cut_spacing_y: LefDecimal,
+    /// Horizontal enclosure of vias by bottom metal layer.
+    pub bot_enc_x: LefDecimal,
+    /// Vertical enclosure of vias by bottom metal layer.
+    pub bot_enc_y: LefDecimal,
+    /// Horizontal enclosure of vias by top metal layer.
+    pub top_enc_x: LefDecimal,
+    /// Vertical enclosure of vias by top metal layer.
+    pub top_enc_y: LefDecimal,
+    /// The via array's number of rows and columns.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
+    pub rowcol: Option<LefRowCol>,
+    /// The origin of the coordinate system specifying all of the via's shapes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
+    pub origin: Option<LefPoint>,
+    /// Offsets of top and bottom metal layers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
+    pub offset: Option<LefOffset>,
+    /// Specifies a pattern identifying which cuts are missing from the array.
+    ///
+    /// In the absence of a specified pattern, all cuts are present.
+    /// This field is currently unsupported.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
+    pub pattern: Option<Unsupported>,
+}
+/// # Lef Row and Column
+#[derive(Builder, Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[builder(pattern = "owned", setter(into))]
+pub struct LefRowCol {
+    pub rows: LefDecimal,
+    pub cols: LefDecimal,
+}
+/// # Lef Offset
+#[derive(Builder, Clone, Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[builder(pattern = "owned", setter(into))]
+pub struct LefOffset {
+    pub bot_x: LefDecimal,
+    pub bot_y: LefDecimal,
+    pub top_x: LefDecimal,
+    pub top_y: LefDecimal,
+}
+/// # Lef Single-Layer Geometry Store for Vias
+///
+/// [LefViaLayerGeometries] stores the combination of a layer (name)
+/// and suite of geometric primitives (rectangles and/or polygons) on that layer.
+///
+/// [LefViaLayerGeometries] are the primary building block of [LefFixedViaDef]s.
+///
+#[derive(Clone, Default, Builder, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[builder(pattern = "owned", setter(into))]
+pub struct LefViaLayerGeometries {
+    // Required
+    /// Layer Name
+    pub layer_name: String,
+    /// Geometries
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shapes: Vec<LefViaShape>,
+}
+/// # Lef Via Shape Enumeration
+/// These are the geometric primitives that can be included in a via definition.
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+pub enum LefViaShape {
+    Rect(Option<LefMask>, LefPoint, LefPoint),
+    Polygon(Option<LefMask>, Vec<LefPoint>),
+}
 /// # Enumerated Layer-Spacing Options
 /// Includes absolute spacing and design-rule-width modifiers.
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
@@ -475,8 +608,18 @@ pub struct LefPropertyRange {
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 pub enum LefPropertyDefinition {
     LefString(LefPropertyDefinitionObjectType, String, Option<String>),
-    LefReal(LefPropertyDefinitionObjectType, String, Option<LefDecimal>, Option<LefPropertyRange>),
-    LefInteger(LefPropertyDefinitionObjectType, String, Option<LefDecimal>, Option<LefPropertyRange>),
+    LefReal(
+        LefPropertyDefinitionObjectType,
+        String,
+        Option<LefDecimal>,
+        Option<LefPropertyRange>,
+    ),
+    LefInteger(
+        LefPropertyDefinitionObjectType,
+        String,
+        Option<LefDecimal>,
+        Option<LefPropertyRange>,
+    ),
 }
 /// # Lef Geometric Object Enumeration
 /// Includes [LefShape]s and Iterators thereof
@@ -737,7 +880,7 @@ enumstr!(
         ManufacturingGrid: "MANUFACTURINGGRID",
         ClearanceMeasure: "CLEARANCEMEASURE",
         Density: "DENSITY",
-        
+
         // UNITS Fields
         Units: "UNITS",
         Time: "TIME",
@@ -769,6 +912,17 @@ enumstr!(
         AntennaMaxSideAreaCar: "ANTENNAMAXSIDEAREACAR",
         AntennaMaxCutCar: "ANTENNAMAXCUTCAR",
 
+        // VIA Fields
+        Default: "DEFAULT",
+        ViaRule: "VIARULE",
+        CutSize: "CUTSIZE",
+        Layers: "LAYERS",
+        CutSpacing: "CUTSPACING",
+        Enclosure: "ENCLOSURE",
+        RowCol: "ROWCOL",
+        Offset: "OFFSET",
+        Pattern: "PATTERN",
+
         // PropertyDefinitions
         PropertyDefinitions: "PROPERTYDEFINITIONS",
         String: "STRING",
@@ -778,7 +932,6 @@ enumstr!(
 
         // Unsupported
         MaxViaStack: "MAXVIASTACK",
-        ViaRule: "VIARULE",
         Generate: "GENERATE",
         NonDefaultRule: "NONDEFAULTRULE",
     }
