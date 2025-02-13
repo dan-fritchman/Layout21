@@ -108,8 +108,7 @@ impl<'wr> LefWriter<'wr> {
             self.write_line(format_args_f!("{End} {Units} "))?;
         }
 
-        // VIAS would be written here
-        // if let Some(ref v) = lib.vias { }
+        // Write each via definition
         for via in lib.vias.iter() {
             self.write_via(via)?;
         }

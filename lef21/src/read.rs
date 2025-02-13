@@ -1234,8 +1234,6 @@ impl<'src> LefParser<'src> {
         Ok((x, y))
     }
     /// Parse a Lef VIA definition
-    ///
-    /// This parser currently only supports fixed vias.
     fn parse_via(&mut self) -> LefResult<LefViaDef> {
         self.ctx.push(LefParseContext::Via);
         self.expect_key(LefKey::Via)?;
@@ -1335,11 +1333,11 @@ impl<'src> LefParser<'src> {
         match self.peek_key()? {
             LefKey::Property => self.fail(LefParseErrorType::Unsupported)?,
             LefKey::End => {
-                self.advance()?; // End of Macro. Eat the END key
+                self.advance()?; // End of Via. Eat the END key
             }
             _ => self.fail(LefParseErrorType::InvalidKey)?,
         }
-        // Parse the END-enclosing macro-name
+        // Parse the END-enclosing via-name
         self.expect_ident(&name)?;
         self.ctx.pop();
         Ok(via.build()?)
