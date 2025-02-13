@@ -549,18 +549,12 @@
             "Iterate": {
               "type": "object",
               "required": [
+                "pattern",
                 "shape"
               ],
               "properties": {
                 "pattern": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/definitions/Unsupported"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
+                  "$ref": "#/definitions/LefStepPattern"
                 },
                 "shape": {
                   "$ref": "#/definitions/LefShape"
@@ -1608,9 +1602,26 @@
           "properties": {
             "Polygon": {
               "type": "array",
-              "items": {
-                "$ref": "#/definitions/LefPoint"
-              }
+              "items": [
+                {
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/LefMask"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/LefPoint"
+                  }
+                }
+              ],
+              "maxItems": 2,
+              "minItems": 2
             }
           },
           "additionalProperties": false
@@ -1623,9 +1634,26 @@
           "properties": {
             "Path": {
               "type": "array",
-              "items": {
-                "$ref": "#/definitions/LefPoint"
-              }
+              "items": [
+                {
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/LefMask"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/LefPoint"
+                  }
+                }
+              ],
+              "maxItems": 2,
+              "minItems": 2
             }
           },
           "additionalProperties": false
@@ -1712,6 +1740,34 @@
           ]
         }
       ]
+    },
+    "LefStepPattern": {
+      "title": "Lef Step Pattern for ITERATE",
+      "type": "object",
+      "required": [
+        "numx",
+        "numy",
+        "spacex",
+        "spacey"
+      ],
+      "properties": {
+        "numx": {
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+        },
+        "numy": {
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+        },
+        "spacex": {
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+        },
+        "spacey": {
+          "type": "string",
+          "pattern": "^-?[0-9]+(\\.[0-9]+)?$"
+        }
+      }
     },
     "LefSymmetry": {
       "description": "Specifies which MACRO orientations are valid for placement",
@@ -1808,7 +1864,7 @@
     },
     "LefVia": {
       "title": "Lef Via Instance",
-      "description": "A located instance of via-type `via_name`, typically used as part of a [LefLayerGeometries] definition. The via-type is generally interpreted as a string-valued reference into tech-lef data. It is stored in each [LefVia] exactly as in LEF, as a string type-name.",
+      "description": "A located instance of via-type `via_name`, typically used as part of a [LefLayerGeometries] definition. The via-type is generally interpreted as a string-valued <reference into tech-lef data. It is stored in each [LefVia] exactly as in LEF, as a string type-name.",
       "type": "object",
       "required": [
         "pt",

@@ -409,38 +409,70 @@ impl<'wr> LefWriter<'wr> {
         Ok(()) // Note [LefLayerGeometries] have no "END" or other closing delimeter.
     }
     fn write_geom(&mut self, geom: &LefGeometry) -> LefResult<()> {
-        use LefKey::{Polygon, Rect, Path};
+        let mut wordlist: Vec<String> = Vec::new();
         match geom {
-            LefGeometry::Iterate { .. } => unimplemented!(),
-            LefGeometry::Shape(ref shape) => match shape {
-                LefShape::Rect(mask, p0, p1) => {
-                    let mut line = format!("{Rect} ");
-                    match mask {
-                        Some(mask) => line.push_str(&format!("MASK {mask} ")),
-                        None => (),
-                    };
-                    self.write_line(format_args_f!("{line}{p0} {p1} ; "))?;
-                }
-                LefShape::Polygon(pts) => {
-                    let ptstr = pts
-                        .iter()
-                        .map(|x| x.to_string())
-                        .collect::<Vec<String>>()
-                        .join(" ");
-                    self.write_line(format_args_f!("{Polygon} {ptstr} ;"))?;
-                }
-                LefShape::Path(pts) => {
-                    let ptstr = pts
-                        .iter()
-                        .map(|x| x.to_string())
-                        .collect::<Vec<String>>()
-                        .join(" ");
-                    self.write_line(format_args_f!("{Path} {ptstr} ;"))?;
-                }
-            },
+            LefGeometry::Iterate { shape, pattern  } => 
+                wordlist.extend(self.format_geom(shape, Some(pattern))),
+            LefGeometry::Shape(ref shape) => 
+                wordlist.extend(self.format_geom(shape, None)),
         };
+        let linestr = wordlist.join(" ");
+        self.write_line(format_args_f!("{linestr} ;"))?;
         Ok(())
     }
+
+    fn format_geom(&mut self, shape: &LefShape, step_pattern: Option<&LefStepPattern>) -> Vec<String> {
+        let mut wordlist: Vec<String> = Vec::new();
+        match shape {
+            LefShape::Rect(mask, p0, p1) => {
+                wordlist.push(LefKey::Rect.to_string());
+                wordlist.extend(self.format_mask(mask));
+                if step_pattern != None {
+                    wordlist.push(LefKey::Iterate.to_string());
+                }
+                wordlist.push(p0.to_string());
+                wordlist.push(p1.to_string());
+            }
+            LefShape::Polygon(mask, pts) => {
+                wordlist.push(LefKey::Polygon.to_string());
+                wordlist.extend(self.format_mask(mask));
+                if step_pattern != None {
+                    wordlist.push(LefKey::Iterate.to_string());
+                }
+                wordlist.extend(pts.iter().map(|x| x.to_string()));
+            }
+            LefShape::Path(mask, pts) => {
+                wordlist.push(LefKey::Path.to_string());
+                wordlist.extend(self.format_mask(mask));
+                if step_pattern != None {
+                    wordlist.push(LefKey::Iterate.to_string());
+                }
+                wordlist.extend(pts.iter().map(|x| x.to_string()));
+            }
+        }
+        match step_pattern {
+            Some(pattern) => {
+                wordlist.push(LefKey::Do.to_string());
+                wordlist.push(pattern.numx.to_string());
+                wordlist.push(LefKey::By.to_string());
+                wordlist.push(pattern.numy.to_string());
+                wordlist.push(LefKey::Step.to_string());
+                wordlist.push(pattern.spacex.to_string());
+                wordlist.push(pattern.spacey.to_string());
+            },
+            _ => {},
+        }
+    
+        wordlist
+    }
+    /// Format mask
+    fn format_mask(&mut self, mask: &Option<LefMask>) -> Vec<String> {
+        match mask {
+            Some(mask) => vec![LefKey::Mask.to_string(), mask.to_string()],
+            None => <Vec<String>>::new(),
+        }
+    }
+
     /// Write a vector of [LefSymmetry] to the SYMMETRY statement
     fn write_symmetries(&mut self, symms: &Vec<LefSymmetry>) -> LefResult<()> {
         use LefKey::Symmetry;

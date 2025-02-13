@@ -116,6 +116,32 @@ fn it_parses_lib2() -> LefResult<()> {
 }
 
 #[test]
+fn it_parses_colored_geometries() -> LefResult<()> {
+    let src = r#"
+    VERSION 5.8 ;
+    UNITS DATABASE MICRONS 2000 ; END UNITS
+    MACRO invx1
+        CLASS BLOCK ;
+        SIZE 1.0 BY 1.0 ;
+        PIN A
+            DIRECTION INPUT ;
+            PORT
+            LAYER metal1 ;
+            RECT MASK 1 0.000 0.100 1.000 0.150 ;
+            RECT MASK 2 0.000 0.200 1.000 0.250 ;
+            RECT MASK 3 0.000 0.300 1.000 0.350 ;
+            PATH MASK 4 0.000 0.425 1.000 0.425 ;
+            POLYGON MASK 5 0.000 0.600   0.000 0.700   0.500 0.700   0.500 0.750   0.000 0.750 ;
+            END
+        END A
+    END invx1
+    END LIBRARY
+    "#;
+    parse_str(src)?;
+    Ok(())
+}
+
+#[test]
 fn it_parses_density_lib() -> LefResult<()> {
     let src = r#"
     VERSION 5.8 ;

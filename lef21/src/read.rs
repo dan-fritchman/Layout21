@@ -995,47 +995,85 @@ impl<'src> LefParser<'src> {
         self.ctx.pop();
         Ok(layer)
     }
+
+    /// Parse optional ITERATE and return a wrapper boolean indicating success
+    fn parse_iterate(&mut self) -> LefResult<bool> {
+        if self.matches(TokenType::Name) {
+            if self.peek_key()? == LefKey::Iterate {
+                self.advance()?;
+                return Ok(true)
+            }
+        }
+        Ok(false)
+    }
+    /// Parse the [LefMask] statement on a [LefGeometry]
+    fn parse_geometry_mask(&mut self) -> LefResult<Option<LefMask>> {
+        //let mut mask: Option<LefMask> = None;
+        if self.matches(TokenType::Name) {
+            if self.peek_key()? == LefKey::Mask {
+                self.advance()?;
+                return Ok(Some(LefMask::new(self.parse_number()?)));
+            }
+        }
+        Ok(None)
+    }
+    fn parse_step_pattern(&mut self) -> LefResult<LefStepPattern> {
+        self.expect_key(LefKey::Do)?;
+        let numx = self.parse_number()?;
+        self.expect_key(LefKey::By)?;
+        let numy = self.parse_number()?;
+        self.expect_key(LefKey::Step)?;
+        let spacex = self.parse_number()?;
+        let spacey = self.parse_number()?;
+        Ok(LefStepPattern {numx, numy, spacex, spacey})
+    }
     /// Parse a [LefGeometry] statement
     /// Each can be a shape or iteration thereof
     fn parse_geometry(&mut self) -> LefResult<LefGeometry> {
-        match self.peek_key()? {
+        match self.get_key()? {
             LefKey::Rect => {
-                self.advance()?;
-                let mut mask = None;
-                if self.matches(TokenType::Name) {
-                    if self.get_key()? == LefKey::Mask {
-                        mask = Some(LefMask::new(self.parse_number()?));
-                    } else {
-                        // The ITERATE construction would go here, but is not supported.
-                        self.fail(LefParseErrorType::Unsupported)?;
-                    }
-                }
+                let mask = self.parse_geometry_mask()?;
+                let is_iterate = self.parse_iterate()?;
                 // Parse the two points
                 let p1 = self.parse_point()?;
-                let p2: LefPoint = self.parse_point()?;
-                self.expect(TokenType::SemiColon)?;
-                // And return the Rect
-                Ok(LefGeometry::Shape(LefShape::Rect(mask, p1, p2)))
+                let p2 = self.parse_point()?;
+                let shape = LefShape::Rect(mask, p1, p2);
+                Ok(self.parse_geometry_tail(is_iterate, shape)?)
             }
             LefKey::Polygon => {
-                self.advance()?;
+                let mask = self.parse_geometry_mask()?;
+                let is_iterate = self.parse_iterate()?;
                 let points = self.parse_point_list()?;
                 if points.len() < 3 {
                     self.fail(LefParseErrorType::InvalidValue)?;
                 }
-                self.expect(TokenType::SemiColon)?;
-                Ok(LefGeometry::Shape(LefShape::Polygon(points)))
+                let shape = LefShape::Polygon(mask, points);
+                Ok(self.parse_geometry_tail(is_iterate, shape)?)
             }
             LefKey::Path => {
-                self.advance()?;
+                let mask = self.parse_geometry_mask()?;
+                let is_iterate = self.parse_iterate()?;
                 let points = self.parse_point_list()?;
                 if points.len() < 2 {
                     self.fail(LefParseErrorType::InvalidValue)?;
                 }
-                self.expect(TokenType::SemiColon)?;
-                Ok(LefGeometry::Shape(LefShape::Path(points)))
+                let shape = LefShape::Path(mask, points);
+                Ok(self.parse_geometry_tail(is_iterate, shape)?)
             }
             _ => self.fail(LefParseErrorType::InvalidKey)?,
+        }
+    }
+    /// Parse the tail end of a geometry statement after the point-set.
+    ///   either it will end with a semicolon (non-iterate case)
+    ///   or have a [LefStepPattern] in the iterate case.
+    fn parse_geometry_tail(&mut self, is_iterate: bool, shape: LefShape) -> LefResult<LefGeometry> {
+        if is_iterate {
+            let pattern = self.parse_step_pattern()?;
+            self.expect(TokenType::SemiColon)?;
+            Ok(LefGeometry::Iterate { shape, pattern })
+        } else {
+            self.expect(TokenType::SemiColon)?;
+            Ok(LefGeometry::Shape(shape)) // And return the Rect
         }
     }
     /// Parse a space-separated list of [LefPoint]. Terminated by [TokenType::SemiColon].

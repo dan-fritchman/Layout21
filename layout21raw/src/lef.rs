@@ -141,7 +141,7 @@ impl<'lib> LefExporter<'lib> {
                     .iter()
                     .map(|p| self.export_point(p))
                     .collect::<Result<Vec<_>, _>>()?;
-                lef21::LefShape::Polygon(points)
+                lef21::LefShape::Polygon(None, points)
             }
             Shape::Path { .. } => {
                 unimplemented!("LefExporter::PATH");
@@ -380,8 +380,8 @@ impl LefImporter {
         use lef21::LefShape::{Path, Polygon, Rect};
         match lefshape {
             Rect(_, ref p0, ref p1) => self.import_rect((p0, p1)),
-            Polygon(ref pts) => self.import_polygon(pts),
-            Path(ref pts) => self.import_path(pts, layer),
+            Polygon(_, ref pts) => self.import_polygon(pts),
+            Path(_, ref pts) => self.import_path(pts, layer),
         }
     }
     /// Import a [Shape::Poly]
