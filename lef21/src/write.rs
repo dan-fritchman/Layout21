@@ -139,6 +139,7 @@ impl<'wr> LefWriter<'wr> {
             self.write_via(via)?;
         }
 
+        // TODO: VIARULE [GENERATE]
         // TODO: NONDEFAULTRULE
 
         // Write each SITE definition
