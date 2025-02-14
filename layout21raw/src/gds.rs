@@ -228,14 +228,13 @@ impl<'lib> GdsExporter<'lib> {
         purpose: &LayerPurpose,
     ) -> LayoutResult<gds21::GdsLayerSpec> {
         let layers = self.lib.layers.read()?;
-        let layer = layers.get(*layer).unwrapper(
+        let layer = layers.get(*layer).or_handle(
             self,
             format!("Layer {:?} Not Defined in Library {}", layer, self.lib.name),
-        )?;
-        let xtype = layer
-            .num(purpose)
-            .unwrapper(
-                self,
+        )?; 
+        let xtype = self
+            .unwrap(
+                layer.num(purpose),
                 format!("LayerPurpose Not Defined for {:?}, {:?}", layer, purpose),
             )?
             .clone();
@@ -816,7 +815,7 @@ impl GdsImporter {
         let cell = self
             .cell_map
             .get(&sref.name)
-            .unwrapper(self, format!("Instance of invalid cell {}", cname))?;
+            .or_handle(self, format!("Instance of invalid cell {}", cname))?;
 
         let cell = Ptr::clone(cell);
         // Convert its location
@@ -868,7 +867,7 @@ impl GdsImporter {
         let cell = self
             .cell_map
             .get(&aref.name)
-            .unwrapper(self, format!("Instance Array of invalid cell {}", cname))?;
+            .or_handle(self, format!("Instance Array of invalid cell {}", cname))?;
         let cell = Ptr::clone(cell);
 
         // Convert its three (x,y) coordinates

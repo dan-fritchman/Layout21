@@ -1,0 +1,13 @@
+---
+domain: demolib
+cells:
+  - name: democell
+    layout:
+      name: democell
+      outline:
+        x: [ 100 ]
+        y: [ 10 ]
+        metals: 0
+      instances: []
+      assignments: []
+      cuts: []

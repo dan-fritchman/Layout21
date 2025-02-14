@@ -303,13 +303,13 @@ impl<'lib> ProtoExporter<'lib> {
         purpose: &LayerPurpose,
     ) -> LayoutResult<proto::Layer> {
         let layers = self.lib.layers.read()?;
-        let layer = layers.get(*layer).unwrapper(
+        let layer = layers.get(*layer).or_handle(
             self,
             format!("Layer {:?} Not Defined in Library {}", layer, self.lib.name),
         )?;
         let purpose = layer
             .num(purpose)
-            .unwrapper(
+            .or_handle(
                 self,
                 format!("LayerPurpose Not Defined for {:?}, {:?}", layer, purpose),
             )?
@@ -606,11 +606,11 @@ impl ProtoImporter {
     /// Import a proto-defined pointer, AKA [proto::Reference]
     fn import_reference(&mut self, pinst: &proto::Instance) -> LayoutResult<Ptr<Cell>> {
         // Mostly wind through protobuf-generated structures' layers of [Option]s
-        let pref = pinst.cell.as_ref().unwrapper(
+        let pref = pinst.cell.as_ref().or_handle(
             self,
             format!("Invalid proto::Instance with null Cell: {}", pinst.name),
         )?;
-        let pref_to = pref.to.as_ref().unwrapper(
+        let pref_to = pref.to.as_ref().or_handle(
             self,
             format!("Invalid proto::Instance with null Cell: {}", pinst.name),
         )?;
@@ -620,7 +620,7 @@ impl ProtoImporter {
             External(_) => self.fail("Import of external proto-references not supported"),
         }?;
         // Now look that up in our hashmap
-        let cellkey = self.cell_map.get(cellname).unwrapper(
+        let cellkey = self.cell_map.get(cellname).or_handle(
             self,
             format!("Instance proto::Instance of undefined cell {}", cellname),
         )?;
@@ -633,7 +633,7 @@ impl ProtoImporter {
         // Look up the cell-pointer, which must be imported by now, or we fail
         let cell = self.import_reference(&pinst)?;
         // Unwrap the [Option] over (not really optional) location `origin_location`
-        let origin_location = pinst.origin_location.as_ref().unwrapper(
+        let origin_location = pinst.origin_location.as_ref().or_handle(
             self,
             format!("Invalid proto::Instance with no Location: {}", pinst.name),
         )?;
@@ -731,7 +731,7 @@ impl Layers {
 #[test]
 fn proto1() -> LayoutResult<()> {
     // Round-trip through Layout21::Raw -> ProtoBuf -> Layout21::Raw
-    let mut lib = Library::new("prt_lib", Units::Nano);
+    let mut lib = Library::new("prt_lib", Units::Nano, None);
     let (layer, purpose) = {
         let mut layers = lib.layers.write()?;
         layers.get_or_insert(0, 0)?

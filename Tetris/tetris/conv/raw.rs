@@ -21,7 +21,7 @@ use crate::{
     raw::{self, Dir, LayoutError, LayoutResult, Point},
     stack::{LayerPeriod, RelZ},
     tracks::{Track, TrackCross, TrackSegmentType},
-    utils::{ErrorContext, ErrorHelper, Ptr, PtrList, Unwrapper},
+    utils::{ErrorContext, ErrorHelper, Ptr, PtrList},
     validate,
 };
 
@@ -231,7 +231,8 @@ impl<'lib> RawExporter {
                 elems.extend(self.export_cell_layer_period(&temp_period)?);
             }
         }
-
+        // Convert our [Outline] into a polygon
+        elems.push(self.export_outline(&layout.outline)?);
         // Convert our [Instance]s
         let insts = layout
             .instances
@@ -334,9 +335,9 @@ impl<'lib> RawExporter {
             // Convert primitive-pitch-based blockages to db units
             let start = self.db_units(*n1);
             let stop = self.db_units(*n2);
-            // And insert the blockage
-            layer_period.block(start, stop, &inst_ptr).or_handle(
-                self,
+            let res = layer_period.block(start, stop, &inst_ptr);
+            self.ok(
+                res,
                 format!(
                     "Could not insert blockage on Layer {:?}, period {} from {:?} to {:?}",
                     layer, temp_period.periodnum, start, stop
@@ -350,16 +351,15 @@ impl<'lib> RawExporter {
             let track = &mut layer_period.signals[cut.track.track % nsig];
             let cut_loc = self.track_cross_xy(cut)?;
             let dist = cut_loc[layer.spec.dir];
-            let res = track
-                .cut(
-                    dist - layer.spec.cutsize / 2, // start
-                    dist + layer.spec.cutsize / 2, // stop
-                    cut,                           // src
-                )
-                .or_handle(
-                    self,
-                    format!("Could not make track-cut {:?} in {:?}", cut, temp_period),
-                )?;
+            let res = track.cut(
+                dist - layer.spec.cutsize / 2, // start
+                dist + layer.spec.cutsize / 2, // stop
+                cut,                           // src
+            );
+            self.ok(
+                res,
+                format!("Could not make track-cut {:?} in {:?}", cut, temp_period),
+            )?;
         }
         // Handle Net Assignments
         // Start with those for which we're the lower of the two layers.
@@ -433,9 +433,8 @@ impl<'lib> RawExporter {
         let track = &mut layer_period.signals[track % nsig];
         // And set the net at the assignment's location
         let assn_loc = self.track_cross_xy(&assn.src.at)?;
-        let res = track
-            .set_net(assn_loc[layer.spec.dir], &assn.src)
-            .or_handle(self, "Error Assigning Track")?;
+        let res = track.set_net(assn_loc[layer.spec.dir], &assn.src);
+        self.ok(res, "Error Assigning Track")?;
         Ok(())
     }
     /// Convert a [Abstract] into raw form.
@@ -444,13 +443,14 @@ impl<'lib> RawExporter {
 
         // Create the outline-element, and grab a copy of its inner shape
         let outline = self.export_outline(&abs.outline)?;
+        let outline_shape = outline.inner.clone();
         // Create the raw abstract
-        let mut rawabs = raw::Abstract::new(&abs.name, outline.clone());
+        let mut rawabs = raw::Abstract::new(&abs.name, outline);
 
         // Draw a blockage on each layer, equal to the shape of the outline
         for layerindex in 0..abs.metals {
             let layerkey = self.stack.metal(layerindex)?.raw.unwrap();
-            let blk = vec![raw::Shape::Polygon(outline.clone())];
+            let blk = vec![outline_shape.clone()];
             rawabs.blockages.insert(layerkey, blk);
         }
 
@@ -563,7 +563,7 @@ impl<'lib> RawExporter {
         layer.span(track_index)
     }
     /// Convert an [Outline] to a [raw::Shape]
-    fn outline_shape(&self, outline: &Outline) -> LayoutResult<raw::Polygon> {
+    fn outline_shape(&self, outline: &Outline) -> LayoutResult<raw::Shape> {
         // FIXME: always uses `Poly`, because some proto-schemas insist on it as the most general.
         // Probably move that conversion down-stack, keep either `Poly` or `Rect` on `layout21::raw::Abstract`.
 
@@ -588,14 +588,19 @@ impl<'lib> RawExporter {
         }
         // Add the final implied Point at (x, y[-1])
         pts.push(Point::new(0, yp));
-        Ok(raw::Polygon { points: pts })
+        Ok(raw::Shape::Polygon(raw::Polygon { points: pts }))
     }
     /// Convert an [Outline] to a [raw::Element] polygon
-    pub fn export_outline(&self, outline: &Outline) -> LayoutResult<raw::Polygon> {
+    pub fn export_outline(&self, outline: &Outline) -> LayoutResult<raw::Element> {
         // Create the outline shape
         let shape = self.outline_shape(outline)?;
         // And create the [raw::Element]
-        Ok(shape)
+        Ok(raw::Element {
+            net: None,
+            layer: self.stack.boundary_layer.unwrap(),
+            purpose: raw::LayerPurpose::Outline,
+            inner: shape,
+        })
     }
     /// Convert a [Track]-full of [TrackSegment]s to a vector of [raw::Element] rectangles
     fn export_track(
@@ -827,6 +832,20 @@ impl ErrorHelper for RawExporter {
         LayoutError::Export {
             message: msg.into(),
             stack: self.ctx.clone(),
+        }
+    }
+    fn ok<T, E: std::error::Error + 'static>(
+        &self,
+        res: Result<T, E>,
+        msg: impl Into<String>,
+    ) -> Result<T, Self::Error> {
+        match res {
+            Ok(t) => Ok(t),
+            Err(e) => Err(LayoutError::Conversion {
+                message: msg.into(),
+                err: Box::new(e),
+                stack: self.ctx.clone(),
+            }),
         }
     }
 }
