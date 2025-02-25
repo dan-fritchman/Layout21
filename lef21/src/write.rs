@@ -54,8 +54,8 @@ impl<'wr> LefWriter<'wr> {
     fn write_lib(&mut self, lib: &LefLibrary) -> LefResult<()> {
         use LefKey::{
             BusBitChars, ClearanceMeasure, DividerChar, End, FixedMask, Library, ManufacturingGrid,
-            NamesCaseSensitive, NoWireExtensionAtPin, Obs, PropertyDefinitions,
-            UseMinSpacing, Version,
+            NamesCaseSensitive, NoWireExtensionAtPin, Obs, PropertyDefinitions, UseMinSpacing,
+            Version,
         };
         if let Some(ref v) = lib.version {
             // Save a copy in our session-state
@@ -104,19 +104,19 @@ impl<'wr> LefWriter<'wr> {
         }
         // PROPERTYDEFINITIONS
         if lib.property_definitions.len() > 0 {
-        self.write_line(format_args_f!("{PropertyDefinitions} "))?;
+            self.write_line(format_args_f!("{PropertyDefinitions} "))?;
             self.indent += 1;
             for propdef in lib.property_definitions.iter() {
                 let propdef_str: String = match propdef {
                     LefPropertyDefinition::LefString(objtype, name, None) => {
                         format!("{objtype} {name} {}", LefKey::String)
-                    },
+                    }
                     LefPropertyDefinition::LefString(objtype, name, Some(val)) => {
                         format!("{objtype} {name} {} {}", LefKey::String, val)
-                    },
+                    }
                     LefPropertyDefinition::LefReal(objtype, name, value, range) => {
                         self.format_numeric_prop_def(objtype, name, LefKey::Real, value, range)?
-                    },
+                    }
                     LefPropertyDefinition::LefInteger(objtype, name, value, range) => {
                         self.format_numeric_prop_def(objtype, name, LefKey::Integer, value, range)?
                     }
@@ -127,16 +127,19 @@ impl<'wr> LefWriter<'wr> {
             self.write_line(format_args_f!("{End} {PropertyDefinitions} "))?;
         }
         // FIXEDMASK
-        if lib.fixed_mask { 
+        if lib.fixed_mask {
             self.write_line(format_args_f!("{FixedMask} ;"))?;
         }
 
         // TODO: LAYER
         // TODO: MAXVIASTACK
-        // TODO: VIARULE GENERATE
-        // TODO: VIA
-        //    if let Some(ref v) = lib.vias { }
-        // TODO: VIARULE
+
+        // Write each via definition
+        for via in lib.vias.iter() {
+            self.write_via(via)?;
+        }
+
+        // TODO: VIARULE [GENERATE]
         // TODO: NONDEFAULTRULE
 
         // Write each SITE definition
@@ -150,7 +153,9 @@ impl<'wr> LefWriter<'wr> {
 
         for ext in lib.extensions.iter() {
             use LefKey::{BeginExtension, EndExtension};
-            self.write_line(format_args_f!("{BeginExtension} {ext.name} {ext.data} {EndExtension}"))?;
+            self.write_line(format_args_f!(
+                "{BeginExtension} {ext.name} {ext.data} {EndExtension}"
+            ))?;
         }
 
         self.write_line(format_args_f!("{End} {Library} \n"))?;
@@ -158,9 +163,75 @@ impl<'wr> LefWriter<'wr> {
         Ok(())
     }
 
+    /// Write a [LefViaDef].
+    fn write_via(&mut self, via: &LefViaDef) -> LefResult<()> {
+        use LefKey::{
+            CutSize, CutSpacing, Default, Enclosure, End, Layers, Offset, Origin, Resistance,
+            RowCol, Via, ViaRule,
+        };
+
+        if via.default {
+            self.write_line(format_args_f!("{Via} {via.name} {Default}"))?;
+        } else {
+            self.write_line(format_args_f!("{Via} {via.name}"))?;
+        }
+        self.indent += 1;
+
+        match &via.data {
+            LefViaDefData::Fixed(via) => {
+                if let Some(r) = via.resistance_ohms {
+                    self.write_line(format_args_f!("{Resistance} {r} ; "))?;
+                }
+                for layer in via.layers.iter() {
+                    self.write_via_layer_geom(layer)?;
+                }
+            }
+            LefViaDefData::Generated(via) => {
+                self.write_line(format_args_f!("{ViaRule} {via.via_rule_name} ; "))?;
+                self.write_line(format_args_f!(
+                    "{CutSize} {via.cut_size_x} {via.cut_size_y} ; "
+                ))?;
+                self.write_line(format_args_f!(
+                    "{Layers} {via.bot_metal_layer} {via.cut_layer} {via.top_metal_layer} ; "
+                ))?;
+                self.write_line(format_args_f!(
+                    "{CutSpacing} {via.cut_spacing_x} {via.cut_spacing_y} ; "
+                ))?;
+                self.write_line(format_args_f!(
+                    "{Enclosure} {via.bot_enc_x} {via.bot_enc_y} {via.top_enc_x} {via.top_enc_y} ; "
+                ))?;
+                if let Some(ref rowcol) = via.rowcol {
+                    self.write_line(format_args_f!("{RowCol} {rowcol.rows} {rowcol.cols} ; "))?;
+                }
+                if let Some(ref origin) = via.origin {
+                    self.write_line(format_args_f!("{Origin} {origin.x} {origin.y} ; "))?;
+                }
+                if let Some(ref offset) = via.offset {
+                    self.write_line(format_args_f!(
+                        "{Offset} {offset.bot_x} {offset.bot_y} {offset.top_x} {offset.top_y} ; "
+                    ))?;
+                }
+                // PATTERN would go here
+            }
+        }
+
+        // PROPERTIES would go here
+
+        self.indent -= 1;
+        self.write_line(format_args_f!("{End} {} ", via.name))?;
+        Ok(())
+    }
+
     // helper function to format numeric PROPERTYDEFINITION entries
     //   for "objType propName [RANGE begin end] [value]"
-    fn format_numeric_prop_def(&mut self, objtype: &LefPropertyDefinitionObjectType, name: &String, key: LefKey, value: &Option<LefDecimal>, range: &Option<LefPropertyRange>) -> LefResult<String> {
+    fn format_numeric_prop_def(
+        &mut self,
+        objtype: &LefPropertyDefinitionObjectType,
+        name: &String,
+        key: LefKey,
+        value: &Option<LefDecimal>,
+        range: &Option<LefPropertyRange>,
+    ) -> LefResult<String> {
         use LefKey::Range;
         let mut string_list: Vec<String> = Vec::new();
         string_list.push(objtype.to_string());
@@ -168,11 +239,11 @@ impl<'wr> LefWriter<'wr> {
         string_list.push(key.to_string());
         match range {
             Some(r) => string_list.push(format!("{Range} {} {}", r.begin, r.end)),
-            None => ()
+            None => (),
         }
         match value {
             Some(v) => string_list.push(v.to_string()),
-            None => ()
+            None => (),
         }
         Ok(string_list.join(" "))
     }
@@ -196,8 +267,11 @@ impl<'wr> LefWriter<'wr> {
 
     /// Write a [LefUnits] block.
     fn write_units(&mut self, units: &LefUnits) -> LefResult<()> {
-        use LefKey::{Capacitance, Current, Database, End, Frequency, Megahertz, Microns, Milliamps,
-            Milliwatts, Nanoseconds, Ohms, Picofarads, Power, Resistance, Time, Volts, Voltage, Units};
+        use LefKey::{
+            Capacitance, Current, Database, End, Frequency, Megahertz, Microns, Milliamps,
+            Milliwatts, Nanoseconds, Ohms, Picofarads, Power, Resistance, Time, Units, Voltage,
+            Volts,
+        };
         self.write_line(format_args_f!("{Units} "))?;
         self.indent += 1;
         if let Some(ref val) = units.time_ns {
@@ -238,7 +312,7 @@ impl<'wr> LefWriter<'wr> {
         if let Some(ref v) = mac.class {
             self.write_macro_class(v)?;
         }
-        if mac.fixed_mask { 
+        if mac.fixed_mask {
             self.write_line(format_args_f!("{FixedMask} ;"))?;
         }
         if let Some(ref v) = mac.foreign {
@@ -264,7 +338,7 @@ impl<'wr> LefWriter<'wr> {
             }
             self.write_line(format_args_f!("{Source} {v} ;"))?;
         }
-        
+
         if let Some(ref cell) = mac.eeq {
             self.write_line(format_args_f!("{Eeq} {cell} ;"))?;
         }
@@ -309,8 +383,10 @@ impl<'wr> LefWriter<'wr> {
 
     /// Write a [LefPin] definition
     fn write_pin(&mut self, pin: &LefPin) -> LefResult<()> {
-        use LefKey::{AntennaModel, Direction, End, GroundSensitivity, Layer, MustJoin,
-            NetExpr, Pin, Shape, SupplySensitivity, TaperRule, Use};
+        use LefKey::{
+            AntennaModel, Direction, End, GroundSensitivity, Layer, MustJoin, NetExpr, Pin, Shape,
+            SupplySensitivity, TaperRule, Use,
+        };
         self.write_line(format_args_f!("{Pin} {pin.name} "))?;
         self.indent += 1;
         if let Some(ref v) = pin.direction {
@@ -408,20 +484,62 @@ impl<'wr> LefWriter<'wr> {
         self.indent -= 1;
         Ok(()) // Note [LefLayerGeometries] have no "END" or other closing delimeter.
     }
+    /// Write [LefViaLayerGeometries].
+    fn write_via_layer_geom(&mut self, layer: &LefViaLayerGeometries) -> LefResult<()> {
+        use LefKey::Layer;
+        self.write_line(format_args_f!("{Layer} {layer.layer_name} ;"))?;
+        self.indent += 1;
+
+        for shape in layer.shapes.iter() {
+            self.write_via_shape(shape)?;
+        }
+        self.indent -= 1;
+        Ok(()) // No END token.
+    }
+    /// Writes a [`LefViaShape`].
+    fn write_via_shape(&mut self, shape: &LefViaShape) -> LefResult<()> {
+        use LefKey::{Mask, Polygon, Rect};
+        match shape {
+            LefViaShape::Rect(mask, p0, p1) => {
+                let mut line = format!("{Rect} ");
+                if let Some(mask) = mask {
+                    line.push_str(&format!("{Mask} {mask} "));
+                }
+                self.write_line(format_args_f!("{line}{p0} {p1} ; "))?;
+            }
+            LefViaShape::Polygon(mask, pts) => {
+                let mut line = format!("{Polygon} ");
+                if let Some(mask) = mask {
+                    line.push_str(&format!("{Mask} {mask} "));
+                }
+                let ptstr = pts
+                    .iter()
+                    .map(|x| x.to_string())
+                    .collect::<Vec<String>>()
+                    .join(" ");
+                self.write_line(format_args_f!("{line}{ptstr} ;"))?;
+            }
+        };
+        Ok(())
+    }
     fn write_geom(&mut self, geom: &LefGeometry) -> LefResult<()> {
         let mut wordlist: Vec<String> = Vec::new();
         match geom {
-            LefGeometry::Iterate { shape, pattern  } => 
-                wordlist.extend(self.format_geom(shape, Some(pattern))),
-            LefGeometry::Shape(ref shape) => 
-                wordlist.extend(self.format_geom(shape, None)),
+            LefGeometry::Iterate { shape, pattern } => {
+                wordlist.extend(self.format_geom(shape, Some(pattern)))
+            }
+            LefGeometry::Shape(ref shape) => wordlist.extend(self.format_geom(shape, None)),
         };
         let linestr = wordlist.join(" ");
         self.write_line(format_args_f!("{linestr} ;"))?;
         Ok(())
     }
 
-    fn format_geom(&mut self, shape: &LefShape, step_pattern: Option<&LefStepPattern>) -> Vec<String> {
+    fn format_geom(
+        &mut self,
+        shape: &LefShape,
+        step_pattern: Option<&LefStepPattern>,
+    ) -> Vec<String> {
         let mut wordlist: Vec<String> = Vec::new();
         match shape {
             LefShape::Rect(mask, p0, p1) => {
@@ -459,10 +577,10 @@ impl<'wr> LefWriter<'wr> {
                 wordlist.push(LefKey::Step.to_string());
                 wordlist.push(pattern.spacex.to_string());
                 wordlist.push(pattern.spacey.to_string());
-            },
-            _ => {},
+            }
+            _ => {}
         }
-    
+
         wordlist
     }
     /// Format mask
@@ -493,7 +611,9 @@ impl<'wr> LefWriter<'wr> {
         for layer_geom_set in dens_geoms.iter() {
             self.write_line(format_args_f!("{Layer} {layer_geom_set.layer_name} ; "))?;
             for dens_rect in layer_geom_set.geometries.iter() {
-                self.write_line(format_args_f!("{Rect} {dens_rect.pt1} {dens_rect.pt2} {dens_rect.density_value} ; "))?;
+                self.write_line(format_args_f!(
+                    "{Rect} {dens_rect.pt1} {dens_rect.pt2} {dens_rect.density_value} ; "
+                ))?;
             }
         }
         self.indent -= 1;

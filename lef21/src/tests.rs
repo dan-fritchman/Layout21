@@ -1,3 +1,5 @@
+use rust_decimal::Decimal;
+
 use super::read::{parse_str, LefLexer, LefParser, Token};
 use super::*;
 use crate::utils::SerializationFormat::{Json, Toml, Yaml};
@@ -160,6 +162,142 @@ fn it_parses_density_lib() -> LefResult<()> {
     "#;
     let lib = parse_str(src)?;
     //check_yaml(&lib, &resource("lib2.yaml"));
+    Ok(())
+}
+
+#[test]
+fn it_parses_via_lib() -> LefResult<()> {
+    let src = r#"
+    VERSION 5.8 ;
+    UNITS DATABASE MICRONS 2000 ; END UNITS
+    VIA via1 DEFAULT
+      RESISTANCE 21.0 ;
+      LAYER met1 ;
+        RECT MASK 0 -0.5 -0.5 0.5 0.5 ;
+      LAYER cut1 ;
+        POLYGON -0.2 -0.2 -0.2 0.2 0.3 0.2 0.2 -0.2 ;
+        RECT -0.3 -0.3 0.3 0.3 ;
+      LAYER met2 ;
+        POLYGON MASK 1 -0.3 -0.3 -0.3 0.3 0.4 0.3 0.3 -0.3 ;
+        POLYGON -0.4 -0.2 -0.2 0.1 0.2 0.2 0.1 -0.4 ;
+    END via1
+    VIA via2
+      LAYER met2 ;
+        RECT MASK 0 -0.5 -0.5 0.5 0.5 ;
+      LAYER cut2 ;
+        RECT -0.3 -0.3 0.3 0.3 ;
+      LAYER met3 ;
+        RECT -0.4 -0.4 0.4 0.4 ;
+    END via2
+    VIA via3 DEFAULT
+      VIARULE genvia3 ;
+      CUTSIZE 0.2 0.2 ;
+      LAYERS met3 via3 met4 ;
+      CUTSPACING 0.1 0.1 ;
+      ENCLOSURE 0.1 0.2 0.4 0.2 ;
+      ROWCOL 2 3 ;
+    END via3
+    VIA via4
+      # comment
+      DEFAULT
+      # another comment
+      RESISTANCE 2.00 ;
+      LAYER met4 ; RECT -1 -1 1 1 ;
+      # yet another comment
+      LAYER via4 ; RECT -0.5 -0.5 0.5 0.5 ;
+      LAYER met5 ; RECT -2 -2 2 2 ;
+    END via4
+    "#;
+    let lib = parse_str(src)?;
+    assert_eq!(lib.vias.len(), 4);
+    let via2 = &lib.vias[1];
+    assert_eq!(
+        *via2,
+        LefViaDef {
+            name: "via2".into(),
+            default: false,
+            data: LefViaDefData::Fixed(LefFixedViaDef {
+                resistance_ohms: None,
+                layers: vec![
+                    LefViaLayerGeometries {
+                        layer_name: "met2".into(),
+                        shapes: vec![LefViaShape::Rect(
+                            Some(LefMask {
+                                mask: Decimal::new(0, 0),
+                            }),
+                            LefPoint {
+                                x: Decimal::new(-5, 1),
+                                y: Decimal::new(-5, 1)
+                            },
+                            LefPoint {
+                                x: Decimal::new(5, 1),
+                                y: Decimal::new(5, 1)
+                            }
+                        )],
+                    },
+                    LefViaLayerGeometries {
+                        layer_name: "cut2".into(),
+                        shapes: vec![LefViaShape::Rect(
+                            None,
+                            LefPoint {
+                                x: Decimal::new(-3, 1),
+                                y: Decimal::new(-3, 1)
+                            },
+                            LefPoint {
+                                x: Decimal::new(3, 1),
+                                y: Decimal::new(3, 1)
+                            }
+                        )],
+                    },
+                    LefViaLayerGeometries {
+                        layer_name: "met3".into(),
+                        shapes: vec![LefViaShape::Rect(
+                            None,
+                            LefPoint {
+                                x: Decimal::new(-4, 1),
+                                y: Decimal::new(-4, 1)
+                            },
+                            LefPoint {
+                                x: Decimal::new(4, 1),
+                                y: Decimal::new(4, 1)
+                            }
+                        )],
+                    },
+                ],
+            }),
+            properties: None,
+        }
+    );
+    let via3 = &lib.vias[2];
+    assert_eq!(
+        *via3,
+        LefViaDef {
+            name: "via3".into(),
+            default: true,
+            data: LefViaDefData::Generated(LefGeneratedViaDef {
+                via_rule_name: "genvia3".into(),
+                cut_size_x: Decimal::new(2, 1),
+                cut_size_y: Decimal::new(2, 1),
+                bot_metal_layer: "met3".into(),
+                cut_layer: "via3".into(),
+                top_metal_layer: "met4".into(),
+                cut_spacing_x: Decimal::new(1, 1),
+                cut_spacing_y: Decimal::new(1, 1),
+                bot_enc_x: Decimal::new(1, 1),
+                bot_enc_y: Decimal::new(2, 1),
+                top_enc_x: Decimal::new(4, 1),
+                top_enc_y: Decimal::new(2, 1),
+                rowcol: Some(LefRowCol {
+                    rows: Decimal::new(2, 0),
+                    cols: Decimal::new(3, 0),
+                }),
+                origin: None,
+                offset: None,
+                pattern: None,
+            }),
+            properties: None,
+        }
+    );
     Ok(())
 }
 
