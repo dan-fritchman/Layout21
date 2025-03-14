@@ -1,0 +1,29 @@
+[package]
+description = "Layout Design Rules Schema and Parser"
+name = "rules21"
+# Shared layout21 attributes
+authors = ["Dan Fritchman <dan@fritch.mn>"]
+edition = "2018"
+exclude = ["resources"]
+license = "BSD-3-Clause"
+repository = "https://github.com/dan-fritchman/Layout21"
+version = "0.2.1"
+workspace = "../"
+
+[dependencies]
+# Local workspace dependencies
+layout21raw = {path = "../layout21raw", version = "3.0.0-pre.3"}
+layout21utils = {path = "../layout21utils", version = "3.0.0-pre.3"}
+
+# External dependencies
+slotmap = {version = "1.0", features = ["serde"]}
+# derive_builder = "0.9.0"
+# enum_dispatch = "0.3.1"
+# num-derive = "0.3"
+# num-traits = "0.2"
+# rust_decimal = {version = "1.14.3"}
+# serde = {version = "1.0", features = ["derive"]}
+# serde_derive = "1.0.88"
+# derive_more = "0.99.16"
+# once_cell = "1.8.0"
+# fstrings = "0.2.3"

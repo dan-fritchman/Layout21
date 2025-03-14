@@ -1,0 +1,32 @@
+---
+domain: demoinst
+cells:
+  - name: unit
+    layout:
+      name: unit
+      outline:
+        x: [5]
+        y: [1]
+        metals: 2
+      instances: []
+      assignments: []
+      cuts: []
+  - name: democell
+    layout:
+      name: democell
+      outline:
+        x: [100]
+        y: [10]
+        metals: 5
+      instances:
+        - name: unit1
+          cell:
+            to:
+              Local: unit
+          loc:
+            place:
+              Abs: { x: 10, y: 1 }
+          reflect_horiz: false
+          reflect_vert: false
+      assignments: []
+      cuts: []

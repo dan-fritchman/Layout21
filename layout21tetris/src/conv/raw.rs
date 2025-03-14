@@ -131,8 +131,11 @@ impl<'lib> RawExporter {
         // Get our starter raw-lib, either anew or from any we've imported
         let rawlibptr = if self.lib.rawlibs.len() == 0 {
             // Create a new [raw::Library]
-            let mut rawlib = raw::Library::new(&self.lib.name, self.stack.units);
-            rawlib.layers = Ptr::clone(self.stack.rawlayers.as_ref().unwrap());
+            let mut rawlib = raw::Library::new(
+                &self.lib.name,
+                self.stack.units,
+                Some(Ptr::clone(self.stack.rawlayers.as_ref().unwrap())),
+            );
             Ok(Ptr::new(rawlib))
         } else if self.lib.rawlibs.len() == 1 {
             // Pop the sole raw-library, and use it as a starting point
@@ -332,7 +335,7 @@ impl<'lib> RawExporter {
             let start = self.db_units(*n1);
             let stop = self.db_units(*n2);
             // And insert the blockage
-            layer_period.block(start, stop, &inst_ptr).unwrapper(
+            layer_period.block(start, stop, &inst_ptr).or_handle(
                 self,
                 format!(
                     "Could not insert blockage on Layer {:?}, period {} from {:?} to {:?}",
@@ -353,7 +356,7 @@ impl<'lib> RawExporter {
                     dist + layer.spec.cutsize / 2, // stop
                     cut,                           // src
                 )
-                .unwrapper(
+                .or_handle(
                     self,
                     format!("Could not make track-cut {:?} in {:?}", cut, temp_period),
                 )?;
@@ -432,7 +435,7 @@ impl<'lib> RawExporter {
         let assn_loc = self.track_cross_xy(&assn.src.at)?;
         let res = track
             .set_net(assn_loc[layer.spec.dir], &assn.src)
-            .unwrapper(self, "Error Assigning Track")?;
+            .or_handle(self, "Error Assigning Track")?;
         Ok(())
     }
     /// Convert a [Abstract] into raw form.
