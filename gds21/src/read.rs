@@ -191,6 +191,9 @@ where
         self.source.read_exact(data)?;
         // Strip optional end-of-string chars
         let len = data.len();
+        if len == 0 {
+            return Ok("".to_string());
+        }
         if data[len - 1] == 0x00 {
             data = &mut data[0..len - 1];
         }
